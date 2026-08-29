@@ -100,8 +100,9 @@ def test_variable_utility_amount(user_conn):
     assert item["cadence"] == "monthly"
 
 
-def test_overdue_cancelled_subscription(user_conn):
-    # Last charge long before TODAY -> next predicted date well in the past.
+def test_stopped_cancelled_subscription(user_conn):
+    # Last charge long before TODAY -> more than three expected charges never
+    # arrived, so the series reads as stopped rather than merely late.
     conn, uid = user_conn
     cats = _cats(conn, uid)
     _add_series(conn, uid, "OldGymApp", cats["Entertainment"], 29.0,
@@ -109,7 +110,21 @@ def test_overdue_cancelled_subscription(user_conn):
     res = detect_recurring(conn, uid, today=TODAY)
     item = _by_store(res, "OldGymApp")
     assert item is not None
+    assert item["status"] == "stopped"
+    assert item["missed_cycles"] >= 3
+
+
+def test_one_late_charge_is_overdue_not_stopped(user_conn):
+    # A single missed charge: still a live subscription, just late.
+    conn, uid = user_conn
+    cats = _cats(conn, uid)
+    _add_series(conn, uid, "StreamCo", cats["Entertainment"], 12.0,
+                date(2025, 7, 25), 9, 30)
+    res = detect_recurring(conn, uid, today=TODAY)
+    item = _by_store(res, "StreamCo")
+    assert item is not None
     assert item["status"] == "overdue"
+    assert item["missed_cycles"] < 3
 
 
 def test_price_increase_flagged(user_conn):
@@ -239,6 +254,23 @@ def test_investment_transfer_excluded_from_total(user_conn):
     assert spotify is not None and spotify["is_transfer"] is False
     # The 500/mo transfer is excluded; total reflects only Spotify (~10/mo).
     assert res["summary"]["monthly_total"] < 50
+
+
+def test_stopped_series_excluded_from_total(user_conn):
+    conn, uid = user_conn
+    cats = _cats(conn, uid)
+    # A live subscription...
+    _add_series(conn, uid, "Spotify", cats["Entertainment"], 10.0,
+                date(2025, 6, 1), 11, 30)
+    # ...and one that ended over a year ago. It still belongs in the list, but
+    # the user does not pay it any more, so it must not inflate the headline.
+    _add_series(conn, uid, "DeadGym", cats["Entertainment"], 200.0,
+                date(2024, 9, 1), 6, 30)
+    res = detect_recurring(conn, uid, today=TODAY)
+    dead = _by_store(res, "DeadGym")
+    assert dead is not None and dead["status"] == "stopped"
+    assert res["summary"]["monthly_total"] < 50
+    assert res["summary"]["active_count"] < res["summary"]["count"]
 
 
 def test_debt_transfer_also_excluded(user_conn):

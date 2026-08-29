@@ -789,7 +789,21 @@ function clearSearch() {
 function toggleAdvancedSearch() {
     advancedOpen = !advancedOpen;
     document.getElementById("advanced-search").style.display = advancedOpen ? "block" : "none";
-    document.getElementById("toggle-advanced-btn").classList.toggle("active-filter", advancedOpen);
+}
+
+// The button used to light up while the drawer was open, which told the user
+// something they could already see. What they cannot see is a filter still
+// applied under a closed drawer, so it reports that instead: how many of the
+// hidden filters are narrowing the list.
+function updateFilterButton(active) {
+    const btn   = document.getElementById("toggle-advanced-btn");
+    const count = document.getElementById("filter-count");
+    if (!btn) return;
+    btn.classList.toggle("active-filter", active > 0);
+    if (count) count.textContent = active ? ` · ${active}` : "";
+    btn.title = active
+        ? `${active} filter${active !== 1 ? "s" : ""} narrowing this list`
+        : "Filter by date, amount or category";
 }
 
 function buildCatFilterChips() {
@@ -829,11 +843,27 @@ function resetSearch() {
 }
 
 // ── Transactions ────────────────────────────────────────────────────
+
+// A date the parser can't read is dropped from the query rather than refused,
+// so the field has to say so: otherwise the box keeps showing what was typed
+// while the list quietly goes back to every transaction. Half-typed dates hit
+// this on the way to a valid one, which is why it marks rather than blocks.
+function readDateFilter(id) {
+    const el = document.getElementById(id);
+    if (!el) return "";
+    const raw = (el.value || "").trim();
+    const iso = fiToIso(raw) || "";
+    const bad = raw !== "" && !iso;
+    el.classList.toggle("input-invalid", bad);
+    el.title = bad ? "Not a date, so this filter is being ignored. Try 31.7.2026." : "";
+    return iso;
+}
+
 async function loadTransactions() {
     const type     = document.getElementById("filter-type")?.value || "";
     const q        = document.getElementById("search-q")?.value.trim() || "";
-    const dateFrom = fiToIso(document.getElementById("search-date-from")?.value) || "";
-    const dateTo   = fiToIso(document.getElementById("search-date-to")?.value) || "";
+    const dateFrom = readDateFilter("search-date-from");
+    const dateTo   = readDateFilter("search-date-to");
     const amtMin   = document.getElementById("search-amt-min")?.value || "";
     const amtMax   = document.getElementById("search-amt-max")?.value || "";
     const sort     = document.getElementById("search-sort")?.value || "date";
@@ -848,6 +878,11 @@ async function loadTransactions() {
     if (amtMax) url += `&amount_max=${amtMax}`;
     if (selectedCatIds.size) url += `&category_ids=${[...selectedCatIds].join(",")}`;
     if (sort) url += `&sort=${sort}&dir=${dir}`;
+
+    // Only the filters that live behind the drawer count — the search box and
+    // the type dropdown stay on screen and speak for themselves.
+    updateFilterButton([dateFrom, dateTo, amtMin, amtMax,
+                        selectedCatIds.size ? "y" : ""].filter(Boolean).length);
 
     const data = await api(url);
     const tbody = document.getElementById("transactions-body");
@@ -2116,14 +2151,16 @@ function filterData(monthly) {
 function filterByHorizon(monthly) { return filterData(monthly); }
 
 async function loadDashboard() {
-    const [monthly, topExpenses, catBreakdown] = await Promise.all([
+    const [monthly, topExpenses] = await Promise.all([
         api("/api/dashboard/monthly-summary"),
         api("/api/dashboard/top-expenses"),
-        api(expenseBreakdownUrl()),
     ]);
 
+    // The breakdown waits for the monthly rows: it is asked for the months the
+    // period controls currently cover, and those months come from this data.
     cachedMonthly = monthly;
     const filtered = filterData(monthly);
+    const catBreakdown = await api(expenseBreakdownUrl());
 
     await loadMonthsWithNotes();
 
@@ -2137,11 +2174,21 @@ async function loadDashboard() {
     await loadHeatmap();
 }
 
-// The expense card decides the period; with no explicit months the endpoint
-// falls back to the latest month that has expenses.
+// Which months the period controls currently describe: the explicit month
+// picks if there are any, otherwise every month the horizon covers. Empty only
+// before the monthly rows have loaded, where the endpoint's own fallback (the
+// latest month with data) is the best guess available.
+function breakdownPeriodMonths() {
+    if (selectedPeriods.size > 0) return [...selectedPeriods].sort();
+    if (!cachedMonthly.length) return [];
+    return [...new Set(filterData(cachedMonthly).map(r => r.month))].sort();
+}
+
+// The expense card decides the period; the income card is pinned to it.
 function expenseBreakdownUrl() {
+    const months = breakdownPeriodMonths();
     let url = "/api/dashboard/category-breakdown";
-    if (selectedPeriods.size > 0) url += `?months=${[...selectedPeriods].join(",")}`;
+    if (months.length) url += `?months=${months.join(",")}`;
     return url;
 }
 
@@ -2149,7 +2196,8 @@ function expenseBreakdownUrl() {
 // two cards can never end up describing different months.
 async function loadIncomeBreakdown(expenseBreakdown) {
     const params = new URLSearchParams({ type: "income" });
-    if (selectedPeriods.size > 0)    params.set("months", [...selectedPeriods].join(","));
+    const months = breakdownPeriodMonths();
+    if (months.length)               params.set("months", months.join(","));
     else if (expenseBreakdown.month) params.set("month", expenseBreakdown.month);
     renderIncomeBars(await api(`/api/dashboard/category-breakdown?${params}`));
 }
@@ -2432,11 +2480,18 @@ function drawTrendsFromData(data) {
         return;
     }
 
+    // Same precedence as filterData(): an explicit month pick beats the horizon
+    // buttons. A null horizon means the picker is driving, and must not fall
+    // through to the slice — parseInt(null) is NaN, and slice(-NaN) quietly
+    // hands back every month there has ever been while the rest of the page
+    // shows the two the user picked.
     let months = [...new Set(data.trends.map(r => r.month))].sort();
-    if (dashboardHorizon === "ytd") {
+    if (selectedPeriods.size > 0) {
+        months = months.filter(m => selectedPeriods.has(m));
+    } else if (dashboardHorizon === "ytd") {
         const year = new Date().getFullYear().toString();
         months = months.filter(m => m.startsWith(year));
-    } else if (dashboardHorizon !== "0") {
+    } else if (dashboardHorizon && dashboardHorizon !== "0") {
         months = months.slice(-parseInt(dashboardHorizon));
     }
 
@@ -2672,6 +2727,18 @@ function renderReportSummaryCards(data) {
         <div class="summary-card"><div class="label">Transactions</div><div class="value">${txCount}</div></div>`;
 }
 
+// Every year-on-year figure on this page covers only the months the chosen
+// year actually has. Once that is fewer than twelve, say so on the label —
+// an unqualified "vs 2025" over seven months would read as a real fall.
+function compareRangeLabel(data) {
+    const mm = data.compare_months || [];
+    if (!mm.length || mm.length >= 12) return "";
+    const name = m => new Date(2000, parseInt(m, 10) - 1, 1)
+        .toLocaleDateString("en-US", { month: "short" });
+    const first = name(mm[0]), last = name(mm[mm.length - 1]);
+    return first === last ? ` (${first})` : ` (${first}–${last})`;
+}
+
 function renderReportYoY(data) {
     const container = document.getElementById("report-yoy");
     const curInc  = data.totals.income  || 0;
@@ -2692,10 +2759,11 @@ function renderReportYoY(data) {
         return `<span class="${cls}">${diff >= 0 ? "+" : "−"}${pct}%</span>`;
     }
 
+    const range = compareRangeLabel(data);
     const rows = [
-        { label: `Income vs ${data.year - 1}`, cur: curInc, prev: prevInc, sign: "+", goodWhenUp: true },
-        { label: `Expenses vs ${data.year - 1}`, cur: curExp, prev: prevExp, sign: "", goodWhenUp: false },
-        { label: "Net vs previous year", cur: curInc - curExp, prev: prevInc - prevExp, sign: "", goodWhenUp: true },
+        { label: `Income vs ${data.year - 1}${range}`, cur: curInc, prev: prevInc, sign: "+", goodWhenUp: true },
+        { label: `Expenses vs ${data.year - 1}${range}`, cur: curExp, prev: prevExp, sign: "", goodWhenUp: false },
+        { label: `Net vs ${data.year - 1}${range}`, cur: curInc - curExp, prev: prevInc - prevExp, sign: "", goodWhenUp: true },
     ];
 
     container.innerHTML = rows.map(r => `
@@ -2795,12 +2863,13 @@ function renderReportMonthlyChart(data) {
     });
     const netData = months.map((_, i) => incData[i] - expData[i]);
 
-    const prevMonths = data.prev_monthly ? [...new Set(data.prev_monthly.map(r => r.month))].sort() : [];
-    const prevExpData = months.map((m, i) => {
-        const prevM = prevMonths[i];
-        if (!prevM) return null;
-        const r = data.prev_monthly.find(x => x.month === prevM && x.type === "expense");
-        return r ? r.total : 0;
+    // Pair the comparison line by calendar month, never by position in the
+    // array: a previous year that starts later than this one would otherwise
+    // slide the whole line sideways. A month it has no data for stays a gap.
+    const prevExpData = months.map(m => {
+        const prevM = `${data.year - 1}-${m.slice(5)}`;
+        const r = (data.prev_monthly || []).find(x => x.month === prevM && x.type === "expense");
+        return r ? r.total : null;
     });
     const hasPrev = prevExpData.some(v => v !== null);
 
@@ -3506,6 +3575,7 @@ const RECURRING_STATUS = {
     active:        { label: "Active",     cls: "recurring-active" },
     due_soon:      { label: "Due soon",   cls: "recurring-due" },
     overdue:       { label: "Overdue",    cls: "recurring-overdue" },
+    stopped:       { label: "Stopped",    cls: "recurring-stopped" },
     price_changed: { label: "Price ↑",    cls: "recurring-price" },
 };
 
@@ -3529,13 +3599,17 @@ function recurringRow(i) {
     const manualTag = i.is_manual ? ` <span class="recurring-manual">added</span>` : "";
     const seen = i.is_manual ? "Added manually" : `${i.occurrences}× seen`;
     // A "next due" in the past means the series looks lapsed — show the date
-    // in orange with a hint instead of a calm gray (design #14).
+    // in orange with a hint instead of a calm gray (design #14). A stopped
+    // series is the exception: its next date is a prediction that will never
+    // come, so orange would contradict the grey badge sitting beside it.
     const todayIso = new Date().toISOString().slice(0, 10);
-    const duePast = i.next_date && i.next_date < todayIso;
+    const duePast = i.next_date && i.next_date < todayIso && i.status !== "stopped";
     const nextDue = i.next_date
         ? (duePast
             ? `<span style="color:var(--orange)" title="Expected date has passed — the series may have lapsed">${fmtDate(i.next_date)}</span>`
-            : fmtDate(i.next_date))
+            : i.status === "stopped"
+                ? `<span style="color:var(--text-tertiary)" title="The charge expected on this date never arrived">${fmtDate(i.next_date)}</span>`
+                : fmtDate(i.next_date))
         : "—";
     const remove = i.is_manual
         ? { fn: `deleteSubscription(${i.manual_id})`, title: "Remove this subscription" }
@@ -3562,7 +3636,7 @@ function renderRecurring(data) {
     summary.innerHTML = items.length
         ? `<span><strong>${fmt(data.summary.monthly_total)}</strong>/mo</span>` +
           `<span><strong>${fmt(data.summary.annual_total)}</strong>/yr</span>` +
-          `<span>${data.summary.count} recurring</span>`
+          `<span>${data.summary.active_count ?? data.summary.count} active</span>`
         : "";
 
     if (!items.length) {
@@ -3793,6 +3867,13 @@ function renderTrendsStatCards(data) {
 }
 
 function renderTrendsMonthlyChart(data) {
+    // The stat card above already says "Total Earned" for an income category;
+    // this title said "Spending by Month" underneath it whatever was selected.
+    const title = document.getElementById("trends-monthly-title");
+    if (title) {
+        title.textContent = data.category && data.category.type === "income"
+            ? "Income by Month" : "Spending by Month";
+    }
     if (charts.trendsMonthly) charts.trendsMonthly.destroy();
     const ctx      = document.getElementById("chart-trends-monthly");
     const monthly = trimTrailingZeros(data.monthly);
@@ -3865,6 +3946,13 @@ function renderTrendsMomChart(data) {
         const win = changes.slice(Math.max(0, i - 1), i + 2);
         return win.reduce((a, b) => a + b, 0) / win.length;
     });
+    // Up is not always bad. On an income category a rise is the good outcome,
+    // so the colours follow the category's type instead of assuming spending.
+    // The endpoint already resolves the type for a multi-category selection.
+    const upIsGood  = data.category && data.category.type === "income";
+    const upColor   = upIsGood ? "--green" : "--red";
+    const downColor = upIsGood ? "--red"   : "--green";
+
     const labelPlugin = {
         id: "momPctLabels",
         afterDatasetsDraw(chart) {
@@ -3875,7 +3963,7 @@ function renderTrendsMomChart(data) {
             c.textAlign = "center";
             meta.data.forEach((bar, i) => {
                 const v = changes[i];
-                c.fillStyle = v >= 0 ? rgbaVar("--red", 1) : rgbaVar("--green", 1);
+                c.fillStyle = v >= 0 ? rgbaVar(upColor, 1) : rgbaVar(downColor, 1);
                 c.fillText((v >= 0 ? "+" : "") + v.toFixed(1) + "%", bar.x, bar.y + (v >= 0 ? -7 : 13));
             });
             c.restore();
@@ -3888,8 +3976,8 @@ function renderTrendsMomChart(data) {
             datasets: [
                 {
                     label: "MoM Change", data: changes,
-                    backgroundColor: changes.map(v => v >= 0 ? rgbaVar("--red", 0.7) : rgbaVar("--green", 0.7)),
-                    borderColor:     changes.map(v => v >= 0 ? rgbaVar("--red", 1)   : rgbaVar("--green", 1)),
+                    backgroundColor: changes.map(v => v >= 0 ? rgbaVar(upColor, 0.7) : rgbaVar(downColor, 0.7)),
+                    borderColor:     changes.map(v => v >= 0 ? rgbaVar(upColor, 1)   : rgbaVar(downColor, 1)),
                     borderWidth: 1, borderRadius: 5, borderSkipped: false, maxBarThickness: 28,
                 },
                 {
@@ -4044,7 +4132,14 @@ function renderTrendsForecast(data) {
     const forecastTotal = futureVals.reduce((a, b) => a + b, 0);
     const histAvg      = totals.reduce((a, b) => a + b, 0) / (n || 1);
     const trendDir     = slope > histAvg * 0.01 ? "↑ Increasing" : slope < -histAvg * 0.01 ? "↓ Decreasing" : "→ Stable";
-    const trendColor   = slope > histAvg * 0.01 ? "var(--red)" : slope < -histAvg * 0.01 ? "var(--green)" : "var(--text-secondary)";
+    // As on the month-over-month bars: rising income is good news, rising
+    // spending is not, so the colour has to know which one it is looking at.
+    const rising       = slope > histAvg * 0.01;
+    const falling      = slope < -histAvg * 0.01;
+    const goodUp       = data.category && data.category.type === "income";
+    const trendColor   = rising  ? (goodUp ? "var(--green)" : "var(--red)")
+                       : falling ? (goodUp ? "var(--red)" : "var(--green)")
+                       : "var(--text-secondary)";
 
     document.getElementById("trends-forecast-summary").innerHTML = `
         <span>Next 12M: <strong>${fmt(forecastTotal)}</strong></span>

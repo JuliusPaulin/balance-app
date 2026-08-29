@@ -1024,15 +1024,32 @@ tbody tr:last-child td {
     to { opacity: 0; transform: translateY(-8px) scale(0.95); }
 }
 
+/* A filter field holding text the app cannot parse. The filter is dropped from
+   the query, so the field must show it — a quiet full list under a date the
+   user typed reads as "no matches were excluded", which is a lie. */
+.input-invalid {
+    border-color: var(--red) !important;
+    background: rgba(255, 56, 48, 0.05);
+}
+
 /* ── Horizon Filter — segmented control ──────────────────────────── */
-.horizon-btn {
+/* Four of these live in the app: the dashboard horizon, both Trends ranges and
+   the Net Worth range. They share the styling so the selected one is marked the
+   same way everywhere. */
+.horizon-btn,
+.trends-period-btn,
+.trends-toptx-btn,
+.nw-period-btn {
     min-width: 36px;
     text-align: center;
     transition: all var(--transition);
     border-radius: var(--radius-xs);
 }
 
-.horizon-btn.active {
+.horizon-btn.active,
+.trends-period-btn.active,
+.trends-toptx-btn.active,
+.nw-period-btn.active {
     background: var(--accent) !important;
     color: var(--on-accent) !important;
     border-color: var(--accent) !important;
@@ -1223,7 +1240,7 @@ tbody tr:last-child td {
 }
 
 .active-filter {
-    background: rgba(0, 122, 255, 0.08) !important;
+    background: var(--accent-soft) !important;
     color: var(--accent) !important;
 }
 
@@ -2319,6 +2336,9 @@ body.fs-active { overflow: hidden; }
 /* Lapsed, not urgent: the charge never came, so the series may be cancelled.
    Quiet pill, orange text — the same signal as the past "next due" date. */
 .recurring-overdue { background: rgba(120, 120, 128, 0.12); color: var(--orange); }
+/* Past caring: three or more charges never came, so the service has ended.
+   Grey text, not orange — nothing here needs chasing. */
+.recurring-stopped { background: rgba(120, 120, 128, 0.12); color: var(--text-tertiary); }
 .recurring-price   { background: rgba(255, 56, 48, 0.10);   color: var(--red); }
 .recurring-income,
 .recurring-manual  {

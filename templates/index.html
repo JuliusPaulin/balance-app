@@ -231,7 +231,7 @@
                 </select>
                 <button class="btn btn-secondary btn-sm" id="toggle-advanced-btn" onclick="toggleAdvancedSearch()">
                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
-                    Filters
+                    Filters<span id="filter-count"></span>
                 </button>
                 <span class="search-results-count" id="search-count"></span>
             </div>
@@ -390,7 +390,9 @@
                 Add Category
             </button>
         </div>
-        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px">
+        <!-- align-items:start so the short income card stops stretching to the
+             height of the much longer expense list. -->
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px; align-items:start">
             <div class="card">
                 <div class="card-title">Expense Categories</div>
                 <div id="expense-categories-list"></div>
@@ -483,7 +485,9 @@
             <div class="dashboard-grid">
                 <!-- Spending by month -->
                 <div class="card full-width">
-                    <div class="card-title">Spending by Month</div>
+                    <!-- Wording set by renderTrendsMonthlyChart: this page charts
+                         income categories too, and they are not spending. -->
+                    <div class="card-title" id="trends-monthly-title">Spending by Month</div>
                     <div class="chart-container" style="height:280px"><canvas id="chart-trends-monthly"></canvas></div>
                 </div>
 
