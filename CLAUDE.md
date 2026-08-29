@@ -59,7 +59,7 @@ through `db`: `db.IntegrityError`, `db.DatabaseError`, `db.Json(...)`,
 
 ## Tests
 
-`python3 -m pytest tests/` — 63 tests, all green.
+`python3 -m pytest tests/` — 74 tests, all green.
 
 `conftest.py` points `SQLITE_PATH` at a throwaway file **at import time**, before
 pytest collects any test module. This matters: test modules `import config` /
@@ -156,11 +156,27 @@ Module: `enable_banking.py`.
   with one user.
 - Default ASPSP `Nordea` / country `FI` (`ENABLE_BANKING_ASPSP`, `ENABLE_BANKING_COUNTRY`).
 - Needs `ENABLE_BANKING_APP_ID` and `ENABLE_BANKING_PRIVATE_KEY` (base64 PEM) in the
-  environment; without both, `enable_banking_configured()` is False and the routes 400.
+  environment; without both, `enable_banking_configured()` is False and the UI hides the card.
 - The bank returns the browser to `BANK_REDIRECT_BASE` + `/api/import/bank/callback`
   (default `http://localhost:5050`), which must be registered in the EB app config.
-- ⚠️ Error mapping is currently coarse: a 403 at **connect** (app JWT rejected) is reported as
-  "consent expired", which is misleading at that stage. Candidate cleanup.
+
+**What a 401/403 means depends on the stage**, so every call through `_get` / `_post`
+states which stage it is in (`session_scoped`, a required keyword — a new call site
+has to decide):
+
+| Stage | Call | 401/403 → | The user sees |
+|-------|------|-----------|---------------|
+| Before consent | `/auth`, `/sessions` | `BankAuthError` | "This app's bank credentials were refused" — only the owner can fix it |
+| On a consent | `/accounts/…/transactions` | `SessionExpired` | "Reconnect your bank" |
+
+Getting this wrong is what sent people round a reconnect loop that could never
+succeed. The bank's own response body rides along in both messages.
+
+`/connect` and `/callback` are full-page browser navigations, so they never return
+JSON: `_bank_failed()` logs the detail and bounces to `/#import?bank=<reason>`
+(`connected` · `cancelled` · `error` · `auth_error` · `not_configured`), which
+`handleBankReturn()` turns into a sentence. `/fetch` is an XHR and keeps returning
+JSON — `session_expired` (401) and `bank_auth` (502) are separate codes.
 
 ### Dashboard
 Card order: Monthly Overview → Expenses by Category → Income by Category →

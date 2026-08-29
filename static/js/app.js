@@ -1165,6 +1165,8 @@ async function fetchBankTransactions() {
         if (data.error === "session_expired" || data.error === "not_connected") {
             toast("Bank connection expired — reconnect");
             loadBankStatus();
+        } else if (data.error === "bank_auth") {
+            toast(BANK_RETURN_MESSAGES.auth_error);
         } else {
             toast(data.error || "Fetch failed");
         }
@@ -4547,17 +4549,27 @@ async function init() {
     handleBankReturn();
 }
 
-// After the bank consent round-trip the callback redirects to
-// /#import?bank=connected (or ?bank=error). Detect that, open the Import tab,
-// toast the outcome, and refresh the bank status card.
+// What each /#import?bank=<reason> code from the server means to the user.
+// auth_error is the app's own Enable Banking credentials being refused: there is
+// no consent yet at that point, so "reconnect" would send them round the same
+// loop. Only the server owner can fix it.
+const BANK_RETURN_MESSAGES = {
+    connected: "Bank connected",
+    cancelled: "Bank connection was cancelled",
+    error: "Couldn't reach your bank — try again",
+    auth_error: "This app's bank credentials were refused. Check the Enable Banking app id and key.",
+    not_configured: "Bank import isn't set up on this server",
+};
+
+// After the bank consent round-trip the server redirects to /#import?bank=<reason>.
+// Detect that, open the Import tab, toast the outcome, and refresh the status card.
 function handleBankReturn() {
     const hash = window.location.hash || "";
-    const m = hash.match(/bank=(connected|error)/);
+    const m = hash.match(/bank=(\w+)/);
     if (!m) return;
     const importNav = document.querySelector('.nav-item[data-page="import"]');
     if (importNav) importNav.click();  // activates page + runs loadBankStatus()
-    if (m[1] === "connected") toast("Bank connected");
-    else toast("Bank connection was cancelled");
+    toast(BANK_RETURN_MESSAGES[m[1]] || "Bank connection failed");
     // Clean the hash so a refresh doesn't re-toast.
     history.replaceState(null, "", window.location.pathname);
 }

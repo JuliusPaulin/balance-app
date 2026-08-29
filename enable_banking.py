@@ -61,6 +61,17 @@ class SessionExpired(BankError):
     """
 
 
+class BankAuthError(BankError):
+    """Enable Banking rejected the app's OWN credentials (app id / private key).
+
+    Raised when a call made *before* any bank consent exists — ``/auth`` at
+    connect, ``/sessions`` at the consent callback — comes back 401/403. There is
+    no consent to expire at that point, so reconnecting cannot help: either the
+    app id is wrong, the private key does not match it, or the app is not
+    approved for this bank. Fixing it means fixing the server's credentials.
+    """
+
+
 class BankConfigMissing(BankError):
     """Enable Banking is not configured (app id / private key env vars unset)."""
 
@@ -119,11 +130,12 @@ def _auth_headers() -> dict:
 # ── Thin HTTP helpers (the only network surface — mocked in tests) ───
 
 
-def _get(path: str) -> dict:
+def _get(path: str, *, session_scoped: bool) -> dict:
     """GET ``{API_BASE}{path}`` with the app JWT; return parsed JSON.
 
-    Maps 401/403 to :class:`SessionExpired` and any other non-2xx (or network
-    error) to :class:`BankError`. Kept deliberately thin so tests mock it.
+    ``session_scoped`` says whether this call rides on a bank consent, which
+    decides what a 401/403 means — see :func:`_handle_response`. It has no
+    default on purpose: every new call site has to say which it is.
     """
     try:
         resp = requests.get(
@@ -131,13 +143,14 @@ def _get(path: str) -> dict:
         )
     except requests.RequestException as e:
         raise BankError(f"Network error calling Enable Banking: {e}") from e
-    return _handle_response(path, resp)
+    return _handle_response(path, resp, session_scoped=session_scoped)
 
 
-def _post(path: str, body: dict) -> dict:
+def _post(path: str, body: dict, *, session_scoped: bool) -> dict:
     """POST JSON ``body`` to ``{API_BASE}{path}`` with the app JWT; return JSON.
 
-    Same error mapping as :func:`_get`. Kept thin so tests mock it.
+    Same error mapping as :func:`_get`, and ``session_scoped`` means the same
+    thing. Kept thin so tests mock it.
     """
     try:
         resp = requests.post(
@@ -148,23 +161,47 @@ def _post(path: str, body: dict) -> dict:
         )
     except requests.RequestException as e:
         raise BankError(f"Network error calling Enable Banking: {e}") from e
-    return _handle_response(path, resp)
+    return _handle_response(path, resp, session_scoped=session_scoped)
 
 
-def _handle_response(path: str, resp) -> dict:
-    """Translate an HTTP response into parsed JSON or a typed error."""
+def _body_snippet(resp) -> str:
+    """The first 300 chars of a response body, for error messages. Never raises."""
+    try:
+        return (resp.text or "")[:300]
+    except Exception:  # pragma: no cover - defensive
+        return ""
+
+
+def _handle_response(path: str, resp, *, session_scoped: bool) -> dict:
+    """Translate an HTTP response into parsed JSON or a typed error.
+
+    A 401/403 means two different things depending on the stage, and telling them
+    apart is the whole point of ``session_scoped``:
+
+    - **on a session-scoped call** (reading an account) the consent behind the
+      session has expired or been revoked → :class:`SessionExpired`, and
+      reconnecting at the bank fixes it;
+    - **before any session exists** (``/auth``, ``/sessions``) there is no consent
+      yet, so the app's own JWT was refused → :class:`BankAuthError`. Sending the
+      user off to reconnect there just fails again at the same place.
+    """
     if resp.status_code in (401, 403):
-        raise SessionExpired(
-            f"Enable Banking rejected the request (HTTP {resp.status_code}). "
-            "The bank consent has expired — reconnect your bank."
+        detail = _body_snippet(resp)
+        if session_scoped:
+            raise SessionExpired(
+                f"Enable Banking rejected the request (HTTP {resp.status_code}). "
+                f"The bank consent has expired — reconnect your bank. {detail}".strip()
+            )
+        raise BankAuthError(
+            f"Enable Banking refused this app's credentials on {path} "
+            f"(HTTP {resp.status_code}). Check ENABLE_BANKING_APP_ID and "
+            f"ENABLE_BANKING_PRIVATE_KEY, and that the app is approved for this "
+            f"bank. {detail}".strip()
         )
     if not (200 <= resp.status_code < 300):
-        body = ""
-        try:
-            body = resp.text[:300]
-        except Exception:  # pragma: no cover - defensive
-            pass
-        raise BankError(f"Enable Banking {path} -> HTTP {resp.status_code}. {body}")
+        raise BankError(
+            f"Enable Banking {path} -> HTTP {resp.status_code}. {_body_snippet(resp)}"
+        )
     try:
         return resp.json()
     except ValueError as e:
@@ -190,6 +227,7 @@ def start_auth(aspsp_name: str, aspsp_country: str, redirect_url: str, state: st
             "state": state,
             "psu_type": PSU_TYPE,
         },
+        session_scoped=False,  # no consent yet: a 401/403 here is our own key
     )
     url = payload.get("url")
     if not url:
@@ -204,7 +242,9 @@ def create_session(code: str) -> dict:
     of ``{uid, iban, name, currency}`` dicts (normalised from the EB account
     objects, which may be bare uid strings or rich objects depending on the API).
     """
-    payload = _post("/sessions", {"code": code})
+    # Still pre-session: the code is the user's consent, but the call itself is
+    # authenticated by the app JWT, so a 401/403 accuses our credentials.
+    payload = _post("/sessions", {"code": code}, session_scoped=False)
     session_id = payload.get("session_id")
     if not session_id:
         raise BankError("Enable Banking /sessions did not return a session_id.")
@@ -274,7 +314,7 @@ def get_transactions(
         if continuation_key:
             params["continuation_key"] = continuation_key
         path = f"/accounts/{account_uid}/transactions?{urlencode(params)}"
-        payload = _get(path)
+        payload = _get(path, session_scoped=True)
 
         for txn in payload.get("transactions", []) or []:
             status = (txn.get("status") or "").upper()

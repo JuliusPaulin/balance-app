@@ -102,9 +102,10 @@ def test_start_auth_request_shape(monkeypatch):
     """start_auth POSTs /auth with the right body and returns the bank url."""
     captured = {}
 
-    def fake_post(path, body):
+    def fake_post(path, body, *, session_scoped):
         captured["path"] = path
         captured["body"] = body
+        captured["session_scoped"] = session_scoped
         return {"url": "https://bank.example/authorize?x=1"}
 
     monkeypatch.setattr(eb, "_post", fake_post)
@@ -117,10 +118,12 @@ def test_start_auth_request_shape(monkeypatch):
     assert body["state"] == "state-123"
     assert body["psu_type"] == "personal"
     assert "valid_until" in body["access"]
+    # Pre-consent: a 401/403 here accuses our own key, not the user's consent.
+    assert captured["session_scoped"] is False
 
 
 def test_start_auth_missing_url_raises(monkeypatch):
-    monkeypatch.setattr(eb, "_post", lambda p, b: {})
+    monkeypatch.setattr(eb, "_post", lambda p, b, **kw: {})
     with pytest.raises(eb.BankError):
         eb.start_auth("Nordea", "FI", "https://app/cb", "s")
 
@@ -129,9 +132,10 @@ def test_create_session_shapes_result(monkeypatch):
     """create_session POSTs /sessions and normalises accounts + valid_until."""
     captured = {}
 
-    def fake_post(path, body):
+    def fake_post(path, body, *, session_scoped):
         captured["path"] = path
         captured["body"] = body
+        captured["session_scoped"] = session_scoped
         return {
             "session_id": "sess-9",
             "accounts": [
@@ -152,10 +156,11 @@ def test_create_session_shapes_result(monkeypatch):
     }
     # Bare-string account normalised to a dict.
     assert out["accounts"][1]["uid"] == "acc-2-bare-string"
+    assert captured["session_scoped"] is False
 
 
 def test_create_session_missing_id_raises(monkeypatch):
-    monkeypatch.setattr(eb, "_post", lambda p, b: {"accounts": []})
+    monkeypatch.setattr(eb, "_post", lambda p, b, **kw: {"accounts": []})
     with pytest.raises(eb.BankError):
         eb.create_session("c")
 
@@ -209,7 +214,8 @@ def test_get_transactions_mapping_and_pagination(monkeypatch):
     pages = [page1, page2]
     calls = []
 
-    def fake_get(path):
+    def fake_get(path, *, session_scoped):
+        assert session_scoped is True  # reading an account rides on the consent
         calls.append(path)
         return pages[len(calls) - 1]
 
@@ -228,6 +234,60 @@ def test_get_transactions_mapping_and_pagination(monkeypatch):
     assert txns[1]["type"] == "income"
     assert txns[1]["store"] == "Employer Oy"
     assert txns[2]["store"] == "Coffee shop"
+
+
+class _Resp:
+    """Minimal stand-in for a requests Response."""
+
+    def __init__(self, status_code, text="", payload=None):
+        self.status_code = status_code
+        self.text = text
+        self._payload = payload
+
+    def json(self):
+        if self._payload is None:
+            raise ValueError("no json")
+        return self._payload
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_pre_session_rejection_blames_our_credentials(status):
+    """A 401/403 before any consent exists is the app's key, not a stale consent.
+
+    This is the case the old code got wrong: it told the user their bank consent
+    had expired while they were still trying to start one.
+    """
+    resp = _Resp(status, text='{"message":"invalid kid"}')
+    with pytest.raises(eb.BankAuthError) as excinfo:
+        eb._handle_response("/auth", resp, session_scoped=False)
+    message = str(excinfo.value)
+    assert "expired" not in message.lower()
+    assert "ENABLE_BANKING_APP_ID" in message
+    assert "invalid kid" in message  # the bank's own words survive
+
+
+@pytest.mark.parametrize("status", [401, 403])
+def test_session_rejection_is_an_expired_consent(status):
+    """The same status on a session-scoped call does mean: reconnect."""
+    resp = _Resp(status, text='{"message":"session not found"}')
+    with pytest.raises(eb.SessionExpired) as excinfo:
+        eb._handle_response("/accounts/acc-1/transactions", resp, session_scoped=True)
+    assert "reconnect" in str(excinfo.value).lower()
+    assert "session not found" in str(excinfo.value)
+
+
+def test_auth_error_is_not_caught_as_a_session_expiry():
+    """Route handlers catch SessionExpired first, so the classes must not overlap."""
+    assert issubclass(eb.BankAuthError, eb.BankError)
+    assert not issubclass(eb.BankAuthError, eb.SessionExpired)
+    assert not issubclass(eb.SessionExpired, eb.BankAuthError)
+
+
+def test_other_statuses_stay_generic():
+    with pytest.raises(eb.BankError) as excinfo:
+        eb._handle_response("/auth", _Resp(500, text="boom"), session_scoped=False)
+    assert not isinstance(excinfo.value, (eb.SessionExpired, eb.BankAuthError))
+    assert "boom" in str(excinfo.value)
 
 
 def test_session_valid():
@@ -330,7 +390,75 @@ def test_connect_not_configured(client, login, make_user, monkeypatch):
     login(client, uid)
     monkeypatch.setattr(app_module.config, "enable_banking_configured", lambda: False)
     r = client.get("/api/import/bank/connect")
-    assert r.status_code == 400
+    # /connect is a full-page navigation: send the browser back to the Import tab
+    # with a reason code instead of leaving the user on a page of raw JSON.
+    assert r.status_code == 302
+    assert "bank=not_configured" in r.headers["Location"]
+
+
+def test_connect_credential_failure_does_not_say_reconnect(
+    client, login, make_user, monkeypatch, configure_eb
+):
+    """The bug this fixes: a refused app key used to read as "consent expired"."""
+    import app as app_module
+
+    uid = make_user()
+    login(client, uid)
+
+    def boom(*a, **kw):
+        raise eb.BankAuthError("Enable Banking refused this app's credentials")
+
+    monkeypatch.setattr(app_module.enable_banking, "start_auth", boom)
+    r = client.get("/api/import/bank/connect")
+    assert r.status_code == 302
+    assert "bank=auth_error" in r.headers["Location"]
+
+
+def test_connect_other_bank_error(client, login, make_user, monkeypatch, configure_eb):
+    import app as app_module
+
+    def boom(*a, **kw):
+        raise eb.BankError("gateway is down")
+
+    uid = make_user()
+    login(client, uid)
+    monkeypatch.setattr(app_module.enable_banking, "start_auth", boom)
+    r = client.get("/api/import/bank/connect")
+    assert r.status_code == 302
+    assert "bank=error" in r.headers["Location"]
+
+
+def test_callback_credential_failure_redirects(
+    client, login, make_user, monkeypatch, configure_eb
+):
+    import app as app_module
+
+    uid = make_user()
+    login(client, uid)
+    with client.session_transaction() as sess:
+        sess["bank_oauth_state"] = "good-state"
+
+    def boom(code):
+        raise eb.BankAuthError("refused")
+
+    monkeypatch.setattr(app_module.enable_banking, "create_session", boom)
+    r = client.get("/api/import/bank/callback?state=good-state&code=abc")
+    assert r.status_code == 302
+    assert "bank=auth_error" in r.headers["Location"]
+    assert _bank_session_count(uid) == 0
+
+
+def test_callback_declined_at_bank_reads_as_cancelled(
+    client, login, make_user, configure_eb
+):
+    """Declining at the bank is not a failure — keep it apart from one."""
+    uid = make_user()
+    login(client, uid)
+    with client.session_transaction() as sess:
+        sess["bank_oauth_state"] = "good-state"
+    r = client.get("/api/import/bank/callback?state=good-state&error=access_denied")
+    assert r.status_code == 302
+    assert "bank=cancelled" in r.headers["Location"]
 
 
 def test_callback_rejects_bad_state(client, login, make_user, monkeypatch, configure_eb):
@@ -436,6 +564,26 @@ def test_fetch_session_expired(client, login, make_user):
     })
     assert r.status_code == 401
     assert r.get_json()["error"] == "session_expired"
+
+
+def test_fetch_credential_failure_is_not_session_expired(
+    client, login, make_user, monkeypatch
+):
+    import app as app_module
+
+    uid = make_user()
+    _insert_bank_session(uid)
+    login(client, uid)
+
+    def boom(session_id, account_uid, date_from, date_to):
+        raise eb.BankAuthError("refused")
+
+    monkeypatch.setattr(app_module.enable_banking, "get_transactions", boom)
+    r = client.post("/api/import/bank/fetch", json={
+        "account_uid": "acc-1", "date_from": "2025-01-01", "date_to": "2025-01-31",
+    })
+    assert r.status_code == 502
+    assert r.get_json()["error"] == "bank_auth"
 
 
 def test_fetch_bad_dates(client, login, make_user):

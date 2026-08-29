@@ -15,7 +15,8 @@ import networth
 import investment_import
 import config
 import enable_banking
-from enable_banking import BankConfigMissing, BankError, SessionExpired
+from enable_banking import (BankAuthError, BankConfigMissing, BankError,
+                            SessionExpired)
 
 # Single source of truth for the local server port. Now sourced from config
 # (which reads the PORT env var). main.py (the pywebview desktop shell) imports
@@ -2791,6 +2792,19 @@ def delete_staging_item(item_id):
 _BANK_STATE_KEY = "bank_oauth_state"
 
 
+def _bank_failed(reason, detail):
+    """Send a failed consent step back to the Import tab with a reason code.
+
+    /connect and /callback are full-page browser navigations, so returning JSON
+    would leave the user staring at a raw error object. Instead we log the detail
+    for whoever runs the server and bounce the browser to /#import?bank=<reason>,
+    where the UI turns the code into a sentence. ``reason`` is one of
+    ``not_configured``, ``auth_error``, ``error`` or ``cancelled``.
+    """
+    app.logger.warning("Bank consent step failed (%s): %s", reason, detail)
+    return redirect(f"/#import?bank={reason}")
+
+
 def _load_bank_session(uid):
     """Return the user's bank_sessions row as a dict, or None."""
     with db_conn() as conn:
@@ -2843,7 +2857,7 @@ def bank_connect():
     """
     current_user_id()  # enforce auth (raises 401 otherwise)
     if not config.enable_banking_configured():
-        return jsonify({"error": "Bank import is not configured on this server."}), 400
+        return _bank_failed("not_configured", "Bank import is not configured.")
 
     state = secrets.token_urlsafe(32)
     session[_BANK_STATE_KEY] = state
@@ -2856,11 +2870,11 @@ def bank_connect():
             state,
         )
     except BankConfigMissing as e:
-        return jsonify({"error": str(e)}), 400
-    except SessionExpired as e:
-        return jsonify({"error": str(e)}), 401
+        return _bank_failed("not_configured", e)
+    except BankAuthError as e:
+        return _bank_failed("auth_error", e)
     except BankError as e:
-        return jsonify({"error": f"Bank error: {e}"}), 502
+        return _bank_failed("error", e)
     return redirect(auth_url)
 
 
@@ -2883,17 +2897,17 @@ def bank_callback():
 
     # The bank may redirect back with an error instead of a code (user declined).
     if request.args.get("error") or not request.args.get("code"):
-        return redirect("/#import?bank=error")
+        return redirect("/#import?bank=cancelled")
 
     code = request.args.get("code")
     try:
         result = enable_banking.create_session(code)
-    except SessionExpired as e:
-        return jsonify({"error": str(e)}), 401
     except BankConfigMissing as e:
-        return jsonify({"error": str(e)}), 400
+        return _bank_failed("not_configured", e)
+    except BankAuthError as e:
+        return _bank_failed("auth_error", e)
     except BankError as e:
-        return jsonify({"error": f"Bank error: {e}"}), 502
+        return _bank_failed("error", e)
 
     with db_conn() as conn:
         # Delete-then-insert keeps the UNIQUE(user_id) "one active connection"
@@ -2959,6 +2973,9 @@ def bank_fetch():
         return jsonify({"error": "session_expired"}), 401
     except BankConfigMissing as e:
         return jsonify({"error": str(e)}), 400
+    except BankAuthError as e:
+        app.logger.warning("Enable Banking refused the app credentials: %s", e)
+        return jsonify({"error": "bank_auth"}), 502
     except BankError as e:
         return jsonify({"error": f"Bank error: {e}"}), 502
 
