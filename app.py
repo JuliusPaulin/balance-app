@@ -1076,30 +1076,6 @@ def dashboard_heatmap():
     })
 
 
-@app.route("/api/dashboard/daily-totals")
-def daily_totals():
-    uid = current_user_id()
-    month = request.args.get("month")
-
-    with db_conn() as conn:
-        if not month:
-            latest = conn.execute(
-                "SELECT substr(date, 1, 7) as month FROM transactions "
-                "WHERE user_id = %s ORDER BY date DESC LIMIT 1",
-                (uid,),
-            ).fetchone()
-            month = latest["month"] if latest else datetime.now().strftime("%Y-%m")
-
-        rows = conn.execute("""
-            SELECT date, type, SUM(amount) as total
-            FROM transactions
-            WHERE user_id = %s AND substr(date, 1, 7) = %s
-            GROUP BY date, type
-            ORDER BY date
-        """, (uid, month)).fetchall()
-    return jsonify({"month": month, "items": [dict(r) for r in rows]})
-
-
 # ── Annual Report API ──────────────────────────────────────────────────
 
 @app.route("/api/reports/annual")

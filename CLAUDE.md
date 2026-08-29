@@ -206,8 +206,7 @@ Expense Trends → Spending Heatmap → Monthly Summary.
 - Period filter: YTD, last 3/6/12 months, all time, or custom month picker
 
 > The Cash Flow Calendar was removed — the Spending Heatmap covers the same
-> ground over a whole year. Its endpoint `/api/dashboard/daily-totals` is still
-> served but now has no caller.
+> ground over a whole year, so it took over.
 
 ### Month Notes
 - Per-month text notes stored in `month_notes`
@@ -256,7 +255,7 @@ GET        /api/dashboard/top-expenses
 GET        /api/dashboard/category-trends
 GET        /api/dashboard/category-breakdown   ?month, months, year, type
                                                (type = expense | income; default expense)
-GET        /api/dashboard/daily-totals          (unused since the calendar went)
+GET        /api/dashboard/heatmap          ?year
 
 GET        /api/reports/annual
 
