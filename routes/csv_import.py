@@ -473,6 +473,84 @@ def upload_csv():
         conn.close()
 
 
+@bp.route("/api/import/batches", methods=["GET"])
+def list_import_batches():
+    """Past imports, newest first — what came in, when, and from which file.
+
+    ``import_batches`` was written to by three code paths and read by none, so
+    an abandoned review vanished with nowhere to resume from and a finished one
+    left no record of what it had brought in. This is that reader.
+
+    A pending batch reports its staged rows; a completed one reports the
+    transactions it created. An import from before ``import_batch_id`` existed
+    reports nothing to undo, because there is no honest way to tell which rows
+    were its.
+    """
+    uid = current_user_id()
+    with db_conn() as conn:
+        rows = conn.execute("""
+            SELECT b.id, b.filename, b.imported_at, b.status,
+                   (SELECT COUNT(*) FROM import_staging s
+                     WHERE s.import_batch_id = b.id AND s.user_id = b.user_id) AS staged,
+                   (SELECT COUNT(*) FROM transactions t
+                     WHERE t.import_batch_id = b.id AND t.user_id = b.user_id) AS imported,
+                   (SELECT COALESCE(SUM(t.amount), 0) FROM transactions t
+                     WHERE t.import_batch_id = b.id AND t.user_id = b.user_id
+                       AND t.type = 'expense') AS sum_expense,
+                   (SELECT COALESCE(SUM(t.amount), 0) FROM transactions t
+                     WHERE t.import_batch_id = b.id AND t.user_id = b.user_id
+                       AND t.type = 'income') AS sum_income
+            FROM import_batches b
+            WHERE b.user_id = %s
+            ORDER BY b.imported_at DESC, b.id DESC
+            LIMIT 50
+        """, (uid,)).fetchall()
+    return jsonify([dict(r) for r in rows])
+
+
+@bp.route("/api/import/batch/<int:batch_id>/undo", methods=["POST"])
+def undo_import_batch(batch_id):
+    """Delete the transactions one confirmed import created.
+
+    An import writes hundreds of rows at once and the app has no other bulk
+    undo, so taking one back a row at a time is not a real option. The batch
+    record survives, marked ``undone``, because the history should say what
+    happened rather than pretend the import never did.
+    """
+    uid = current_user_id()
+    with db_conn() as conn:
+        batch = conn.execute(
+            "SELECT status FROM import_batches WHERE id = %s AND user_id = %s",
+            (batch_id, uid),
+        ).fetchone()
+        if not batch:
+            return jsonify({"error": "No such import"}), 404
+        if batch["status"] != "completed":
+            return jsonify({"error": "That import was never confirmed"}), 409
+
+        n = conn.execute(
+            "SELECT COUNT(*) AS n FROM transactions "
+            "WHERE import_batch_id = %s AND user_id = %s",
+            (batch_id, uid),
+        ).fetchone()["n"]
+        if not n:
+            # Imported before the batch link existed. Say so rather than
+            # reporting a successful undo that removed nothing.
+            return jsonify({"error": "This import is too old to undo — its "
+                                     "transactions aren't linked to it"}), 409
+
+        conn.execute(
+            "DELETE FROM transactions WHERE import_batch_id = %s AND user_id = %s",
+            (batch_id, uid),
+        )
+        conn.execute(
+            "UPDATE import_batches SET status = 'undone' WHERE id = %s AND user_id = %s",
+            (batch_id, uid),
+        )
+    bump_data_version()
+    return jsonify({"status": "undone", "removed": n})
+
+
 @bp.route("/api/import/batch/<int:batch_id>", methods=["DELETE"])
 def discard_import_batch(batch_id):
     """Throw away an unconfirmed batch and its staged rows.
@@ -666,14 +744,16 @@ def delete_import_format(format_id):
 
 @bp.route("/api/import/staging/<int:batch_id>")
 def get_staging(batch_id):
+    """The staged rows of one batch, shaped exactly like an upload's response.
+
+    This used to hand back a bare array while the upload path returned
+    {batch_id, count, items} — two shapes for the same thing, which went
+    unnoticed because nothing read this endpoint. Resuming an unfinished review
+    feeds it straight into the review table, so the shapes have to agree.
+    """
     uid = current_user_id()
     with db_conn() as conn:
-        rows = conn.execute(
-            "SELECT * FROM import_staging "
-            "WHERE import_batch_id = %s AND user_id = %s ORDER BY date",
-            (batch_id, uid),
-        ).fetchall()
-    return jsonify([dict(r) for r in rows])
+        return _staging_response(conn, uid, batch_id)
 
 
 @bp.route("/api/import/confirm", methods=["POST"])
@@ -688,6 +768,10 @@ def confirm_imports():
     items = data.get("items")
     if not isinstance(items, list):
         return jsonify({"error": "Missing or invalid 'items' list"}), 400
+
+    # Read up front: every row written below is stamped with it, which is what
+    # makes an import undoable as one thing.
+    batch_id = data.get("batch_id")
 
     try:
         with db_conn() as conn:
@@ -722,10 +806,11 @@ def confirm_imports():
                     raise ValueError("Invalid category for import item")
 
                 conn.execute("""
-                    INSERT INTO transactions (user_id, date, store, category_id, amount, type)
-                    VALUES (%s, %s, %s, %s, %s, %s)
+                    INSERT INTO transactions
+                        (user_id, date, store, category_id, amount, type, import_batch_id)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s)
                 """, (uid, date, store, item["category_id"], amount,
-                      item.get("type", "expense")))
+                      item.get("type") or staging["type"] or "expense", batch_id))
 
                 if staging_id not in confirmed_staging_ids:
                     conn.execute("""
@@ -734,7 +819,6 @@ def confirm_imports():
                     """, (item["category_id"], staging_id, uid))
                     confirmed_staging_ids.add(staging_id)
 
-            batch_id = data.get("batch_id")
             if batch_id:
                 conn.execute(
                     "UPDATE import_batches SET status = 'completed' "

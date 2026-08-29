@@ -122,7 +122,7 @@ document.querySelectorAll(".nav-item[data-page]").forEach(btn => {
             case "subscriptions": loadRecurring(); break;
             case "reports": loadReport(); break;
             case "networth": loadNetWorth(); break;
-            case "import": loadBankStatus(); break;
+            case "import": loadBankStatus(); loadImportHistory(); break;
             case "settings": break;
         }
 
@@ -1104,6 +1104,8 @@ function enterReview(data) {
     stagingItems = data.items;
     stagingHalved = false;
     syncHalveButton();
+    const history = document.getElementById("import-history");
+    if (history) history.style.display = "none";
     renderStaging();
     document.getElementById("import-upload").style.display = "none";
     const bankCard = document.getElementById("import-bank");
@@ -1934,6 +1936,82 @@ function syncHalveButton() {
     btn.textContent = stagingHalved ? "÷2 Halved — undo" : "÷2 Split costs";
 }
 
+// ── Import history ──────────────────────────────────────────────────
+// import_batches was written by three code paths and read by none: an
+// abandoned review disappeared with nowhere to resume from, and a finished one
+// left no record of what it brought in. This is the reader.
+async function loadImportHistory() {
+    const card = document.getElementById("import-history");
+    const list = document.getElementById("import-history-list");
+    if (!card || !list) return;
+    let batches;
+    try {
+        batches = await api("/api/import/batches");
+    } catch (e) {
+        card.style.display = "none";
+        return;
+    }
+    if (!batches.length) { card.style.display = "none"; return; }
+    card.style.display = "block";
+    list.innerHTML = batches.map(renderImportHistoryRow).join("");
+}
+
+function renderImportHistoryRow(b) {
+    const when = b.imported_at ? fmtDate(b.imported_at.slice(0, 10)) : "";
+    let state, action = "", note;
+    if (b.status === "pending") {
+        state = `<span class="recurring-badge recurring-due">Unfinished</span>`;
+        note  = `${b.staged} row${b.staged === 1 ? "" : "s"} waiting`;
+        action = `<button class="import-link-btn" onclick="resumeImport(${b.id})">Resume</button>
+                  <button class="import-link-btn danger" onclick="discardBatch(${b.id})">Discard</button>`;
+    } else if (b.status === "undone") {
+        state = `<span class="recurring-badge recurring-stopped">Undone</span>`;
+        note  = "its transactions were removed";
+    } else {
+        state = `<span class="recurring-badge recurring-active">Imported</span>`;
+        note  = b.imported
+            ? `${b.imported} transaction${b.imported === 1 ? "" : "s"} · −${fmt(b.sum_expense)} / +${fmt(b.sum_income)}`
+            : "too old to undo — not linked to its transactions";
+        // Only offer to take back an import we can actually identify.
+        if (b.imported) {
+            action = `<button class="import-link-btn danger" onclick="undoImport(${b.id}, ${b.imported})">Undo</button>`;
+        }
+    }
+    return `<div class="import-history-row">
+        <span class="ih-file" title="${escapeHtml(b.filename)}">${escapeHtml(b.filename)}</span>
+        <span class="ih-when">${when}</span>
+        <span class="ih-state">${state}</span>
+        <span class="ih-note">${note}</span>
+        <span class="ih-actions">${action}</span>
+    </div>`;
+}
+
+// Pick an unfinished review back up where it was left.
+async function resumeImport(batchId) {
+    const data = await api(`/api/import/staging/${batchId}`);
+    if (!data.items || !data.items.length) {
+        toast("Nothing left to review in that import");
+        loadImportHistory();
+        return;
+    }
+    stagingMeta.filename = "Unfinished import";
+    enterReview(data);
+}
+
+async function discardBatch(batchId) {
+    if (!confirm("Discard this unfinished import? The staged rows are thrown away.")) return;
+    await api(`/api/import/batch/${batchId}`, { method: "DELETE" });
+    toast("Unfinished import discarded");
+    loadImportHistory();
+}
+
+async function undoImport(batchId, count) {
+    if (!confirm(`Remove the ${count} transaction${count === 1 ? "" : "s"} this import added? This cannot be undone.`)) return;
+    const res = await api(`/api/import/batch/${batchId}/undo`, { method: "POST" });
+    toast(`${res.removed} transaction${res.removed === 1 ? "" : "s"} removed`);
+    loadImportHistory();
+}
+
 // Cancel means cancel. Without this the batch and its staged rows outlived the
 // screen that made them: nothing reads them back, nothing cleans them up, and
 // they pile up unseen. confirmAllImports() deliberately does NOT come through
@@ -1962,6 +2040,9 @@ function cancelImport() {
     csvInput.value = "";
     // Restore the bank card (enterReview hid it) to its state-driven view.
     loadBankStatus();
+    // Leaving a review always changes the history: a batch was just confirmed,
+    // discarded, or left unfinished.
+    loadImportHistory();
 }
 
 async function removeStagingItem(id) {
