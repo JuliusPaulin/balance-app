@@ -153,10 +153,30 @@ Supports three CSV formats:
   and the real merchant sits in `Nimi`. The override also rejects strings over
   50 chars, IBANs, reference numbers and card receipt lines (`EUR   10,76 CORK`).
 - Date parsing: explicit regex for `YYYY/MM/DD`, `YYYY-MM-DD`, `DD.M.YYYY` before dateutil fallback — avoids dayfirst ambiguity
-- Category auto-suggested via merchant rules then historical fallback; defaults to "Other" when unknown
+- Category auto-suggested via merchant rules, then a historical fallback;
+  defaults to "Other" when unknown. **Both halves use the same 70% bar.** The
+  fallback used to take a bare plurality, so a store the rule generator had
+  refused a rule for (too ambiguous) still drew a confident-looking suggestion:
+  a 2-of-4 history put an electronics purchase under "Dog". Below the bar it
+  now suggests nothing and the row says "needs review", which is the truth.
 - Staged in `import_staging` for user review before committing
-- Review table: all fields (date, store, amount, category, type) are editable inline before confirming
-- **÷2 Split costs** button halves all amounts in one click (shared expense use case)
+- Review table: all fields (date, store, amount, category, type) are editable
+  inline before confirming. The amount box is `type="text"` on purpose —
+  `type="number"` swallowed a comma before any of our code saw it, and a comma
+  is what a Finnish hand types into an app that prints "16,05" and imports
+  CSVs written "-25,00". `parseAmountInput()` takes either separator and says
+  so when it cannot, the way the date box always has.
+- **÷2 Split costs** halves the **expense** rows — your share of a statement
+  you split with someone. It used to halve the salary too, and compound on a
+  second click with nothing on screen to say the first had landed. It is a
+  toggle now, and undo restores the exact amounts rather than doubling a
+  rounded half.
+- **Cancel discards the batch** (`DELETE /api/import/batch/<id>`). Abandoning a
+  review used to leave the batch and its staged rows in the database for good —
+  nothing reads them back and nothing swept them up, so they piled up unseen.
+  A *confirmed* batch is the record of what was imported and is refused (409);
+  only a pending one can be discarded. Quitting mid-review still strands a
+  batch: `import_batches` has no reader, so there is nowhere to resume from.
 - Bulk category assignment, per-row delete, transaction split
 
 ### Open Banking Import (Enable Banking)
@@ -362,6 +382,7 @@ POST       /api/import/upload
 GET        /api/import/staging/<batch_id>
 POST       /api/import/confirm
 DELETE     /api/import/staging/<item_id>
+DELETE     /api/import/batch/<batch_id>            discard a pending review
 
 GET        /api/import/bank/status                 connection state + cached accounts
 GET        /api/import/bank/connect                302 → bank consent (mints CSRF state)
