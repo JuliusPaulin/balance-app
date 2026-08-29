@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Expense Tracker — Redesign Mockups</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: radial-gradient(1200px 800px at 70% -10%, #1b2233 0%, #0b0e14 55%) fixed;
+    color: #e6e9ef; min-height: 100vh; padding: 64px 24px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; }
+  .sub { color: #8b94a7; margin-top: 10px; font-size: 15px; line-height: 1.6; max-width: 680px; }
+  .grid { margin-top: 44px; display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 18px; }
+  a.card {
+    text-decoration: none; color: inherit; border-radius: 18px; padding: 24px;
+    border: 1px solid rgba(255,255,255,0.09); background: rgba(255,255,255,0.03);
+    transition: transform .18s ease, border-color .18s ease, background .18s ease; display: block;
+  }
+  a.card:hover { transform: translateY(-4px); border-color: rgba(0,229,153,0.5); background: rgba(255,255,255,0.05); }
+  .tag { font-size: 12px; font-weight: 600; letter-spacing: .08em; color: #00e599; text-transform: uppercase; }
+  .name { font-size: 20px; font-weight: 650; margin: 10px 0 8px; letter-spacing: -0.01em; }
+  .desc { font-size: 13.5px; color: #97a0b3; line-height: 1.55; }
+  .swatches { display: flex; gap: 6px; margin-top: 16px; }
+  .swatches span { width: 26px; height: 26px; border-radius: 7px; border: 1px solid rgba(255,255,255,0.12); }
+  .effort { margin-top: 14px; font-size: 12px; color: #6f7889; }
+  .effort b { color: #c6cdda; }
+  footer { margin-top: 48px; color: #6f7889; font-size: 13px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Expense Tracker — 5 redesign directions</h1>
+  <p class="sub">Click any card to open a full dashboard mockup with the same sample data, so you can compare them like-for-like. Each one is a clickable, self-contained preview — nothing is wired to your real database. Pick the one you like and I'll build it for real.</p>
+
+  <div class="grid">
+    <a class="card" href="ui-01-dark-fintech.html">
+      <div class="tag">UI-01</div>
+      <div class="name">Dark Fintech</div>
+      <div class="desc">Near-black canvas, one electric-green accent, hairline borders instead of shadows. The premium-finance idiom (Copilot / Revolut).</div>
+      <div class="swatches"><span style="background:#0b0e14"></span><span style="background:#151a23"></span><span style="background:#00e599"></span><span style="background:#ff5c72"></span></div>
+      <div class="effort">Effort: <b>Medium</b> · pure CSS re-skin</div>
+    </a>
+
+    <a class="card" href="ui-02-bento-grid.html">
+      <div class="tag">UI-02</div>
+      <div class="name">Bento-grid</div>
+      <div class="desc">Dashboard as asymmetric tiles — size encodes importance. Built for dense multi-widget home screens. Shown light.</div>
+      <div class="swatches"><span style="background:#f4f4f2"></span><span style="background:#ffffff"></span><span style="background:#111111"></span><span style="background:#ff6b35"></span></div>
+      <div class="effort">Effort: <b>Low–Medium</b> · CSS Grid relayout</div>
+    </a>
+
+    <a class="card" href="ui-03-editorial-swiss.html">
+      <div class="tag">UI-03</div>
+      <div class="name">Editorial / Swiss</div>
+      <div class="desc">Warm paper canvas, serif balance numerals, hairlines and whitespace. Reads like a premium printed statement.</div>
+      <div class="swatches"><span style="background:#f3efe7"></span><span style="background:#fbf9f4"></span><span style="background:#1a1a1a"></span><span style="background:#b4341f"></span></div>
+      <div class="effort">Effort: <b>Medium</b> · type system + grid</div>
+    </a>
+
+    <a class="card" href="ui-04-terminal-dense.html">
+      <div class="tag">UI-04</div>
+      <div class="name">Terminal / Bloomberg</div>
+      <div class="desc">Max density, monospace numbers, inline sparklines, command palette. Power-user tool for the expert single user.</div>
+      <div class="swatches"><span style="background:#0a0f0a"></span><span style="background:#121a12"></span><span style="background:#39ff7a"></span><span style="background:#ffb000"></span></div>
+      <div class="effort">Effort: <b>Med–High</b> · more JS</div>
+    </a>
+
+    <a class="card" href="ui-05-linear-glass.html">
+      <div class="tag">UI-05</div>
+      <div class="name">Linear-style glass</div>
+      <div class="desc">Dark + multi-stop gradients, glassmorphism, micro-motion. The most "2025–26 cool" option, great for screenshots.</div>
+      <div class="swatches"><span style="background:#0c0d12"></span><span style="background:#5b6cff"></span><span style="background:#b06bff"></span><span style="background:#27e0c4"></span></div>
+      <div class="effort">Effort: <b>Med–High</b> · gradients + blur</div>
+    </a>
+  </div>
+
+  <footer>
+    Same sample data in every mockup: net worth €142 300 (▲ +2.1%), May spend €2 340, income €4 100.<br>
+    These are throwaway previews for choosing a direction — the real build reuses your existing Flask routes &amp; Chart.js.
+  </footer>
+</div>
+</body>
+</html>

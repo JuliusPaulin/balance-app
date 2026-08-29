@@ -1,0 +1,186 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI-01 Light Fintech — Expense Tracker</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#f6f7f9; --surface:#ffffff; --surface-2:#f0f2f5; --line:#e6e9ee; --line-strong:#dce0e7;
+    --text:#0d1320; --muted:#5e6678; --faint:#9aa1b1;
+    --accent:#00a06b; --accent-strong:#008f5f; --accent-dim:rgba(0,160,107,.12); --red:#e0445b; --red-dim:rgba(224,68,91,.10);
+    --r:16px; --shadow:0 1px 2px rgba(16,24,40,.04),0 6px 18px rgba(16,24,40,.05);
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;background:var(--bg);color:var(--text);display:flex;min-height:100vh;font-size:14px}
+  .num{font-variant-numeric:tabular-nums;letter-spacing:-0.01em}
+  /* switcher */
+  .switcher{position:fixed;top:12px;right:12px;z-index:50;display:flex;gap:6px;background:rgba(255,255,255,.85);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:999px;padding:5px;box-shadow:var(--shadow)}
+  .switcher a{font-size:11px;font-weight:600;color:var(--muted);text-decoration:none;padding:5px 10px;border-radius:999px}
+  .switcher a.on{background:var(--accent);color:#fff}
+  .switcher a:hover{color:var(--text)}
+  /* sidebar */
+  .sidebar{width:230px;flex-shrink:0;background:var(--surface);border-right:1px solid var(--line);padding:22px 14px;display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh}
+  .brand{display:flex;align-items:center;gap:10px;padding:6px 10px 22px}
+  .brand .dot{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--accent),#00c886);box-shadow:0 4px 12px var(--accent-dim)}
+  .brand b{font-size:15px;font-weight:650;letter-spacing:-0.01em}
+  .nav{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:11px;color:var(--muted);font-weight:550;cursor:pointer;font-size:13.5px}
+  .nav .ic{width:17px;text-align:center;opacity:.85}
+  .nav:hover{background:var(--surface-2);color:var(--text)}
+  .nav.active{background:var(--accent-dim);color:var(--accent-strong)}
+  .nav-sep{flex:1}
+  /* main */
+  .main{flex:1;padding:30px 34px 60px;max-width:1160px}
+  .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:26px}
+  .head h1{font-size:26px;font-weight:700;letter-spacing:-0.02em}
+  .seg{display:flex;background:var(--surface);border:1px solid var(--line-strong);border-radius:11px;padding:3px;box-shadow:var(--shadow)}
+  .seg button{background:none;border:0;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 12px;border-radius:8px;cursor:pointer;font-family:inherit}
+  .seg button.on{background:var(--accent);color:#fff}
+  /* kpi row */
+  .kpis{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:14px;margin-bottom:18px}
+  .card{background:var(--surface);border:1px solid var(--line);border-radius:var(--r);padding:18px 20px;box-shadow:var(--shadow)}
+  .kpi .label{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+  .kpi .val{font-size:30px;font-weight:700;margin-top:8px}
+  .kpi .val.big{font-size:34px}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:650;padding:3px 9px;border-radius:999px;margin-top:10px}
+  .chip.up{background:var(--accent-dim);color:var(--accent-strong)}
+  .chip.down{background:var(--red-dim);color:var(--red)}
+  .pos{color:var(--accent-strong)} .neg{color:var(--red)}
+  /* layout grid */
+  .grid{display:grid;grid-template-columns:1.6fr 1fr;gap:14px}
+  .card-title{font-size:14px;font-weight:650;margin-bottom:2px}
+  .card-sub{font-size:12px;color:var(--faint);margin-bottom:14px}
+  .chart-box{height:230px;position:relative}
+  /* category list */
+  .catrow{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}
+  .catrow:last-child{border-bottom:0}
+  .catrow .nm{width:108px;font-weight:550;color:#39404f;font-size:13px}
+  .bar{flex:1;height:7px;border-radius:99px;background:var(--surface-2);overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,#00c886,var(--accent))}
+  .catrow .amt{width:64px;text-align:right;font-weight:600;font-size:13px}
+  /* subs */
+  .sub-item{display:flex;align-items:center;gap:11px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .sub-item:last-child{border-bottom:0}
+  .sub-ico{width:30px;height:30px;border-radius:9px;background:var(--surface-2);display:flex;align-items:center;justify-content:center;font-size:14px}
+  .sub-item .nm{flex:1;font-weight:550}
+  .sub-item .cad{font-size:11px;color:var(--faint)}
+  /* table */
+  table{width:100%;border-collapse:collapse;margin-top:4px}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}
+  td{padding:11px 10px;border-bottom:1px solid var(--line);font-size:13.5px}
+  tr:last-child td{border-bottom:0}
+  .tag{display:inline-block;font-size:11px;font-weight:600;color:var(--muted);background:var(--surface-2);padding:3px 9px;border-radius:7px}
+  td.amt{text-align:right;font-weight:600}
+  .mb{margin-bottom:14px}
+</style>
+</head>
+<body>
+<nav class="switcher">
+  <a href="index.html">All</a>
+  <a href="ui-01-dark-fintech.html">01·Dark</a>
+  <a class="on" href="ui-01-light-fintech.html">01·Light</a>
+  <a href="ui-02-bento-grid.html">02</a>
+  <a href="ui-03-editorial-swiss.html">03</a>
+  <a href="ui-04-terminal-dense.html">04</a>
+  <a href="ui-05-linear-glass.html">05</a>
+</nav>
+
+<aside class="sidebar">
+  <div class="brand"><div class="dot"></div><b>Expense Tracker</b></div>
+  <div class="nav active"><span class="ic">◧</span> Dashboard</div>
+  <div class="nav"><span class="ic">⇄</span> Transactions</div>
+  <div class="nav"><span class="ic">⬇</span> Import</div>
+  <div class="nav"><span class="ic">⊞</span> Categories</div>
+  <div class="nav"><span class="ic">📈</span> Trends</div>
+  <div class="nav"><span class="ic">▤</span> Reports</div>
+  <div class="nav"><span class="ic">◆</span> Net Worth</div>
+  <div class="nav-sep"></div>
+  <div class="nav"><span class="ic">⚙</span> Settings</div>
+  <div class="nav"><span class="ic">☁</span> Sync iCloud</div>
+</aside>
+
+<main class="main">
+  <div class="head">
+    <h1>Dashboard</h1>
+    <div class="seg">
+      <button>6M</button><button class="on">YTD</button><button>1Y</button><button>2Y</button><button>All</button>
+    </div>
+  </div>
+
+  <div class="kpis">
+    <div class="card kpi">
+      <div class="label">Net Worth</div>
+      <div class="val big num">€142 300</div>
+      <span class="chip up">▲ +2.1% this month</span>
+    </div>
+    <div class="card kpi">
+      <div class="label">Spent · May</div>
+      <div class="val num neg">€2 340</div>
+      <span class="chip down">▲ +6% vs Apr</span>
+    </div>
+    <div class="card kpi">
+      <div class="label">Income · May</div>
+      <div class="val num pos">€4 100</div>
+      <span class="chip up">on track</span>
+    </div>
+    <div class="card kpi">
+      <div class="label">Saved · May</div>
+      <div class="val num">€1 760</div>
+      <span class="chip up">43% rate</span>
+    </div>
+  </div>
+
+  <div class="grid mb">
+    <div class="card">
+      <div class="card-title">Net worth</div>
+      <div class="card-sub">Last 8 months · carry-forward</div>
+      <div class="chart-box"><canvas id="nw"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Expenses by category</div>
+      <div class="card-sub">May 2026</div>
+      <div id="cats"></div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-title">Recent transactions</div>
+      <div class="card-sub">6 most recent</div>
+      <table>
+        <thead><tr><th>Date</th><th>Store</th><th>Category</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody id="tx"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-title">Recurring &amp; subscriptions</div>
+      <div class="card-sub">€116 / month detected</div>
+      <div id="subs"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+const fmt = n => (n<0?'-':'') + '€' + Math.abs(n).toLocaleString('fi-FI');
+const cats=[['Rent',980],['Groceries',420],['Restaurant',210],['Gas',140],['Going out',130],['Utilities',95],['Exercise',60],['Telecom',39]];
+const max=Math.max(...cats.map(c=>c[1]));
+document.getElementById('cats').innerHTML=cats.map(([n,v])=>
+  `<div class="catrow"><span class="nm">${n}</span><span class="bar"><i style="width:${v/max*100}%"></i></span><span class="amt num">${fmt(v)}</span></div>`).join('');
+const tx=[['05-30','K-Market','Groceries',-42],['05-29','Neste','Gas',-68],['05-28','Spotify','Telecom',-12],['05-27','Salary','Job',4100],['05-26','Trattoria','Restaurant',-54],['05-25','Clas Ohlson','Home',-29]];
+document.getElementById('tx').innerHTML=tx.map(([d,s,c,a])=>
+  `<tr><td class="num" style="color:var(--muted)">${d}</td><td>${s}</td><td><span class="tag">${c}</span></td><td class="amt num ${a<0?'neg':'pos'}">${fmt(a)}</td></tr>`).join('');
+const subs=[['Elisa','Telecom · monthly','📱',39],['Gym','Exercise · monthly','🏋',49],['Netflix','Entertainment · monthly','🎬',14],['Spotify','Telecom · monthly','🎧',12],['iCloud','Utilities · monthly','☁',3]];
+document.getElementById('subs').innerHTML=subs.map(([n,c,i,a])=>
+  `<div class="sub-item"><span class="sub-ico">${i}</span><span class="nm">${n}<div class="cad">${c}</div></span><span class="amt num">${fmt(a)}</span></div>`).join('');
+
+Chart.defaults.color='#5e6678'; Chart.defaults.font.family="-apple-system,Inter,sans-serif";
+const ctx=document.getElementById('nw');
+const g=ctx.getContext('2d').createLinearGradient(0,0,0,230);
+g.addColorStop(0,'rgba(0,160,107,.22)'); g.addColorStop(1,'rgba(0,160,107,0)');
+new Chart(ctx,{type:'line',data:{labels:['Oct','Nov','Dec','Jan','Feb','Mar','Apr','May'],
+  datasets:[{data:[128,130,131,134,136,138,139,142.3],borderColor:'#00a06b',backgroundColor:g,fill:true,tension:.4,borderWidth:2.5,pointRadius:0,pointHoverRadius:5,pointHoverBackgroundColor:'#00a06b'}]},
+  options:{plugins:{legend:{display:false}},scales:{x:{grid:{display:false},border:{display:false}},y:{grid:{color:'rgba(13,19,32,.06)'},border:{display:false},ticks:{callback:v=>v+'k'}}},maintainAspectRatio:false}});
+</script>
+</body>
+</html>

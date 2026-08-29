@@ -1,0 +1,20 @@
+__pycache__/
+*.pyc
+*.db
+*.db-wal
+*.db-shm
+build/
+dist/
+*.spec
+# The desktop build recipe is hand-maintained, so it belongs in the repo.
+!Balance.spec
+.env
+*.local.env
+.DS_Store
+.claude/
+
+# Design mockups drawn with real statement rows. Never publish these.
+mockups/import-redesign/
+
+# Stray folder pytest leaves behind when DATABASE_URL is read as a path.
+postgresql:/

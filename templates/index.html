@@ -1,0 +1,812 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+    <title>Balance.</title>
+    <link rel="icon" type="image/svg+xml" href="/static/favicon.svg">
+    <link rel="apple-touch-icon" href="/static/favicon.svg">
+    <!-- Apply theme before first paint to avoid a flash of the wrong theme (FOUC) -->
+    <script>
+    (function () {
+        var pref = localStorage.getItem("theme") || "light";
+        var dark = pref === "dark" || (pref === "auto" &&
+            window.matchMedia("(prefers-color-scheme: dark)").matches);
+        document.documentElement.setAttribute("data-theme", dark ? "dark" : "light");
+    })();
+    </script>
+    <link rel="stylesheet" href="/static/css/style.css">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+</head>
+<body>
+
+<!-- Mobile top app-bar (shown ≤1024px; hidden on desktop via CSS) -->
+<header class="mobile-topbar">
+    <button class="mobile-hamburger" id="mobile-hamburger" aria-label="Open navigation menu" aria-expanded="false" onclick="toggleMobileNav()">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><line x1="3" y1="6" x2="21" y2="6"/><line x1="3" y1="12" x2="21" y2="12"/><line x1="3" y1="18" x2="21" y2="18"/></svg>
+    </button>
+    <div class="mobile-topbar-logo">Balance<span>.</span></div>
+</header>
+
+<!-- Global loading overlay — shown while any request is in flight (see app.js) -->
+<div class="loading-overlay" aria-hidden="true">
+    <div class="spinner-ring"></div>
+    <div class="loading-overlay-label">Loading…</div>
+</div>
+
+<!-- Backdrop behind the slide-in drawer (shown only when body.nav-open) -->
+<div class="nav-backdrop" id="nav-backdrop" onclick="closeMobileNav()"></div>
+
+<!-- Sidebar -->
+<aside class="sidebar">
+    <div class="sidebar-logo">Balance<span>.</span></div>
+    <nav class="sidebar-nav">
+        <button class="nav-item active" data-page="dashboard">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>
+            Dashboard
+        </button>
+        <button class="nav-item" data-page="transactions">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/><path d="M9 14l2 2 4-4"/></svg>
+            Transactions
+        </button>
+        <button class="nav-item" data-page="import">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 4v12m0 0l-4-4m4 4l4-4"/></svg>
+            Import
+        </button>
+        <button class="nav-item" data-page="categories">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 7h.01M7 3h5a1.99 1.99 0 011.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.99 1.99 0 013 12V7a4 4 0 014-4z"/></svg>
+            Categories
+        </button>
+        <button class="nav-item" data-page="trends">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            Trends
+        </button>
+        <button class="nav-item" data-page="subscriptions">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>
+            Subscriptions
+        </button>
+        <button class="nav-item" data-page="reports">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>
+            Reports
+        </button>
+        <button class="nav-item" data-page="networth">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
+            Net Worth
+        </button>
+        <button class="nav-item" data-page="settings">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
+            Settings
+        </button>
+    </nav>
+    <div style="padding:8px 12px;border-top:0.5px solid var(--separator)">
+        <button class="nav-item" id="theme-quick-toggle" onclick="toggleTheme()" title="Switch between light and dark mode">
+            <svg id="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="display:none"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
+            <svg id="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
+            <span id="theme-quick-label">Dark mode</span>
+        </button>
+        <button class="nav-item desktop-only" onclick="quitApp()" style="color:var(--red)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>
+            Quit
+        </button>
+    </div>
+</aside>
+
+<!-- Main Content -->
+<main class="main">
+
+    <!-- Dashboard Page -->
+    <div class="page active" id="page-dashboard">
+        <div class="page-header">
+            <h1 class="page-title">Dashboard</h1>
+            <div style="display:flex;align-items:center;gap:8px">
+                <div class="btn-group">
+                    <button class="btn btn-secondary btn-sm horizon-btn" data-horizon="6" onclick="setHorizon('6')">6M</button>
+                    <button class="btn btn-secondary btn-sm horizon-btn active" data-horizon="ytd" onclick="setHorizon('ytd')">YTD</button>
+                    <button class="btn btn-secondary btn-sm horizon-btn" data-horizon="12" onclick="setHorizon('12')">1Y</button>
+                    <button class="btn btn-secondary btn-sm horizon-btn" data-horizon="24" onclick="setHorizon('24')">2Y</button>
+                    <button class="btn btn-secondary btn-sm horizon-btn" data-horizon="0" onclick="setHorizon('0')">All</button>
+                </div>
+                <div class="period-selector" id="period-selector">
+                    <button class="btn btn-secondary btn-sm period-selector-btn" id="period-selector-btn" onclick="togglePeriodDropdown()">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+                        <span id="period-label">Pick period</span>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+                    </button>
+                    <div class="period-dropdown" id="period-dropdown" style="display:none">
+                        <div id="period-dropdown-items"></div>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="summary-row" id="summary-cards"></div>
+        <div class="dashboard-grid">
+            <div class="card full-width">
+                <div class="card-title">Monthly Overview</div>
+                <div class="chart-container" style="height:350px"><canvas id="chart-monthly"></canvas></div>
+            </div>
+            <div class="card full-width">
+                <div class="card-title">Expenses by Category</div>
+                <div id="category-bars"></div>
+            </div>
+            <div class="card full-width">
+                <div class="flex items-center" style="justify-content:space-between;margin-bottom:14px">
+                    <div class="card-title" style="margin:0">Expense Trends</div>
+                    <div class="flex items-center gap-2">
+                        <div class="trend-selector" id="trend-selector">
+                            <button class="btn btn-secondary btn-sm" onclick="toggleTrendDropdown()" id="trend-selector-btn">Top 5 categories</button>
+                            <div class="trend-dropdown" id="trend-dropdown" style="display:none">
+                                <div style="padding:8px 10px;border-bottom:0.5px solid var(--separator)">
+                                    <input class="form-input" placeholder="Search categories..." id="trend-search" oninput="filterTrendCategories()" style="padding:6px 8px;font-size:13px">
+                                </div>
+                                <div class="trend-options" id="trend-options"></div>
+                                <div style="padding:8px 10px;border-top:0.5px solid var(--separator);display:flex;gap:6px;justify-content:space-between">
+                                    <button class="btn btn-ghost btn-sm" onclick="resetTrendToTop5()">Reset to Top 5</button>
+                                    <button class="btn btn-primary btn-sm" onclick="applyTrendSelection()">Apply</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div class="chart-container"><canvas id="chart-trends"></canvas></div>
+            </div>
+
+            <!-- Spending Heatmap (full year) -->
+            <div class="card full-width">
+                <div class="flex items-center" style="justify-content:space-between;margin-bottom:14px">
+                    <div class="card-title" style="margin:0">Spending Heatmap</div>
+                    <div style="display:flex;align-items:center;gap:10px">
+                        <span id="heatmap-summary" style="font-size:12px;color:var(--text-tertiary)"></span>
+                        <select class="form-select" id="heatmap-year-select" onchange="loadHeatmap()" style="width:auto;min-width:100px;padding:4px 8px;font-size:12px"></select>
+                    </div>
+                </div>
+                <div class="heatmap-wrap">
+                    <div class="heatmap-day-labels">
+                        <span>Mon</span><span></span><span>Wed</span><span></span><span>Fri</span><span></span><span>Sun</span>
+                    </div>
+                    <div class="heatmap-scroll">
+                        <div class="heatmap-month-labels" id="heatmap-month-labels"></div>
+                        <div class="heatmap-grid" id="heatmap-grid"></div>
+                    </div>
+                </div>
+                <div class="heatmap-legend">
+                    <span>Less</span>
+                    <span class="heatmap-cell" data-level="0"></span>
+                    <span class="heatmap-cell" data-level="1"></span>
+                    <span class="heatmap-cell" data-level="2"></span>
+                    <span class="heatmap-cell" data-level="3"></span>
+                    <span class="heatmap-cell" data-level="4"></span>
+                    <span>More</span>
+                </div>
+            </div>
+
+            <!-- Cash Flow Calendar -->
+            <div class="card full-width">
+                <div class="calendar-nav">
+                    <div class="card-title" style="margin:0">Cash Flow Calendar</div>
+                    <div class="calendar-nav-center">
+                        <button class="btn btn-secondary btn-sm" onclick="calendarPrev()">&#8249;</button>
+                        <span class="calendar-month-label" id="calendar-month-label">—</span>
+                        <button class="btn btn-secondary btn-sm" onclick="calendarNext()">&#8250;</button>
+                    </div>
+                    <span class="calendar-total" id="calendar-total"></span>
+                </div>
+                <div class="calendar-grid" id="calendar-grid"></div>
+                <div class="calendar-legend">
+                    <span><span class="calendar-legend-dot" style="background:var(--heat-1)"></span>Low spend</span>
+                    <span><span class="calendar-legend-dot" style="background:var(--heat-3)"></span>High spend</span>
+                    <span><span class="calendar-legend-dot" style="background:var(--bg-secondary)"></span>No spend</span>
+                </div>
+            </div>
+
+            <div class="card full-width">
+                <div class="flex items-center" style="justify-content:space-between;margin-bottom:16px">
+                    <div class="card-title" style="margin:0">Monthly Summary</div>
+                    <button class="btn btn-secondary btn-sm" id="toggle-year-btn" onclick="toggleYearView()">Show Yearly</button>
+                </div>
+                <div class="table-container">
+                    <table id="summary-table">
+                        <thead id="summary-table-head"></thead>
+                        <tbody id="summary-table-body"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Transactions Page -->
+    <div class="page" id="page-transactions">
+        <div class="page-header">
+            <h1 class="page-title">Transactions</h1>
+            <button class="btn btn-primary" onclick="openTransactionModal()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                Add Transaction
+            </button>
+        </div>
+
+        <!-- Search Panel -->
+        <div class="card mb-4" id="search-panel">
+            <div class="search-top-row">
+                <div class="search-input-wrap">
+                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                    <input class="search-text-input" id="search-q" placeholder="Search store or category…" oninput="debounceSearch()">
+                    <button class="search-clear" id="search-clear" onclick="clearSearch()" style="display:none">
+                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                    </button>
+                </div>
+                <select class="form-select" id="filter-type" style="width:120px" onchange="loadTransactions()">
+                    <option value="">All types</option>
+                    <option value="expense">Expenses</option>
+                    <option value="income">Income</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" id="toggle-advanced-btn" onclick="toggleAdvancedSearch()">
+                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+                    Filters
+                </button>
+                <span class="search-results-count" id="search-count"></span>
+            </div>
+
+            <div id="advanced-search" style="display:none">
+                <div class="search-divider"></div>
+                <div class="search-advanced-grid">
+                    <div class="form-group" style="margin:0">
+                        <label class="form-label">From date</label>
+                        <input type="text" inputmode="numeric" placeholder="31.7.2026" title="Day.Month.Year" class="form-input" id="search-date-from" onchange="loadTransactions()">
+                    </div>
+                    <div class="form-group" style="margin:0">
+                        <label class="form-label">To date</label>
+                        <input type="text" inputmode="numeric" placeholder="31.7.2026" title="Day.Month.Year" class="form-input" id="search-date-to" onchange="loadTransactions()">
+                    </div>
+                    <div class="form-group" style="margin:0">
+                        <label class="form-label">Min amount (€)</label>
+                        <input type="number" class="form-input" id="search-amt-min" placeholder="0" min="0" step="0.01" oninput="debounceSearch()">
+                    </div>
+                    <div class="form-group" style="margin:0">
+                        <label class="form-label">Max amount (€)</label>
+                        <input type="number" class="form-input" id="search-amt-max" placeholder="Any" min="0" step="0.01" oninput="debounceSearch()">
+                    </div>
+                    <div class="form-group" style="margin:0; grid-column: span 2">
+                        <label class="form-label">Categories</label>
+                        <div class="cat-filter-wrap" id="cat-filter-wrap"></div>
+                    </div>
+                    <div class="form-group" style="margin:0">
+                        <label class="form-label">Sort by</label>
+                        <select class="form-select" id="search-sort" onchange="loadTransactions()">
+                            <option value="date">Date</option>
+                            <option value="amount">Amount</option>
+                            <option value="store">Store</option>
+                            <option value="category">Category</option>
+                        </select>
+                    </div>
+                    <div class="form-group" style="margin:0">
+                        <label class="form-label">Direction</label>
+                        <select class="form-select" id="search-dir" onchange="loadTransactions()">
+                            <option value="desc">Newest / Highest first</option>
+                            <option value="asc">Oldest / Lowest first</option>
+                        </select>
+                    </div>
+                </div>
+                <div style="margin-top:12px">
+                    <button class="btn btn-ghost btn-sm" onclick="resetSearch()">Reset all filters</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="card">
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th class="tx-th" data-col="date" onclick="sortTxCol('date')">Date<span class="sort-icon"></span></th>
+                            <th class="tx-th" data-col="store" onclick="sortTxCol('store')">Store<span class="sort-icon"></span></th>
+                            <th class="tx-th" data-col="category" onclick="sortTxCol('category')">Category<span class="sort-icon"></span></th>
+                            <th class="tx-th" data-col="amount" onclick="sortTxCol('amount')">Amount<span class="sort-icon"></span></th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="transactions-body"></tbody>
+                </table>
+            </div>
+            <div class="pagination" id="transactions-pagination"></div>
+        </div>
+    </div>
+
+    <!-- Import Page -->
+    <div class="page" id="page-import">
+        <div class="page-header">
+            <h1 class="page-title">Import</h1>
+        </div>
+        <!-- Import from bank (Enable Banking) — state-driven, hidden until status loads -->
+        <div class="card" id="import-bank" style="display:none">
+            <div class="card-title">Import from bank</div>
+            <!-- Not connected -->
+            <div id="bank-disconnected" style="display:none">
+                <p class="hint" style="margin:8px 0 14px">Connect your bank to import transactions directly — no CSV needed.</p>
+                <button class="btn btn-primary" onclick="connectBank()">Connect your bank</button>
+            </div>
+            <!-- Expired -->
+            <div id="bank-expired" style="display:none">
+                <p class="hint" style="margin:8px 0 14px">Your bank connection has expired. Reconnect to keep importing.</p>
+                <button class="btn btn-primary" onclick="connectBank()">Reconnect bank</button>
+            </div>
+            <!-- Connected -->
+            <div id="bank-connected" style="display:none">
+                <div style="display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;margin:8px 0 4px">
+                    <label class="form-label" style="margin:0">Account
+                        <select class="form-select" id="bank-account-select" style="min-width:200px;display:block;margin-top:4px"></select>
+                    </label>
+                    <label class="form-label" style="margin:0">From
+                        <input type="text" inputmode="numeric" placeholder="1.7.2026" title="Day.Month.Year" class="form-input" id="bank-date-from" style="display:block;margin-top:4px">
+                    </label>
+                    <label class="form-label" style="margin:0">To
+                        <input type="text" inputmode="numeric" placeholder="31.7.2026" title="Day.Month.Year" class="form-input" id="bank-date-to" style="display:block;margin-top:4px">
+                    </label>
+                    <button class="btn btn-primary" onclick="fetchBankTransactions()">Fetch</button>
+                </div>
+                <p style="margin:12px 0 0;font-size:12px;color:var(--text-secondary)">
+                    <span id="bank-conn-meta"></span>
+                    <a href="#" onclick="connectBank();return false" style="margin-left:8px">Reconnect</a>
+                    <a href="#" onclick="disconnectBank();return false" style="margin-left:8px">Disconnect</a>
+                </p>
+            </div>
+        </div>
+        <div class="card mt-4" id="import-upload">
+            <div class="drop-zone" id="drop-zone">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 4v12m0 0l-4-4m4 4l4-4"/></svg>
+                <p>Drop CSV file here or click to browse</p>
+                <p class="hint">Supports various CSV formats including Finnair credit card exports</p>
+                <input type="file" id="csv-input" accept=".csv" style="display:none">
+            </div>
+        </div>
+        <div class="card mt-4" id="import-review" style="display:none;padding:0;overflow:hidden">
+            <!-- Summary header: what this batch is and what confirming commits -->
+            <div class="import-summary">
+                <div class="import-file">
+                    <b id="import-file-name">Import</b>
+                    <span id="import-file-meta"></span>
+                </div>
+                <div class="import-stat"><div class="v out" id="import-sum-out">–</div><div class="l">Expenses</div></div>
+                <div class="import-stat"><div class="v in" id="import-sum-in">–</div><div class="l">Income</div></div>
+                <div class="import-stat"><div class="v" id="import-sum-review">–</div><div class="l">Categories</div></div>
+            </div>
+
+            <!-- Toolbar: selection + bulk assign + utilities -->
+            <div class="import-toolbar" id="bulk-bar">
+                <input type="checkbox" class="import-select-all" id="select-all-check" onchange="toggleSelectAll(this.checked)">
+                <span id="bulk-count">0 selected</span>
+                <select class="form-select" id="bulk-category-select" style="width:190px;padding:4px 8px;font-size:12px"></select>
+                <button class="import-link-btn" onclick="applyBulkCategory()">Apply</button>
+                <div style="flex:1"></div>
+                <button class="import-link-btn" onclick="halveAllAmounts()" title="Divide all amounts by 2 (shared expenses)">÷2 Split costs</button>
+            </div>
+
+            <!-- Day-grouped ledger -->
+            <div id="staging-groups"></div>
+
+            <div class="import-footer">
+                <span class="note" id="import-footer-note"></span>
+                <button class="btn btn-secondary btn-sm" onclick="cancelImport()">Cancel</button>
+                <button class="btn btn-primary btn-sm" onclick="confirmAllImports()" id="confirm-all-btn">Confirm all</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Categories Page -->
+    <div class="page" id="page-categories">
+        <div class="page-header">
+            <h1 class="page-title">Categories</h1>
+            <button class="btn btn-primary" onclick="openCategoryModal()">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                Add Category
+            </button>
+        </div>
+        <div style="display:grid; grid-template-columns: 1fr 1fr; gap:20px">
+            <div class="card">
+                <div class="card-title">Expense Categories</div>
+                <div id="expense-categories-list"></div>
+            </div>
+            <div class="card">
+                <div class="card-title">Income Categories</div>
+                <div id="income-categories-list"></div>
+            </div>
+        </div>
+
+        <!-- Merchant Rules -->
+        <div class="card mt-4">
+            <div class="flex items-center" style="justify-content:space-between;margin-bottom:14px">
+                <div class="card-title" style="margin:0">Merchant Rules</div>
+                <div style="display:flex;gap:8px;align-items:center">
+                    <span id="merchant-rules-count" style="font-size:var(--text-subhead);color:var(--text-tertiary)"></span>
+                    <button class="btn btn-secondary btn-sm" onclick="trainMerchantRules()" id="train-rules-btn">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 11-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+                        Rebuild rules
+                    </button>
+                    <button class="btn btn-primary btn-sm" onclick="openMerchantRuleModal()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 5v14M5 12h14"/></svg>
+                        Add Rule
+                    </button>
+                </div>
+            </div>
+            <div id="merchant-rules-dead-banner" style="display:none;align-items:center;gap:10px;padding:10px 14px;margin-bottom:12px;background:rgba(255,149,0,0.10);border:0.5px solid rgba(255,149,0,0.35);border-radius:var(--radius-sm);font-size:var(--text-subhead)">
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#FF9500" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+                <span><strong class="dead-count" style="color:#FF9500">0</strong> rule(s) have never matched any transaction.</span>
+                <button class="btn btn-secondary btn-sm" id="merchant-rules-dead-toggle" onclick="toggleDeadRulesFilter()" style="margin-left:auto">Show only dead rules</button>
+            </div>
+            <div style="display:flex;gap:8px;margin-bottom:14px;flex-wrap:wrap;align-items:center">
+                <input class="form-input" id="merchant-rules-search" placeholder="Search patterns..." oninput="filterMerchantRulesView()" style="flex:1;min-width:180px;max-width:300px">
+                <select class="form-select" id="merchant-rules-cat-filter" onchange="filterMerchantRulesView()" style="width:auto;min-width:140px">
+                    <option value="">All categories</option>
+                </select>
+                <select class="form-select" id="merchant-rules-type-filter" onchange="filterMerchantRulesView()" style="width:auto;min-width:120px">
+                    <option value="">All types</option>
+                    <option value="exact">Exact</option>
+                    <option value="contains">Contains</option>
+                    <option value="smart">Smart</option>
+                </select>
+            </div>
+            <div id="merchant-rules-list" style="max-height:500px;overflow-y:auto">
+                <div style="text-align:center;padding:24px;color:var(--text-tertiary);font-size:var(--text-subhead)">No rules yet</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Trends Page -->
+    <div class="page" id="page-trends">
+        <div class="page-header">
+            <h1 class="page-title">Trends</h1>
+            <div style="display:flex;align-items:center;gap:8px">
+                <div class="trend-selector" id="trends-cat-selector">
+                    <button class="btn btn-secondary btn-sm" id="trends-cat-btn" onclick="toggleTrendsCatDropdown()" style="min-width:180px;display:flex;justify-content:space-between;gap:8px;align-items:center">
+                        <span>Select categories…</span>
+                        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+                    </button>
+                    <div class="trend-dropdown" id="trends-cat-dropdown" style="display:none;min-width:220px">
+                        <div style="padding:8px 10px;border-bottom:0.5px solid var(--separator)">
+                            <input class="form-input" placeholder="Search categories…" id="trends-cat-search" oninput="filterTrendsCatOptions()" style="padding:6px 8px;font-size:13px">
+                        </div>
+                        <div class="trend-options" id="trends-cat-options" style="max-height:240px;overflow-y:auto"></div>
+                        <div style="padding:8px 10px;border-top:0.5px solid var(--separator);display:flex;gap:6px;justify-content:space-between">
+                            <button class="btn btn-ghost btn-sm" onclick="clearTrendsCats()">Clear all</button>
+                            <button class="btn btn-primary btn-sm" onclick="applyTrendsCats()">Apply</button>
+                        </div>
+                    </div>
+                </div>
+                <div class="btn-group">
+                    <button class="btn btn-secondary btn-sm trends-period-btn" data-period="6" onclick="setTrendsPeriod(6)">6M</button>
+                    <button class="btn btn-secondary btn-sm trends-period-btn active" data-period="12" onclick="setTrendsPeriod(12)">12M</button>
+                    <button class="btn btn-secondary btn-sm trends-period-btn" data-period="24" onclick="setTrendsPeriod(24)">2Y</button>
+                    <button class="btn btn-secondary btn-sm trends-period-btn" data-period="0" onclick="setTrendsPeriod(0)">All</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Empty state -->
+        <div id="trends-empty" style="display:flex;flex-direction:column;align-items:center;justify-content:center;padding:100px 20px;color:var(--text-tertiary)">
+            <svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1" opacity="0.4"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+            <p style="margin-top:16px;font-size:15px">Select a category to analyze its trends</p>
+        </div>
+
+        <!-- Content (hidden until category selected) -->
+        <div id="trends-content" style="display:none">
+            <div class="summary-row" id="trends-stat-cards" style="margin-bottom:20px"></div>
+
+            <div class="dashboard-grid">
+                <!-- Spending by month -->
+                <div class="card full-width">
+                    <div class="card-title">Spending by Month</div>
+                    <div class="chart-container" style="height:280px"><canvas id="chart-trends-monthly"></canvas></div>
+                </div>
+
+                <!-- MoM % change -->
+                <div class="card full-width">
+                    <div class="card-title">Month-over-Month Change</div>
+                    <div class="chart-container" style="height:260px"><canvas id="chart-trends-mom"></canvas></div>
+                </div>
+
+                <!-- Top merchants + Transaction frequency side by side -->
+                <div class="card">
+                    <div class="card-title">Top Merchants</div>
+                    <div id="trends-merchants"></div>
+                </div>
+
+                <div class="card">
+                    <div class="card-title">Transaction Frequency</div>
+                    <div class="chart-container" style="height:220px"><canvas id="chart-trends-freq"></canvas></div>
+                </div>
+
+                <!-- 12-month forecast -->
+                <div class="card full-width">
+                    <div class="flex items-center" style="justify-content:space-between;margin-bottom:4px">
+                        <div class="card-title" style="margin:0">12-Month Forecast</div>
+                        <div id="trends-forecast-summary" style="display:flex;gap:20px;font-size:13px;color:var(--text-secondary)"></div>
+                    </div>
+                    <p style="font-size:12px;color:var(--text-tertiary);margin-bottom:14px">Linear trend projection based on selected period</p>
+                    <div class="chart-container" style="height:260px"><canvas id="chart-trends-forecast"></canvas></div>
+                </div>
+
+                <!-- Top transactions table -->
+                <div class="card full-width">
+                    <div class="flex items-center" style="justify-content:space-between;margin-bottom:14px">
+                        <div class="card-title" style="margin:0">Top Transactions</div>
+                        <div class="btn-group">
+                            <button class="btn btn-secondary btn-sm trends-toptx-btn" data-period="3" onclick="setTrendsTopTxPeriod(3)">3M</button>
+                            <button class="btn btn-secondary btn-sm trends-toptx-btn" data-period="6" onclick="setTrendsTopTxPeriod(6)">6M</button>
+                            <button class="btn btn-secondary btn-sm trends-toptx-btn active" data-period="12" onclick="setTrendsTopTxPeriod(12)">12M</button>
+                            <button class="btn btn-secondary btn-sm trends-toptx-btn" data-period="24" onclick="setTrendsTopTxPeriod(24)">2Y</button>
+                            <button class="btn btn-secondary btn-sm trends-toptx-btn" data-period="0" onclick="setTrendsTopTxPeriod(0)">All</button>
+                        </div>
+                    </div>
+                    <div class="table-container">
+                        <table>
+                            <thead>
+                                <tr>
+                                    <th style="width:32px">#</th>
+                                    <th class="tx-th" id="toptx-th-date" onclick="sortTrendsTopTx('date')" style="cursor:pointer">Date<span class="sort-icon"></span></th>
+                                    <th class="tx-th" id="toptx-th-store" onclick="sortTrendsTopTx('store')" style="cursor:pointer">Store<span class="sort-icon"></span></th>
+                                    <th class="tx-th" id="toptx-th-amount" onclick="sortTrendsTopTx('amount')" style="cursor:pointer;text-align:right">Amount<span class="sort-icon"></span></th>
+                                </tr>
+                            </thead>
+                            <tbody id="trends-top-tx-body"></tbody>
+                        </table>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Subscriptions Page -->
+    <div class="page" id="page-subscriptions">
+        <div class="page-header">
+            <h1 class="page-title">Subscriptions</h1>
+            <div class="flex items-center gap-2" style="flex-wrap:wrap">
+                <div id="recurring-summary" style="display:flex;gap:20px;font-size:13px;color:var(--text-secondary);flex-wrap:wrap"></div>
+                <button class="btn btn-primary btn-sm" onclick="openAddSubscription()">+ Add subscription</button>
+            </div>
+        </div>
+        <div class="card full-width" id="recurring-card">
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Merchant</th>
+                            <th>Cadence</th>
+                            <th style="text-align:right">Per month</th>
+                            <th>Next due</th>
+                            <th>Status</th>
+                            <th></th>
+                        </tr>
+                    </thead>
+                    <tbody id="recurring-body"></tbody>
+                </table>
+            </div>
+        </div>
+    </div>
+
+    <!-- Reports Page -->
+    <div class="page" id="page-reports">
+        <div class="page-header">
+            <h1 class="page-title">Annual Report</h1>
+            <select class="form-select" id="report-year-select" onchange="loadReport()" style="width:120px">
+            </select>
+        </div>
+
+        <!-- Summary cards -->
+        <div class="summary-row" id="report-summary-cards" style="margin-bottom:16px"></div>
+
+        <div class="report-grid">
+            <!-- Monthly chart -->
+            <div class="card full-width">
+                <div class="card-title">Monthly Overview</div>
+                <div class="chart-container" style="height:280px"><canvas id="report-monthly-chart"></canvas></div>
+            </div>
+
+            <!-- YoY comparison -->
+            <div class="card">
+                <div class="card-title">Year-over-Year</div>
+                <div id="report-yoy"></div>
+            </div>
+
+            <!-- Monthly breakdown -->
+            <div class="card">
+                <div class="card-title">Best &amp; Worst Months</div>
+                <div id="report-months"></div>
+            </div>
+
+            <!-- Monthly table -->
+            <div class="card full-width">
+                <div class="card-title">Month-by-Month Breakdown</div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Month</th>
+                                <th style="text-align:right">Income</th>
+                                <th style="text-align:right">Expenses</th>
+                                <th style="text-align:right">Net</th>
+                                <th style="text-align:right">Savings Rate</th>
+                            </tr>
+                        </thead>
+                        <tbody id="report-monthly-table"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Expense categories -->
+            <div class="card">
+                <div class="card-title">Expenses by Category</div>
+                <div id="report-category-bars"></div>
+            </div>
+
+            <!-- Income categories -->
+            <div class="card">
+                <div class="card-title">Income by Category</div>
+                <div id="report-income-bars"></div>
+            </div>
+
+            <!-- Top expense transactions -->
+            <div class="card full-width">
+                <div class="card-title">Top 10 Biggest Expenses</div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Date</th>
+                                <th>Store</th>
+                                <th>Category</th>
+                                <th style="text-align:right">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody id="report-top-transactions"></tbody>
+                    </table>
+                </div>
+            </div>
+
+            <!-- Top income transactions -->
+            <div class="card full-width">
+                <div class="card-title">Top 10 Biggest Income</div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>#</th>
+                                <th>Date</th>
+                                <th>Store</th>
+                                <th>Category</th>
+                                <th style="text-align:right">Amount</th>
+                            </tr>
+                        </thead>
+                        <tbody id="report-top-income"></tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Net Worth Page -->
+    <div class="page" id="page-networth">
+        <div class="page-header">
+            <h1 class="page-title">Net Worth</h1>
+            <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+                <button class="btn btn-secondary btn-sm" id="nw-import-invest" onclick="pickInvestmentFiles()"
+                        title="Import broker/portfolio exports (Nordnet CSV, Nordea xlsx)">⤓ Import investments</button>
+                <input type="file" id="nw-invest-file" accept=".csv,.xlsx" multiple
+                       style="display:none" onchange="onInvestmentFilesPicked(this)">
+                <div class="btn-group">
+                    <button class="btn btn-secondary btn-sm nw-period-btn" data-months="6" onclick="setNetWorthPeriod(6)">6M</button>
+                    <button class="btn btn-secondary btn-sm nw-period-btn active" data-months="12" onclick="setNetWorthPeriod(12)">12M</button>
+                    <button class="btn btn-secondary btn-sm nw-period-btn" data-months="24" onclick="setNetWorthPeriod(24)">2Y</button>
+                </div>
+            </div>
+        </div>
+
+        <div class="summary-row" id="networth-cards" style="margin-bottom:20px"></div>
+
+        <div class="card full-width" style="margin-bottom:20px">
+            <div class="card-title">Net Worth Over Time</div>
+            <div class="chart-container" style="height:300px"><canvas id="chart-networth"></canvas></div>
+        </div>
+
+        <div class="card full-width">
+            <div class="flex items-center" style="justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:10px">
+                <div class="card-title" style="margin:0">Accounts</div>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <label style="font-size:12px;color:var(--text-secondary)">Balances as of</label>
+                    <input type="text" inputmode="numeric" placeholder="31.7.2026" title="Day.Month.Year" class="form-input" id="nw-asof" style="width:110px;padding:6px 8px;font-size:13px">
+                    <button class="btn btn-primary btn-sm" onclick="saveNetWorthBalances()">Save balances</button>
+                </div>
+            </div>
+            <div class="nw-hint">Fill in only what changed. Blank rows keep their
+                current balance. Sold something? Close it with ⊘ — that zeroes it from
+                today on and leaves earlier months alone.</div>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Account</th>
+                            <th>Type</th>
+                            <th style="text-align:right">Latest balance</th>
+                            <th>As of</th>
+                            <th style="text-align:center;width:70px" title="Closed accounts still count in the months before you closed them">Status</th>
+                            <th style="text-align:right" title="Leave blank to keep the current balance">New balance</th>
+                            <th style="width:76px"></th>
+                        </tr>
+                    </thead>
+                    <tbody id="networth-accounts-body"></tbody>
+                </table>
+            </div>
+            <div style="display:flex;gap:8px;margin-top:14px;align-items:center;flex-wrap:wrap">
+                <input class="form-input" id="nw-new-name" placeholder="New account name" style="max-width:220px;padding:6px 10px;font-size:13px">
+                <select class="form-input" id="nw-new-type" style="width:auto;padding:6px 10px;font-size:13px">
+                    <option value="asset">Asset</option>
+                    <option value="liability">Liability</option>
+                </select>
+                <button class="btn btn-secondary btn-sm" onclick="addNetWorthAccount()">+ Add account</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Investment import review modal -->
+    <div id="invest-overlay" class="modal-overlay" style="display:none"
+         onclick="if(event.target===this)closeInvestModal()">
+        <div class="modal invest-modal">
+            <div class="modal-title">Import investments</div>
+            <div id="invest-body" class="invest-body"></div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary btn-sm" onclick="closeInvestModal()">Cancel</button>
+                <button class="btn btn-primary btn-sm" id="invest-confirm-btn" onclick="confirmInvestmentImport()">Import</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Settings Page -->
+    <div class="page" id="page-settings">
+        <div class="page-header">
+            <h1 class="page-title">Settings</h1>
+        </div>
+        <div style="display:grid;gap:20px;max-width:640px">
+            <div class="card">
+                <div class="card-title">Appearance</div>
+                <p style="font-size:var(--text-subhead);color:var(--text-secondary);margin:0 0 16px">Choose a theme. <strong>Auto</strong> follows your system setting.</p>
+                <div class="theme-seg" id="theme-seg" role="group" aria-label="Theme">
+                    <button type="button" class="theme-seg-btn" data-theme-choice="light" onclick="setTheme('light')">Light</button>
+                    <button type="button" class="theme-seg-btn" data-theme-choice="dark" onclick="setTheme('dark')">Dark</button>
+                    <button type="button" class="theme-seg-btn" data-theme-choice="auto" onclick="setTheme('auto')">Auto</button>
+                </div>
+                <div class="settings-subhead">Category colors</div>
+                <p style="font-size:var(--text-subhead);color:var(--text-secondary);margin:0 0 12px">Color palette for the category breakdown bars and trend charts.</p>
+                <div class="palette-options" id="palette-options"></div>
+            </div>
+            <div class="card">
+                <div class="card-title">Help</div>
+                <p style="font-size:var(--text-subhead);color:var(--text-secondary);margin:0 0 16px">View the app guide to learn how everything works.</p>
+                <button class="btn btn-secondary" onclick="showGuide()">
+                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 015.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                    View App Guide
+                </button>
+            </div>
+        </div>
+    </div>
+
+
+</main>
+
+<!-- App Guide Modal -->
+<div id="guide-overlay" style="display:none;position:fixed;inset:0;background:rgba(0,0,0,0.5);z-index:1000;align-items:center;justify-content:center" onclick="if(event.target===this){this.style.display='none';localStorage.setItem('guide_seen','1');}">
+    <div style="background:var(--bg);color:var(--text-primary);border-radius:20px;width:min(640px,92vw);max-height:85vh;display:flex;flex-direction:column;box-shadow:0 24px 64px rgba(0,0,0,0.22);overflow:hidden">
+        <div id="guide-slides" style="flex:1;overflow:hidden;position:relative"></div>
+        <div style="padding:20px 28px;border-top:0.5px solid var(--separator);display:flex;align-items:center;justify-content:space-between">
+            <div id="guide-dots" style="display:flex;gap:6px"></div>
+            <div style="display:flex;gap:8px">
+                <button class="btn btn-secondary btn-sm" id="guide-prev" onclick="guideStep(-1)">Back</button>
+                <button class="btn btn-primary btn-sm" id="guide-next" onclick="guideStep(1)">Next</button>
+            </div>
+        </div>
+    </div>
+</div>
+
+<!-- Toast Container -->
+<div class="toast-container" id="toast-container"></div>
+
+<script src="/static/js/app.js"></script>
+</body>
+</html>

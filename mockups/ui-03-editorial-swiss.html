@@ -1,0 +1,150 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI-03 Editorial / Swiss — Expense Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Source+Serif+4:opsz,wght@8..60,400;8..60,600;8..60,700&family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --paper:#f3efe7; --paper-2:#fbf9f4; --ink:#1a1a1a; --muted:#6b665c; --faint:#9a948695; --line:#d8d2c4;
+    --accent:#b4341f; --green:#2f6b3e; --red:#b4341f;
+    --serif:"Source Serif 4",Georgia,serif; --sans:"Inter",-apple-system,sans-serif;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--sans);background:var(--paper);color:var(--ink);display:flex;min-height:100vh;font-size:14px}
+  .num{font-variant-numeric:tabular-nums}
+  .switcher{position:fixed;top:12px;right:12px;z-index:50;display:flex;gap:6px;background:var(--paper-2);border:1px solid var(--line);border-radius:999px;padding:5px}
+  .switcher a{font-size:11px;font-weight:600;color:var(--muted);text-decoration:none;padding:5px 10px;border-radius:999px}
+  .switcher a.on{background:var(--ink);color:var(--paper)}
+  .sidebar{width:224px;flex-shrink:0;border-right:1px solid var(--line);padding:30px 22px;position:sticky;top:0;height:100vh}
+  .brand{font-family:var(--serif);font-size:20px;font-weight:700;letter-spacing:-0.01em;padding-bottom:6px;border-bottom:2px solid var(--ink);margin-bottom:22px}
+  .brand .sub{font-family:var(--sans);font-size:10px;letter-spacing:.18em;text-transform:uppercase;color:var(--muted);font-weight:600;margin-top:4px}
+  .nav{display:block;padding:9px 0;color:var(--muted);font-weight:600;cursor:pointer;font-size:14px;border-bottom:1px solid var(--line)}
+  .nav:hover{color:var(--ink)}
+  .nav.active{color:var(--ink)}
+  .nav.active::before{content:"—  ";color:var(--accent)}
+  .main{flex:1;padding:42px 56px 64px;max-width:1080px}
+  .masthead{display:flex;align-items:flex-end;justify-content:space-between;border-bottom:3px solid var(--ink);padding-bottom:14px;margin-bottom:6px}
+  .masthead h1{font-family:var(--serif);font-size:42px;font-weight:700;letter-spacing:-0.02em;line-height:1}
+  .masthead .meta{font-size:11px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600;text-align:right;line-height:1.7}
+  .rule-thin{border:0;border-top:1px solid var(--line)}
+  /* hero numbers */
+  .hero{display:grid;grid-template-columns:repeat(4,1fr);gap:0;margin:30px 0 36px}
+  .stat{padding:0 26px;border-left:1px solid var(--line)}
+  .stat:first-child{padding-left:0;border-left:0}
+  .stat .k{font-size:10.5px;letter-spacing:.14em;text-transform:uppercase;color:var(--muted);font-weight:600}
+  .stat .v{font-family:var(--serif);font-size:38px;font-weight:600;letter-spacing:-0.02em;margin-top:8px;line-height:1}
+  .stat .d{font-size:12px;color:var(--muted);margin-top:8px;font-weight:500}
+  .pos{color:var(--green)} .neg{color:var(--red)}
+  .cols{display:grid;grid-template-columns:1.5fr 1fr;gap:46px}
+  .sec-h{font-family:var(--sans);font-size:11px;letter-spacing:.16em;text-transform:uppercase;font-weight:700;color:var(--ink);padding-bottom:8px;border-bottom:2px solid var(--ink);margin-bottom:4px}
+  .chart-box{height:220px;position:relative;margin-top:18px}
+  /* statement table */
+  table{width:100%;border-collapse:collapse}
+  td{padding:11px 0;border-bottom:1px solid var(--line);font-size:14px}
+  .stmt td:first-child{font-weight:500}
+  .stmt td:last-child{text-align:right;font-family:var(--serif);font-weight:600}
+  .lead{color:var(--faint);width:100%}
+  /* recent tx */
+  .tx td{font-size:13px;color:var(--ink)}
+  .tx .dt{color:var(--muted);width:54px}
+  .tx .ct{color:var(--muted);font-size:11px;letter-spacing:.04em;text-transform:uppercase}
+  .tx .am{text-align:right;font-family:var(--serif);font-weight:600}
+  .mt{margin-top:40px}
+</style>
+</head>
+<body>
+<nav class="switcher">
+  <a href="index.html">All</a>
+  <a href="ui-01-dark-fintech.html">01</a>
+  <a href="ui-02-bento-grid.html">02</a>
+  <a class="on" href="ui-03-editorial-swiss.html">03</a>
+  <a href="ui-04-terminal-dense.html">04</a>
+  <a href="ui-05-linear-glass.html">05</a>
+</nav>
+
+<aside class="sidebar">
+  <div class="brand">Expense Tracker<div class="sub">Personal Ledger</div></div>
+  <div class="nav active">Dashboard</div>
+  <div class="nav">Transactions</div>
+  <div class="nav">Import</div>
+  <div class="nav">Categories</div>
+  <div class="nav">Trends</div>
+  <div class="nav">Reports</div>
+  <div class="nav">Net Worth</div>
+  <div class="nav" style="border:0;margin-top:22px;color:var(--muted)">Settings</div>
+</aside>
+
+<main class="main">
+  <div class="masthead">
+    <h1>Dashboard</h1>
+    <div class="meta">May 2026<br>Year to date<br>Helsinki · EUR</div>
+  </div>
+
+  <div class="hero">
+    <div class="stat">
+      <div class="k">Net Worth</div>
+      <div class="v num">142 300 €</div>
+      <div class="d pos">▲ 2.1% this month</div>
+    </div>
+    <div class="stat">
+      <div class="k">Spent · May</div>
+      <div class="v num">2 340 €</div>
+      <div class="d">↑ 6% vs April</div>
+    </div>
+    <div class="stat">
+      <div class="k">Income · May</div>
+      <div class="v num">4 100 €</div>
+      <div class="d">On track</div>
+    </div>
+    <div class="stat">
+      <div class="k">Saved · May</div>
+      <div class="v num">1 760 €</div>
+      <div class="d">43% savings rate</div>
+    </div>
+  </div>
+
+  <div class="cols">
+    <div>
+      <div class="sec-h">Net worth — eight months</div>
+      <div class="chart-box"><canvas id="nw"></canvas></div>
+
+      <div class="mt">
+        <div class="sec-h">Recent transactions</div>
+        <table class="tx"><tbody id="tx"></tbody></table>
+      </div>
+    </div>
+
+    <div>
+      <div class="sec-h">Expenditure by category</div>
+      <table class="stmt"><tbody id="cats"></tbody></table>
+
+      <div class="mt">
+        <div class="sec-h">Recurring &amp; subscriptions</div>
+        <table class="stmt"><tbody id="subs"></tbody></table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script>
+const fmt=n=>(n<0?'−':'')+Math.abs(n).toLocaleString('fi-FI')+' €';
+const dot='·';
+function leaders(n,v){return `<tr><td>${n} <span class="lead">${'·'.repeat(40)}</span></td><td>${fmt(v)}</td></tr>`}
+const cats=[['Rent',980],['Groceries',420],['Restaurant',210],['Gas',140],['Going out',130],['Utilities',95],['Telecom',39]];
+document.getElementById('cats').innerHTML=cats.map(([n,v])=>`<tr><td>${n}</td><td>${fmt(v)}</td></tr>`).join('');
+const subs=[['Elisa',39],['Gym',49],['Netflix',14],['Spotify',12],['iCloud',3]];
+document.getElementById('subs').innerHTML=subs.map(([n,v])=>`<tr><td>${n}</td><td>${fmt(v)}</td></tr>`).join('');
+const tx=[['05-30','K-Market','Groceries',-42],['05-29','Neste','Gas',-68],['05-28','Spotify','Telecom',-12],['05-27','Salary','Job',4100],['05-26','Trattoria','Restaurant',-54],['05-25','Clas Ohlson','Home',-29]];
+document.getElementById('tx').innerHTML=tx.map(([d,s,c,a])=>`<tr><td class="dt num">${d}</td><td>${s}</td><td class="ct">${c}</td><td class="am num ${a<0?'neg':'pos'}">${fmt(a)}</td></tr>`).join('');
+
+Chart.defaults.color='#6b665c'; Chart.defaults.font.family="Inter,sans-serif";
+new Chart(document.getElementById('nw'),{type:'line',data:{labels:['Oct','Nov','Dec','Jan','Feb','Mar','Apr','May'],datasets:[{data:[128,130,131,134,136,138,139,142.3],borderColor:'#1a1a1a',backgroundColor:'rgba(0,0,0,0)',fill:false,tension:0,borderWidth:1.5,pointRadius:2.5,pointBackgroundColor:'#1a1a1a'}]},
+options:{plugins:{legend:{display:false}},scales:{x:{grid:{display:false},border:{color:'#d8d2c4'}},y:{grid:{color:'#e5e0d3'},border:{display:false},ticks:{callback:v=>v+'k'}}},maintainAspectRatio:false}});
+</script>
+</body>
+</html>

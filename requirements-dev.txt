@@ -1,0 +1,3 @@
+# Dev/test-only dependencies (not needed at runtime).
+# Tests run against the local Postgres `expense_test` database.
+pytest>=8

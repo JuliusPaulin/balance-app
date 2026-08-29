@@ -1,0 +1,190 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI-05 Linear Glass — Expense Tracker</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    color-scheme:dark;
+    --bg:#0a0b10; --text:#e9eaf2; --muted:#9498ad; --faint:#646983;
+    --glass:rgba(255,255,255,.045); --glass-2:rgba(255,255,255,.07); --line:rgba(255,255,255,.09);
+    --indigo:#5b6cff; --violet:#b06bff; --teal:#27e0c4; --red:#ff6b81;
+    --r:18px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{
+    font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;color:var(--text);
+    display:flex;min-height:100vh;font-size:14px;position:relative;overflow-x:hidden;
+    background:var(--bg);
+  }
+  /* aurora background */
+  body::before{content:"";position:fixed;inset:0;z-index:-1;
+    background:
+      radial-gradient(620px 420px at 12% 4%, rgba(91,108,255,.30), transparent 60%),
+      radial-gradient(560px 420px at 88% 0%, rgba(176,107,255,.26), transparent 60%),
+      radial-gradient(700px 520px at 70% 100%, rgba(39,224,196,.16), transparent 60%),
+      #0a0b10;}
+  .num{font-variant-numeric:tabular-nums;letter-spacing:-0.01em}
+  .switcher{position:fixed;top:12px;right:12px;z-index:50;display:flex;gap:6px;background:rgba(20,21,30,.6);backdrop-filter:blur(14px);border:1px solid var(--line);border-radius:999px;padding:5px}
+  .switcher a{font-size:11px;font-weight:600;color:var(--muted);text-decoration:none;padding:5px 10px;border-radius:999px}
+  .switcher a.on{background:linear-gradient(90deg,var(--indigo),var(--violet));color:#fff}
+  .switcher a:hover{color:var(--text)}
+  /* sidebar glass */
+  .sidebar{width:228px;flex-shrink:0;margin:14px 0 14px 14px;padding:20px 14px;border-radius:22px;
+    background:var(--glass);backdrop-filter:blur(22px);border:1px solid var(--line);
+    display:flex;flex-direction:column;gap:4px;position:sticky;top:14px;height:calc(100vh - 28px)}
+  .brand{display:flex;align-items:center;gap:11px;padding:6px 10px 22px}
+  .brand .dot{width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,var(--indigo),var(--violet));box-shadow:0 6px 20px rgba(91,108,255,.5)}
+  .brand b{font-size:15px;font-weight:650;letter-spacing:-0.01em}
+  .nav{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:11px;color:var(--muted);font-weight:550;cursor:pointer;font-size:13.5px;transition:.15s}
+  .nav .ic{width:17px;text-align:center}
+  .nav:hover{background:var(--glass-2);color:var(--text)}
+  .nav.active{background:linear-gradient(90deg,rgba(91,108,255,.28),rgba(176,107,255,.18));color:#fff;border:1px solid rgba(124,138,255,.4)}
+  .nav-sep{flex:1}
+  .main{flex:1;padding:30px 32px 56px;max-width:1160px}
+  .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:24px}
+  .head h1{font-size:27px;font-weight:750;letter-spacing:-0.02em;background:linear-gradient(90deg,#fff,#b9bdf0);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .seg{display:flex;background:var(--glass);backdrop-filter:blur(12px);border:1px solid var(--line);border-radius:12px;padding:3px}
+  .seg button{background:none;border:0;color:var(--muted);font-size:12.5px;font-weight:600;padding:6px 13px;border-radius:9px;cursor:pointer;font-family:inherit}
+  .seg button.on{background:linear-gradient(90deg,var(--indigo),var(--violet));color:#fff;box-shadow:0 4px 14px rgba(91,108,255,.4)}
+  .card{background:var(--glass);backdrop-filter:blur(22px);border:1px solid var(--line);border-radius:var(--r);padding:18px 20px;position:relative;overflow:hidden}
+  .card::after{content:"";position:absolute;top:0;left:0;right:0;height:1px;background:linear-gradient(90deg,transparent,rgba(255,255,255,.22),transparent)}
+  .kpis{display:grid;grid-template-columns:1.4fr 1fr 1fr 1fr;gap:14px;margin-bottom:16px}
+  .kpi .label{font-size:12px;color:var(--muted);font-weight:600;text-transform:uppercase;letter-spacing:.05em}
+  .kpi .val{font-size:30px;font-weight:750;margin-top:8px}
+  .kpi .val.big{font-size:34px;background:linear-gradient(90deg,#fff,#aeb4ff);-webkit-background-clip:text;background-clip:text;color:transparent}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:650;padding:4px 10px;border-radius:999px;margin-top:11px}
+  .chip.up{background:rgba(39,224,196,.16);color:var(--teal)}
+  .chip.down{background:rgba(255,107,129,.16);color:var(--red)}
+  .pos{color:var(--teal)} .neg{color:var(--red)}
+  .grid{display:grid;grid-template-columns:1.6fr 1fr;gap:14px;margin-bottom:14px}
+  .card-title{font-size:14px;font-weight:650}
+  .card-sub{font-size:12px;color:var(--faint);margin:2px 0 14px}
+  .chart-box{height:228px;position:relative}
+  .catrow{display:flex;align-items:center;gap:12px;padding:9px 0;border-bottom:1px solid var(--line)}
+  .catrow:last-child{border-bottom:0}
+  .catrow .nm{width:104px;font-weight:550;font-size:13px;color:#d3d6ea}
+  .bar{flex:1;height:7px;border-radius:99px;background:rgba(255,255,255,.07);overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:99px;background:linear-gradient(90deg,var(--indigo),var(--violet))}
+  .catrow .amt{width:62px;text-align:right;font-weight:600;font-size:13px}
+  .sub-item{display:flex;align-items:center;gap:11px;padding:10px 0;border-bottom:1px solid var(--line)}
+  .sub-item:last-child{border-bottom:0}
+  .sub-ico{width:30px;height:30px;border-radius:9px;background:var(--glass-2);display:flex;align-items:center;justify-content:center;font-size:14px}
+  .sub-item .nm{flex:1;font-weight:550}
+  .sub-item .cad{font-size:11px;color:var(--faint)}
+  table{width:100%;border-collapse:collapse}
+  th{text-align:left;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:var(--faint);font-weight:600;padding:8px 10px;border-bottom:1px solid var(--line)}
+  td{padding:11px 10px;border-bottom:1px solid var(--line);font-size:13.5px}
+  tr:last-child td{border-bottom:0}
+  .tag{display:inline-block;font-size:11px;font-weight:600;color:var(--muted);background:var(--glass-2);padding:3px 9px;border-radius:7px}
+  td.amt{text-align:right;font-weight:600}
+</style>
+</head>
+<body>
+<nav class="switcher">
+  <a href="index.html">All</a>
+  <a href="ui-01-dark-fintech.html">01</a>
+  <a href="ui-02-bento-grid.html">02</a>
+  <a href="ui-03-editorial-swiss.html">03</a>
+  <a href="ui-04-terminal-dense.html">04</a>
+  <a class="on" href="ui-05-linear-glass.html">05</a>
+</nav>
+
+<aside class="sidebar">
+  <div class="brand"><div class="dot"></div><b>Expense Tracker</b></div>
+  <div class="nav active"><span class="ic">◧</span> Dashboard</div>
+  <div class="nav"><span class="ic">⇄</span> Transactions</div>
+  <div class="nav"><span class="ic">⬇</span> Import</div>
+  <div class="nav"><span class="ic">⊞</span> Categories</div>
+  <div class="nav"><span class="ic">📈</span> Trends</div>
+  <div class="nav"><span class="ic">▤</span> Reports</div>
+  <div class="nav"><span class="ic">◆</span> Net Worth</div>
+  <div class="nav-sep"></div>
+  <div class="nav"><span class="ic">⚙</span> Settings</div>
+  <div class="nav"><span class="ic">☁</span> Sync iCloud</div>
+</aside>
+
+<main class="main">
+  <div class="head">
+    <h1>Dashboard</h1>
+    <div class="seg"><button>6M</button><button class="on">YTD</button><button>1Y</button><button>2Y</button><button>All</button></div>
+  </div>
+
+  <div class="kpis">
+    <div class="card kpi">
+      <div class="label">Net Worth</div>
+      <div class="val big num">€142 300</div>
+      <span class="chip up">▲ +2.1% this month</span>
+    </div>
+    <div class="card kpi">
+      <div class="label">Spent · May</div>
+      <div class="val num neg">€2 340</div>
+      <span class="chip down">▲ +6% vs Apr</span>
+    </div>
+    <div class="card kpi">
+      <div class="label">Income · May</div>
+      <div class="val num pos">€4 100</div>
+      <span class="chip up">on track</span>
+    </div>
+    <div class="card kpi">
+      <div class="label">Saved · May</div>
+      <div class="val num">€1 760</div>
+      <span class="chip up">43% rate</span>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-title">Net worth</div>
+      <div class="card-sub">Last 8 months · carry-forward</div>
+      <div class="chart-box"><canvas id="nw"></canvas></div>
+    </div>
+    <div class="card">
+      <div class="card-title">Expenses by category</div>
+      <div class="card-sub">May 2026</div>
+      <div id="cats"></div>
+    </div>
+  </div>
+
+  <div class="grid">
+    <div class="card">
+      <div class="card-title">Recent transactions</div>
+      <div class="card-sub">6 most recent</div>
+      <table>
+        <thead><tr><th>Date</th><th>Store</th><th>Category</th><th style="text-align:right">Amount</th></tr></thead>
+        <tbody id="tx"></tbody>
+      </table>
+    </div>
+    <div class="card">
+      <div class="card-title">Recurring &amp; subscriptions</div>
+      <div class="card-sub">€116 / month detected</div>
+      <div id="subs"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+const fmt=n=>(n<0?'-':'')+'€'+Math.abs(n).toLocaleString('fi-FI');
+const cats=[['Rent',980],['Groceries',420],['Restaurant',210],['Gas',140],['Going out',130],['Utilities',95],['Exercise',60],['Telecom',39]];
+const max=Math.max(...cats.map(c=>c[1]));
+document.getElementById('cats').innerHTML=cats.map(([n,v])=>
+  `<div class="catrow"><span class="nm">${n}</span><span class="bar"><i style="width:${v/max*100}%"></i></span><span class="amt num">${fmt(v)}</span></div>`).join('');
+const tx=[['05-30','K-Market','Groceries',-42],['05-29','Neste','Gas',-68],['05-28','Spotify','Telecom',-12],['05-27','Salary','Job',4100],['05-26','Trattoria','Restaurant',-54],['05-25','Clas Ohlson','Home',-29]];
+document.getElementById('tx').innerHTML=tx.map(([d,s,c,a])=>
+  `<tr><td class="num" style="color:var(--muted)">${d}</td><td>${s}</td><td><span class="tag">${c}</span></td><td class="amt num ${a<0?'neg':'pos'}">${fmt(a)}</td></tr>`).join('');
+const subs=[['Elisa','Telecom · monthly','📱',39],['Gym','Exercise · monthly','🏋',49],['Netflix','Entertainment · monthly','🎬',14],['Spotify','Telecom · monthly','🎧',12],['iCloud','Utilities · monthly','☁',3]];
+document.getElementById('subs').innerHTML=subs.map(([n,c,i,a])=>
+  `<div class="sub-item"><span class="sub-ico">${i}</span><span class="nm">${n}<div class="cad">${c}</div></span><span class="amt num">${fmt(a)}</span></div>`).join('');
+
+Chart.defaults.color='#9498ad'; Chart.defaults.font.family="-apple-system,Inter,sans-serif";
+const ctx=document.getElementById('nw');
+const g=ctx.getContext('2d').createLinearGradient(0,0,0,228);
+g.addColorStop(0,'rgba(124,138,255,.5)'); g.addColorStop(1,'rgba(176,107,255,0)');
+new Chart(ctx,{type:'line',data:{labels:['Oct','Nov','Dec','Jan','Feb','Mar','Apr','May'],
+  datasets:[{data:[128,130,131,134,136,138,139,142.3],borderColor:'#7c8aff',backgroundColor:g,fill:true,tension:.42,borderWidth:2.5,pointRadius:0,pointHoverRadius:5}]},
+  options:{plugins:{legend:{display:false}},scales:{x:{grid:{display:false},border:{display:false}},y:{grid:{color:'rgba(255,255,255,.06)'},border:{display:false},ticks:{callback:v=>v+'k'}}},maintainAspectRatio:false}});
+</script>
+</body>
+</html>

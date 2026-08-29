@@ -1,0 +1,153 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI-04 Terminal — Expense Tracker</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#070b07; --panel:#0d130d; --panel-2:#111811; --line:#1c2a1c;
+    --text:#c6e6c6; --muted:#5f8a5f; --faint:#3f5c3f;
+    --green:#39ff7a; --amber:#ffb000; --red:#ff4d4d; --cyan:#3fd9ff;
+    --mono:"JetBrains Mono",ui-monospace,Menlo,monospace;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:var(--mono);background:var(--bg);color:var(--text);font-size:12.5px;line-height:1.45;min-height:100vh}
+  .num{font-variant-numeric:tabular-nums}
+  .switcher{position:fixed;top:8px;right:8px;z-index:50;display:flex;gap:4px;background:#0d130d;border:1px solid var(--line);padding:4px}
+  .switcher a{font-size:10px;font-weight:700;color:var(--muted);text-decoration:none;padding:4px 8px}
+  .switcher a.on{background:var(--green);color:#031003}
+  .switcher a:hover{color:var(--text)}
+  /* top bar */
+  .topbar{display:flex;align-items:center;gap:18px;padding:7px 14px;background:#0a0f0a;border-bottom:1px solid var(--line);position:sticky;top:0;z-index:10}
+  .topbar .logo{color:var(--green);font-weight:700;letter-spacing:.04em}
+  .ticker{display:flex;gap:22px;font-size:11.5px;color:var(--muted)}
+  .ticker b{color:var(--text);font-weight:500}
+  .up{color:var(--green)} .down{color:var(--red)} .amb{color:var(--amber)}
+  .clock{margin-left:auto;color:var(--faint);font-size:11px}
+  /* nav tabs */
+  .tabs{display:flex;gap:0;background:#0a0f0a;border-bottom:1px solid var(--line);padding:0 8px}
+  .tab{padding:7px 14px;color:var(--muted);cursor:pointer;border-bottom:2px solid transparent;font-size:11.5px;letter-spacing:.03em;text-transform:uppercase}
+  .tab:hover{color:var(--text)}
+  .tab.on{color:var(--green);border-bottom-color:var(--green)}
+  /* layout: multi-pane */
+  .grid{display:grid;grid-template-columns:1.5fr 1fr;grid-template-rows:auto auto;gap:1px;background:var(--line);padding:1px}
+  .pane{background:var(--panel);padding:0}
+  .pane-h{display:flex;align-items:center;justify-content:space-between;padding:6px 11px;background:#0a0f0a;border-bottom:1px solid var(--line);font-size:10.5px;letter-spacing:.08em;text-transform:uppercase;color:var(--muted)}
+  .pane-h .r{color:var(--faint)}
+  .pane-b{padding:9px 11px}
+  .span2{grid-column:span 2}
+  /* dense table */
+  table{width:100%;border-collapse:collapse;font-size:12px}
+  th{text-align:left;color:var(--faint);font-weight:500;padding:3px 8px;border-bottom:1px solid var(--line);font-size:10.5px;text-transform:uppercase;letter-spacing:.05em}
+  td{padding:3px 8px;border-bottom:1px solid #121a12;white-space:nowrap}
+  tr:hover td{background:var(--panel-2)}
+  td.r,th.r{text-align:right}
+  .cat{color:var(--cyan);font-size:11px}
+  .spark{font-size:11px;letter-spacing:1px;color:var(--green)}
+  /* kpi strip */
+  .kstrip{display:flex;gap:1px;background:var(--line)}
+  .k{flex:1;background:var(--panel);padding:9px 12px}
+  .k .lbl{font-size:10px;color:var(--faint);text-transform:uppercase;letter-spacing:.07em}
+  .k .v{font-size:21px;font-weight:700;margin-top:3px}
+  /* category bars (ascii-ish) */
+  .crow{display:flex;align-items:center;gap:8px;padding:2.5px 0;font-size:12px}
+  .crow .n{width:92px;color:var(--text)}
+  .crow .b{flex:1;color:var(--green);letter-spacing:-1px;overflow:hidden}
+  .crow .a{width:60px;text-align:right;color:var(--text)}
+  .chart-box{height:150px;position:relative}
+  /* command palette */
+  .cmd{display:flex;align-items:center;gap:8px;padding:8px 14px;background:#0a0f0a;border-top:1px solid var(--line);color:var(--green);font-size:12px}
+  .cmd .prompt{color:var(--amber)}
+  .cmd .blink{animation:bl 1s steps(2) infinite}
+  @keyframes bl{0%,50%{opacity:1}51%,100%{opacity:0}}
+  .cmd .hint{margin-left:auto;color:var(--faint);font-size:10.5px}
+</style>
+</head>
+<body>
+<nav class="switcher">
+  <a href="index.html">ALL</a>
+  <a href="ui-01-dark-fintech.html">01</a>
+  <a href="ui-02-bento-grid.html">02</a>
+  <a href="ui-03-editorial-swiss.html">03</a>
+  <a class="on" href="ui-04-terminal-dense.html">04</a>
+  <a href="ui-05-linear-glass.html">05</a>
+</nav>
+
+<div class="topbar">
+  <span class="logo">EXPENSE//TERM</span>
+  <div class="ticker">
+    <span>NETWORTH <b class="num">142 300</b> <span class="up">▲2.1%</span></span>
+    <span>CASH <b class="num">18 400</b></span>
+    <span>SPENT.MAY <b class="num down">2 340</b> <span class="amb">↑6%</span></span>
+    <span>INCOME.MAY <b class="num up">4 100</b></span>
+    <span>SAVED <b class="num">1 760</b> <span class="up">43%</span></span>
+  </div>
+  <span class="clock num">2026-05-31 22:41 EEST</span>
+</div>
+
+<div class="tabs">
+  <div class="tab on">DASH</div><div class="tab">TXNS</div><div class="tab">IMPORT</div>
+  <div class="tab">CATS</div><div class="tab">TRENDS</div><div class="tab">REPORTS</div><div class="tab">NETWORTH</div>
+</div>
+
+<div class="grid">
+  <!-- transactions pane -->
+  <div class="pane">
+    <div class="pane-h"><span>TRANSACTION BLOTTER</span><span class="r">last 8 · sortable</span></div>
+    <div class="pane-b" style="padding:0">
+      <table>
+        <thead><tr><th>DATE</th><th>STORE</th><th>CAT</th><th class="r">AMT</th><th class="r">30D</th></tr></thead>
+        <tbody id="tx"></tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- category breakdown -->
+  <div class="pane">
+    <div class="pane-h"><span>CATEGORY BREAKDOWN · MAY</span><span class="r">€2 340</span></div>
+    <div class="pane-b" id="cats"></div>
+  </div>
+
+  <!-- networth chart full width -->
+  <div class="pane span2">
+    <div class="pane-h"><span>NET WORTH · 8M CARRY-FORWARD</span><span class="r">EUR ·k</span></div>
+    <div class="pane-b">
+      <div class="kstrip" style="margin-bottom:9px">
+        <div class="k"><div class="lbl">Assets</div><div class="v num up">156 800</div></div>
+        <div class="k"><div class="lbl">Liabilities</div><div class="v num down">14 500</div></div>
+        <div class="k"><div class="lbl">Net</div><div class="v num">142 300</div></div>
+        <div class="k"><div class="lbl">MoM Δ</div><div class="v num up">+2 940</div></div>
+        <div class="k"><div class="lbl">YTD Δ</div><div class="v num up">+11 200</div></div>
+        <div class="k"><div class="lbl">Subs/mo</div><div class="v num amb">116</div></div>
+      </div>
+      <div class="chart-box"><canvas id="nw"></canvas></div>
+    </div>
+  </div>
+</div>
+
+<div class="cmd">
+  <span class="prompt">:&gt;</span> <span>add txn neste -68 gas<span class="blink">▋</span></span>
+  <span class="hint">⌘K palette · / search · J/K rows · S sort</span>
+</div>
+
+<script>
+const fmt=n=>(n<0?'-':'')+Math.abs(n).toLocaleString('fi-FI');
+const spark=(arr)=>{const b='▁▂▃▄▅▆▇█';const mn=Math.min(...arr),mx=Math.max(...arr);return arr.map(v=>b[Math.round((v-mn)/((mx-mn)||1)*7)]).join('')};
+const tx=[['05-30','K-Market','GROC',-42,[40,55,42,60,38,42]],['05-29','Neste','GAS',-68,[70,40,55,68,52,68]],['05-28','Spotify','TEL',-12,[12,12,12,12,12,12]],['05-27','Salary','JOB',4100,[4100,4100,4100,4100,4100,4100]],['05-26','Trattoria','REST',-54,[30,54,20,48,54,54]],['05-25','Clas Ohlson','HOME',-29,[10,29,5,40,12,29]],['05-24','K-Market','GROC',-61,[55,42,61,38,61,61]],['05-23','HSL','TRANSP',-30,[30,30,30,30,30,30]]];
+document.getElementById('tx').innerHTML=tx.map(([d,s,c,a,sp])=>
+  `<tr><td class="num" style="color:var(--muted)">${d}</td><td>${s}</td><td class="cat">${c}</td><td class="r num ${a<0?'down':'up'}">${fmt(a)}</td><td class="r spark">${spark(sp)}</td></tr>`).join('');
+const cats=[['Rent',980],['Groceries',420],['Restaurant',210],['Gas',140],['Going out',130],['Utilities',95],['Exercise',60],['Telecom',39]];
+const mx=Math.max(...cats.map(c=>c[1]));
+document.getElementById('cats').innerHTML=cats.map(([n,v])=>
+  `<div class="crow"><span class="n">${n}</span><span class="b">${'█'.repeat(Math.max(1,Math.round(v/mx*22)))}</span><span class="a num">${fmt(v)}</span></div>`).join('');
+
+Chart.defaults.color='#5f8a5f'; Chart.defaults.font.family="JetBrains Mono,monospace";
+new Chart(document.getElementById('nw'),{type:'line',data:{labels:['Oct','Nov','Dec','Jan','Feb','Mar','Apr','May'],datasets:[{data:[128,130,131,134,136,138,139,142.3],borderColor:'#39ff7a',backgroundColor:'rgba(57,255,122,.06)',fill:true,stepped:false,tension:0,borderWidth:1.5,pointRadius:0}]},
+options:{plugins:{legend:{display:false}},scales:{x:{grid:{color:'#121a12'},border:{color:'#1c2a1c'},ticks:{font:{size:10}}},y:{grid:{color:'#121a12'},border:{color:'#1c2a1c'},ticks:{font:{size:10},callback:v=>v}}},maintainAspectRatio:false}});
+</script>
+</body>
+</html>

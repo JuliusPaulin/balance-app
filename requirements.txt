@@ -1,0 +1,15 @@
+# Desktop (pywebview + local SQLite) build. For the hosted server deploy use
+# requirements-server.txt instead. SQLite is part of the Python stdlib, so the
+# local database needs no extra package.
+flask>=3.0
+pywebview>=5.0
+python-dateutil>=2.8
+flask-limiter>=3.0
+# Enable Banking (optional Open Banking import) — imported at startup by app.py.
+requests>=2.31
+PyJWT>=2.8
+cryptography>=42.0
+# Investment import: Nordea Omistukset.xlsx parsing (Nordnet CSVs need nothing).
+openpyxl>=3.1
+# Build tool: packages the desktop app (see Balance.spec).
+pyinstaller>=6.0

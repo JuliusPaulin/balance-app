@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>UI-02 Bento-grid — Expense Tracker</title>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+<style>
+  :root{
+    --bg:#eceae4; --tile:#ffffff; --ink:#16140f; --muted:#7c776c; --faint:#a39d90; --line:#e7e3d9;
+    --accent:#ff6b35; --green:#1c9c6b; --red:#e5484d; --r:22px;
+  }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{font-family:-apple-system,BlinkMacSystemFont,"Inter","Segoe UI",sans-serif;background:var(--bg);color:var(--ink);display:flex;min-height:100vh;font-size:14px}
+  .num{font-variant-numeric:tabular-nums;letter-spacing:-0.02em}
+  .switcher{position:fixed;top:12px;right:12px;z-index:50;display:flex;gap:6px;background:rgba(255,255,255,.85);backdrop-filter:blur(8px);border:1px solid var(--line);border-radius:999px;padding:5px;box-shadow:0 6px 24px rgba(0,0,0,.08)}
+  .switcher a{font-size:11px;font-weight:600;color:var(--muted);text-decoration:none;padding:5px 10px;border-radius:999px}
+  .switcher a.on{background:var(--ink);color:#fff}
+  .sidebar{width:222px;flex-shrink:0;padding:24px 14px;display:flex;flex-direction:column;gap:4px;position:sticky;top:0;height:100vh}
+  .brand{display:flex;align-items:center;gap:10px;padding:6px 12px 24px}
+  .brand .dot{width:30px;height:30px;border-radius:10px;background:var(--ink);color:#fff;display:flex;align-items:center;justify-content:center;font-weight:700}
+  .brand b{font-size:15px;font-weight:700;letter-spacing:-0.01em}
+  .nav{display:flex;align-items:center;gap:11px;padding:10px 13px;border-radius:13px;color:var(--muted);font-weight:600;cursor:pointer;font-size:13.5px}
+  .nav .ic{width:17px;text-align:center}
+  .nav:hover{background:rgba(0,0,0,.04);color:var(--ink)}
+  .nav.active{background:var(--ink);color:#fff}
+  .nav-sep{flex:1}
+  .main{flex:1;padding:28px 30px 56px;max-width:1180px}
+  .head{display:flex;align-items:center;justify-content:space-between;margin-bottom:22px}
+  .head h1{font-size:28px;font-weight:800;letter-spacing:-0.03em}
+  .head .date{color:var(--muted);font-weight:600}
+  /* BENTO GRID */
+  .bento{display:grid;grid-template-columns:repeat(4,1fr);grid-auto-rows:118px;gap:16px}
+  .tile{background:var(--tile);border-radius:var(--r);padding:20px 22px;border:1px solid var(--line);transition:transform .18s ease,box-shadow .18s ease;overflow:hidden;position:relative}
+  .tile:hover{transform:translateY(-3px);box-shadow:0 14px 36px rgba(0,0,0,.09)}
+  .t-hero{grid-column:span 2;grid-row:span 2;background:linear-gradient(150deg,#16140f,#2b2823);color:#fff;border:0}
+  .t-wide{grid-column:span 2;grid-row:span 2}
+  .t-tall{grid-column:span 1;grid-row:span 3}
+  .t-accent{background:var(--accent);color:#fff;border:0}
+  .label{font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.06em;color:var(--muted)}
+  .t-hero .label,.t-accent .label{color:rgba(255,255,255,.7)}
+  .big{font-size:42px;font-weight:800;margin-top:6px;letter-spacing:-0.03em}
+  .mid{font-size:30px;font-weight:800;margin-top:4px;letter-spacing:-0.02em}
+  .chip{display:inline-flex;align-items:center;gap:5px;font-size:12.5px;font-weight:700;padding:4px 10px;border-radius:999px;margin-top:14px;background:rgba(255,255,255,.16)}
+  .chip.dark{background:rgba(28,156,107,.14);color:var(--green)}
+  .pos{color:var(--green)} .neg{color:var(--red)}
+  .tile h3{font-size:13.5px;font-weight:700;margin-bottom:2px}
+  .tile .sub{font-size:11.5px;color:var(--faint);margin-bottom:12px}
+  .chart-fill{position:absolute;left:0;right:0;bottom:0;height:62%}
+  .catrow{display:flex;align-items:center;gap:10px;padding:7px 0}
+  .catrow .nm{width:96px;font-weight:600;font-size:12.5px}
+  .bar{flex:1;height:7px;border-radius:99px;background:#f0ede5;overflow:hidden}
+  .bar i{display:block;height:100%;border-radius:99px;background:var(--accent)}
+  .catrow .amt{width:58px;text-align:right;font-weight:700;font-size:12.5px}
+  .sub-item{display:flex;align-items:center;gap:10px;padding:8px 0;border-bottom:1px solid var(--line)}
+  .sub-item:last-child{border-bottom:0}
+  .sub-ico{width:28px;height:28px;border-radius:9px;background:#f3f0e8;display:flex;align-items:center;justify-content:center;font-size:13px}
+  .sub-item .nm{flex:1;font-weight:600;font-size:13px}
+  .sub-item .amt{font-weight:700;font-size:13px}
+  .donutwrap{display:flex;align-items:center;gap:16px;height:100%}
+  .donutwrap canvas{max-width:120px}
+</style>
+</head>
+<body>
+<nav class="switcher">
+  <a href="index.html">All</a>
+  <a href="ui-01-dark-fintech.html">01</a>
+  <a class="on" href="ui-02-bento-grid.html">02</a>
+  <a href="ui-03-editorial-swiss.html">03</a>
+  <a href="ui-04-terminal-dense.html">04</a>
+  <a href="ui-05-linear-glass.html">05</a>
+</nav>
+
+<aside class="sidebar">
+  <div class="brand"><div class="dot">€</div><b>Expense Tracker</b></div>
+  <div class="nav active"><span class="ic">◧</span> Dashboard</div>
+  <div class="nav"><span class="ic">⇄</span> Transactions</div>
+  <div class="nav"><span class="ic">⬇</span> Import</div>
+  <div class="nav"><span class="ic">⊞</span> Categories</div>
+  <div class="nav"><span class="ic">📈</span> Trends</div>
+  <div class="nav"><span class="ic">▤</span> Reports</div>
+  <div class="nav"><span class="ic">◆</span> Net Worth</div>
+  <div class="nav-sep"></div>
+  <div class="nav"><span class="ic">⚙</span> Settings</div>
+  <div class="nav"><span class="ic">☁</span> Sync iCloud</div>
+</aside>
+
+<main class="main">
+  <div class="head">
+    <h1>Dashboard</h1>
+    <div class="date">May 2026 · YTD</div>
+  </div>
+
+  <div class="bento">
+    <!-- hero net worth 2x2 -->
+    <div class="tile t-hero">
+      <div class="label">Net worth</div>
+      <div class="big num">€142 300</div>
+      <span class="chip">▲ +2.1% this month</span>
+      <div class="chart-fill"><canvas id="nw"></canvas></div>
+    </div>
+
+    <!-- spent -->
+    <div class="tile">
+      <div class="label">Spent · May</div>
+      <div class="mid num neg">€2 340</div>
+    </div>
+    <!-- income -->
+    <div class="tile">
+      <div class="label">Income · May</div>
+      <div class="mid num pos">€4 100</div>
+    </div>
+    <!-- saved accent -->
+    <div class="tile t-accent">
+      <div class="label">Saved · May</div>
+      <div class="mid num">€1 760</div>
+      <span class="chip">43% savings rate</span>
+    </div>
+    <!-- subs tall -->
+    <div class="tile t-tall" style="grid-row:span 2">
+      <h3>Subscriptions</h3>
+      <div class="sub">€116 / month</div>
+      <div id="subs"></div>
+    </div>
+
+    <!-- trend chart wide -->
+    <div class="tile t-wide">
+      <h3>Spending trend</h3>
+      <div class="sub">Last 8 months</div>
+      <div style="position:absolute;left:18px;right:18px;bottom:16px;top:64px"><canvas id="trend"></canvas></div>
+    </div>
+    <!-- categories wide -->
+    <div class="tile t-wide">
+      <h3>Top categories</h3>
+      <div class="sub">May 2026</div>
+      <div id="cats"></div>
+    </div>
+  </div>
+</main>
+
+<script>
+const fmt=n=>(n<0?'-':'')+'€'+Math.abs(n).toLocaleString('fi-FI');
+const cats=[['Rent',980],['Groceries',420],['Restaurant',210],['Gas',140],['Going out',130]];
+const max=Math.max(...cats.map(c=>c[1]));
+document.getElementById('cats').innerHTML=cats.map(([n,v])=>
+  `<div class="catrow"><span class="nm">${n}</span><span class="bar"><i style="width:${v/max*100}%"></i></span><span class="amt num">${fmt(v)}</span></div>`).join('');
+const subs=[['Elisa','📱',39],['Gym','🏋',49],['Netflix','🎬',14],['Spotify','🎧',12]];
+document.getElementById('subs').innerHTML=subs.map(([n,i,a])=>
+  `<div class="sub-item"><span class="sub-ico">${i}</span><span class="nm">${n}</span><span class="amt num">${fmt(a)}</span></div>`).join('');
+
+Chart.defaults.font.family="-apple-system,Inter,sans-serif";
+// hero net worth (on dark)
+const c1=document.getElementById('nw').getContext('2d');
+const g1=c1.createLinearGradient(0,0,0,160); g1.addColorStop(0,'rgba(255,107,53,.5)');g1.addColorStop(1,'rgba(255,107,53,0)');
+new Chart(c1,{type:'line',data:{labels:Array(8).fill(''),datasets:[{data:[128,130,131,134,136,138,139,142.3],borderColor:'#ff6b35',backgroundColor:g1,fill:true,tension:.45,borderWidth:2.5,pointRadius:0}]},options:{plugins:{legend:{display:false}},scales:{x:{display:false},y:{display:false}},maintainAspectRatio:false}});
+// trend bars
+new Chart(document.getElementById('trend'),{type:'bar',data:{labels:['Oct','Nov','Dec','Jan','Feb','Mar','Apr','May'],datasets:[{data:[2100,2380,2900,2200,2050,2410,2210,2340],backgroundColor:'#16140f',borderRadius:6,barThickness:16}]},options:{plugins:{legend:{display:false}},scales:{x:{grid:{display:false},border:{display:false},ticks:{color:'#a39d90',font:{size:10}}},y:{display:false}},maintainAspectRatio:false}});
+</script>
+</body>
+</html>
