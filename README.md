@@ -95,11 +95,23 @@ Both read the same database, so your figures carry over either way.
 ### Tests
 
 ```
-python3 -m pytest test_import_formats.py
+python3 -m pytest tests/test_import_formats.py
 ```
 
 The import tests are the ones that matter for CSV work. Parts of the wider
 suite still expect the old hosted Postgres setup and fail on this branch.
+
+### Where things live
+
+```
+main.py, app.py, db*.py …   the app itself
+templates/, static/         the interface
+tests/                      pytest suite
+scripts/                    build script and one-off tools
+docs/                       plans, research, UI mockups
+Balance.spec                the PyInstaller build recipe
+update.sh                   the one-line updater
+```
 
 ## Built with
 

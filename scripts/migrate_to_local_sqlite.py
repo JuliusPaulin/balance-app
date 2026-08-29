@@ -22,6 +22,9 @@ import os
 import sqlite3
 import sys
 
+# This script lives in scripts/; the app's modules sit in the repo root.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
 import config
 import database
 

@@ -20,7 +20,7 @@
 - `db_sqlite.py` — local SQLite engine (translates `%s`→`?`, `now()`→`datetime('now')`, dict rows)
 - `db_postgres.py` — hosted psycopg connection-pool engine
 - `database.py` — schema DDL (one per backend) + seeding + backups
-- `migrate_to_local_sqlite.py` — one-time import of an old single-user DB into the local schema
+- `scripts/migrate_to_local_sqlite.py` — one-time import of an old single-user DB into the local schema
 - `recurring.py` — recurring/subscription detection over transaction history
 - `networth.py` — net worth tracking (carry-forward over manual account balances; grouped + holdings).
   Totals come from balances alone: an account you leave out of an update keeps its
@@ -47,7 +47,7 @@ are gone).
   (override with `SQLITE_PATH`). `require_login` auto-attaches a fixed local user
   (`config.LOCAL_USER_ID = 1`, approved admin) to the session, so the OAuth/access
   gates are satisfied without any login. Run with `python3 main.py`; package with
-  `./build_app.sh` → `Balance.app` / `Balance.dmg`.
+  `./scripts/build_app.sh` → `Balance.app` / `Balance.dmg`.
 - **Hosted (`APP_MODE=hosted`)** — the multi-user cloud build: Postgres via
   `DATABASE_URL`, Google OAuth, access-request approval, gunicorn. Unchanged.
 
@@ -99,7 +99,7 @@ is identical on both backends. Backend-specific bits are funnelled through `db`:
 - Match types: `exact` (case-insensitive), `contains` (substring), `smart` (fuzzy via difflib ≥ 0.72)
 - Fallback: if no rule matches, check most frequent historical category for that store
 - CRUD via UI and API (`/api/merchant-rules`)
-- **567 rules auto-generated** from historical data via `generate_merchant_rules.py`
+- **567 rules auto-generated** from historical data via `scripts/generate_merchant_rules.py`
 
 ### CSV Import
 Supports three CSV formats:
@@ -127,7 +127,7 @@ Supports three CSV formats:
 
 ### Open Banking Import (Enable Banking)
 Pulls real bank transactions into the **same** staging → review → confirm pipeline as CSV.
-Module: `enable_banking.py`. Plan: `HOSTED_BANK_IMPORT_PLAN.md`.
+Module: `enable_banking.py`.
 
 - **Flow:** Import tab → "Import from bank" → **Connect** (PSD2 consent redirect) → pick
   account + date range → **Fetch** → standard review table (auto-categorised, editable) → **Confirm All**.
@@ -178,7 +178,7 @@ Module: `enable_banking.py`. Plan: `HOSTED_BANK_IMPORT_PLAN.md`.
 
 ## Merchant Rule Auto-Generation
 
-Script: `generate_merchant_rules.py`
+Script: `scripts/generate_merchant_rules.py`
 
 **Algorithm:**
 1. Read all transactions, compute dominant category per store (highest count wins)
@@ -187,7 +187,7 @@ Script: `generate_merchant_rules.py`
 4. Remaining stores get `exact` rules
 5. Skip generic noise stores: `Other`, `Rent`, `Missing info`, `Monthly fee`, `Korko`
 
-Re-run anytime with `python3 generate_merchant_rules.py` — clears and rebuilds all rules.
+Re-run anytime with `python3 scripts/generate_merchant_rules.py` — clears and rebuilds all rules.
 
 ---
 
@@ -251,46 +251,3 @@ GET        /api/notes
 
 POST       /api/quit
 ```
-
----
-
-## iOS Reader App (`ios/`)
-
-Read-only iPhone companion. Consumes the iCloud Drive JSON snapshot
-written by `icloud_export.py`. Plan: `IOS_APP_PLAN.md`.
-
-**Stack:** SwiftUI / Swift 6 / iOS 26+, Swift Charts, no network entitlement.
-
-**Build:**
-```bash
-cd ios && xcodegen generate && open ExpenseTrackerMobile.xcodeproj
-```
-The `.xcodeproj` is generated from `project.yml` and gitignored.
-
-**Layout:**
-- `App/` — `@main`, `AppState` (`@Observable`)
-- `Sync/` — bookmark mgmt, `NSFileCoordinator` reads, `NSMetadataQuery` watcher
-- `Models/` — `Snapshot`, `Summary` (Codable, schema v1, `convertFromSnakeCase`)
-- `Views/` — Onboarding picker, Dashboard, Transactions, Trends, Settings
-- `Formatting/` — fi-FI EUR / 0-decimal formatter; relative date helpers
-
-**Folder access:** `UIDocumentPickerViewController` (folder mode) → security-scoped
-bookmark in `UserDefaults`. iCloud's `com~apple~CloudDocs` is not reachable via
-the app's own ubiquity container, so a user pick is required.
-
-**Schema guard:** `SnapshotLoader.supportedSchema = 1`. Mismatch → blocking error.
-Bump `SCHEMA_VERSION` in `icloud_export.py` AND `SnapshotLoader.supportedSchema`
-together on breaking changes.
-
-**Simulator testing:** simulator has no real iCloud Drive. DEBUG-only fallback
-in `AppState.devSnapshotURL` reads from `<App>/Documents/DevSnapshot/`. Seed it
-with:
-```bash
-NEWDATA=$(xcrun simctl get_app_container booted com.juliuspaulin.ExpenseTrackerMobile data)
-mkdir -p "$NEWDATA/Documents/DevSnapshot"
-cp ~/Library/Mobile\ Documents/com~apple~CloudDocs/ExpenseTracker/{data,summary,meta}.json "$NEWDATA/Documents/DevSnapshot/"
-```
-
-**Concurrency notes:** `ISO8601DateFormatter` is not Sendable in the iOS 26 SDK,
-so the shared instance is marked `nonisolated(unsafe)`. `DateFormatter` and
-`NumberFormatter` are Sendable and need no annotation.

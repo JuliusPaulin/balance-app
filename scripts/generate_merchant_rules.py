@@ -4,6 +4,13 @@ Learn merchant rules from historical transactions.
 - Creates exact rules for unambiguous single-name stores
 - Skips low-confidence and generic stores
 """
+import os
+import sys
+
+# This script lives in scripts/ but imports the app's modules, which sit in the
+# repo root — put the root on the path before importing them.
+sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
+
 from collections import defaultdict
 
 # Reuse the app's DB connection helper so this script resolves the database by

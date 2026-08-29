@@ -54,7 +54,7 @@ html.loading .loading-overlay {
 :root {
     color-scheme: light;
 
-    /* Fintech — Light palette (source: mockups/ui-01-light-fintech.html) */
+    /* Fintech — Light palette (source: docs/mockups/ui-01-light-fintech.html) */
     --bg: #ffffff;            /* card / surface */
     --bg-secondary: #f6f7f9;  /* app canvas */
     --bg-tertiary: #f0f2f5;
@@ -131,7 +131,7 @@ html.loading .loading-overlay {
     --sidebar-bg: #ffffff;
 }
 
-/* ── Fintech — Dark palette (source: mockups/ui-01-dark-fintech.html) ─── */
+/* ── Fintech — Dark palette (source: docs/mockups/ui-01-dark-fintech.html) ─── */
 :root[data-theme="dark"] {
     color-scheme: dark;
 

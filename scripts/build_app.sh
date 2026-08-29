@@ -4,7 +4,7 @@
 # ~/Library/Application Support/Balance/expenses.db) — no server, no Postgres.
 set -e
 
-cd "$(dirname "$0")"
+cd "$(dirname "$0")/.."
 APP_NAME="Balance"
 DIST_DIR="dist"
 BUILD_DIR="build"
