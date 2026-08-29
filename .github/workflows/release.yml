@@ -1,0 +1,101 @@
+# Build Balance.app and publish it as a GitHub release.
+#
+# Push a version tag and this does the rest:
+#
+#     scripts/release.sh 1.3.1
+#
+# The tag is the trigger. update.sh downloads whatever this attaches to the
+# newest release, so nothing reaches anyone's Mac until this has run.
+name: Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write        # needed to create the release
+
+jobs:
+  build:
+    # Apple silicon runner: the app is arm64-only, and PyInstaller builds for
+    # whatever it runs on. An Intel runner here would produce a bundle that
+    # will not open on an M-series Mac.
+    runs-on: macos-15
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history and tags: the release notes are built by diffing this
+          # tag against the previous one, which a shallow clone cannot see.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Check the tag matches VERSION
+        # Cheap guard against the classic mistake: tagging v1.3.1 while VERSION
+        # still says 1.3.0, shipping an app that misreports itself.
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          file="$(tr -d '[:space:]' < VERSION)"
+          if [ "$tag" != "$file" ]; then
+            echo "Tag $GITHUB_REF_NAME says $tag but VERSION says $file."
+            echo "Bump VERSION and tag from it — scripts/release.sh does both."
+            exit 1
+          fi
+          echo "Building version $file"
+
+      - name: Install dependencies
+        run: |
+          python3 -m pip install --upgrade pip
+          python3 -m pip install -r requirements.txt
+
+      - name: Run the tests
+        # A release that fails its own suite should never reach anyone.
+        run: |
+          python3 -m pip install -r requirements-dev.txt
+          python3 -m pytest tests/ -q
+
+      - name: Build Balance.app
+        run: python3 -m PyInstaller Balance.spec --noconfirm --clean
+
+      - name: Check the build reports the right version
+        run: |
+          plist="dist/Balance.app/Contents/Info.plist"
+          built=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$plist")
+          expected="$(tr -d '[:space:]' < VERSION)"
+          [ "$built" = "$expected" ] || {
+            echo "Built app reports $built, expected $expected"; exit 1;
+          }
+          echo "Bundle reports $built"
+
+      - name: Zip it
+        # ditto, not zip: it preserves the bundle's symlinks and resource forks.
+        # The filename is load-bearing — update.sh greps for exactly this.
+        run: cd dist && ditto -c -k --keepParent Balance.app Balance-macOS-arm64.zip
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          notes_file=$(mktemp)
+          {
+            printf 'Apple Silicon build (M1–M4).\n\n'
+            # Everything between this tag and the one before it.
+            prev=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
+            if [ -n "$prev" ]; then
+              git log --no-merges --pretty='- %s' "$prev..${GITHUB_REF_NAME}"
+            else
+              git log --no-merges --pretty='- %s' -20
+            fi
+            printf '\n**Update**\n\nQuit Balance, then run:\n\n'
+            printf '    curl -fsSL https://raw.githubusercontent.com/%s/main/update.sh | bash\n\n' "$GITHUB_REPOSITORY"
+            printf 'Your data in ~/Library/Application Support/Balance/ is not touched.\n'
+          } > "$notes_file"
+
+          gh release create "$GITHUB_REF_NAME" \
+            dist/Balance-macOS-arm64.zip \
+            --title "Balance ${GITHUB_REF_NAME#v}" \
+            --notes-file "$notes_file"

@@ -1,7 +1,13 @@
 # -*- mode: python ; coding: utf-8 -*-
+import pathlib
+
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('templates', 'templates'), ('static', 'static')]
+# VERSION is the single source of truth: it is bundled so the running app can
+# report itself, and stamped into the plist so Finder's Get Info agrees.
+VERSION = pathlib.Path('VERSION').read_text(encoding='utf-8').strip() or 'dev'
+
+datas = [('templates', 'templates'), ('static', 'static'), ('VERSION', '.')]
 binaries = []
 hiddenimports = ['webview', 'webview.platforms.cocoa', 'flask', 'flask_limiter', 'dateutil', 'db_sqlite', 'database', 'investment_import', 'openpyxl']
 tmp_ret = collect_all('webview')
@@ -54,5 +60,11 @@ app = BUNDLE(
     coll,
     name='Balance.app',
     icon='static/icon_512.png',
-    bundle_identifier=None,
+    bundle_identifier='com.juliuspaulin.balance',
+    version=VERSION,
+    info_plist={
+        'CFBundleShortVersionString': VERSION,
+        'CFBundleVersion': VERSION,
+        'NSHighResolutionCapable': True,
+    },
 )

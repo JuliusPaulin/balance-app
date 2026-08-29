@@ -235,10 +235,14 @@ def index():
 def me():
     """Minimal app-state endpoint for the SPA.
 
-    Single-user local app — no login, so there is no identity to report. All
-    this carries is the per-session CSRF token the fetch wrapper echoes back.
+    Single-user local app — no login, so there is no identity to report. This
+    carries the per-session CSRF token the fetch wrapper echoes back, and the
+    version, so Settings can show which build you are on.
     """
-    return jsonify({"csrf_token": _ensure_csrf_token()})
+    return jsonify({
+        "csrf_token": _ensure_csrf_token(),
+        "version": config.APP_VERSION,
+    })
 
 
 # ── Categories API ─────────────────────────────────────────────────────

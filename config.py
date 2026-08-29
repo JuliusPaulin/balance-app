@@ -23,6 +23,7 @@ ENABLE_BANKING_*
 """
 
 import os
+import sys
 
 # Optionally load a local .env file. python-dotenv is a dev-only dependency, so
 # guard both the import and the call — a packaged build may not have it
@@ -34,6 +35,33 @@ try:
 except Exception:
     pass
 
+
+def _read_version():
+    """The app's version, from the ``VERSION`` file next to this module.
+
+    ``VERSION`` is the single source of truth: ``scripts/release.sh`` bumps it,
+    the git tag is cut from it, and the release workflow refuses to build if the
+    two disagree. PyInstaller bundles the file, so this works the same whether
+    you run from source or from Balance.app.
+    """
+    here = os.path.dirname(os.path.abspath(__file__))
+    # In a PyInstaller bundle the data files land in sys._MEIPASS, not next to
+    # this file, so look there first when it exists.
+    for base in (getattr(sys, "_MEIPASS", None), here):
+        if not base:
+            continue
+        try:
+            with open(os.path.join(base, "VERSION"), encoding="utf-8") as fh:
+                text = fh.read().strip()
+            if text:
+                return text
+        except OSError:
+            continue
+    return "dev"
+
+
+APP_VERSION = _read_version()
+"""Version string, e.g. "1.3.0" — or "dev" when running from an unbuilt tree."""
 
 LOCAL_USER_ID = 1
 """The id of the one and only user.

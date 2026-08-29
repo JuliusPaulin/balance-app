@@ -4525,6 +4525,10 @@ async function loadAppState() {
         if (!res.ok) return;
         const me = await res.json();
         if (me && me.csrf_token) csrfTokenCache = me.csrf_token;
+        // Shown in Settings → Help, so you can tell at a glance whether an
+        // update actually landed.
+        const vEl = document.getElementById("app-version");
+        if (vEl && me && me.version) vEl.textContent = me.version;
     } catch (e) {
         // network hiccup — don't block the rest of init
     }
