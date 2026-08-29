@@ -1362,7 +1362,7 @@ let _catPop = null;
 function closeCatPicker() {
     if (!_catPop) return;
     document.removeEventListener("mousedown", _catPop.onDocDown, true);
-    window.removeEventListener("scroll", closeCatPicker);
+    window.removeEventListener("scroll", _catPop.onScroll, true);
     _catPop.el.remove();
     _catPop = null;
 }
@@ -1422,8 +1422,14 @@ function openCatPicker(anchor, currentId, onPick) {
         body.querySelectorAll(".cat-pop-item").forEach(b => {
             b.onmousedown = ev => { ev.preventDefault(); pick(hits[parseInt(b.dataset.i)].id); };
         });
+        // Scroll the panel's own list, not the page: scrollIntoView() walks up to
+        // the window and would jump the import list out from under the cursor.
         const on = body.querySelector(".cat-pop-item.on");
-        if (on) on.scrollIntoView({ block: "nearest" });
+        if (on) {
+            const top = on.offsetTop, bottom = top + on.offsetHeight;
+            if (top < body.scrollTop) body.scrollTop = top;
+            else if (bottom > body.scrollTop + body.clientHeight) body.scrollTop = bottom - body.clientHeight;
+        }
     }
 
     input.oninput = () => { cursor = 0; draw(); };
@@ -1431,19 +1437,24 @@ function openCatPicker(anchor, currentId, onPick) {
         if (e.key === "ArrowDown")    { e.preventDefault(); cursor = Math.min(cursor + 1, hits.length - 1); draw(); }
         else if (e.key === "ArrowUp") { e.preventDefault(); cursor = Math.max(cursor - 1, 0); draw(); }
         else if (e.key === "Enter")   { e.preventDefault(); if (hits[cursor]) pick(hits[cursor].id); }
-        else if (e.key === "Escape")  { e.preventDefault(); closeCatPicker(); anchor.focus(); }
+        else if (e.key === "Escape")  { e.preventDefault(); closeCatPicker(); anchor.focus({ preventScroll: true }); }
     };
 
+    el.style.visibility = "hidden";
     draw();
     positionCatPop(el, anchor);
-    input.focus();
+    el.style.visibility = "";
+    input.focus({ preventScroll: true });
 
     const onDocDown = ev => {
         if (!el.contains(ev.target) && ev.target !== anchor && !anchor.contains(ev.target)) closeCatPicker();
     };
+    // Follow the chip when the page scrolls rather than closing: a stray trackpad
+    // nudge should not throw away a half-typed search.
+    const onScroll = () => positionCatPop(el, anchor);
     document.addEventListener("mousedown", onDocDown, true);
-    window.addEventListener("scroll", closeCatPicker);
-    _catPop = { el, anchor, onDocDown };
+    window.addEventListener("scroll", onScroll, true);
+    _catPop = { el, anchor, onDocDown, onScroll };
 }
 
 function catChipInner(catId, placeholder) {
