@@ -385,3 +385,104 @@ def test_discard_refuses_a_confirmed_batch(client, login, make_user, fresh_conn)
 def test_discard_of_an_unknown_batch_is_a_404(client, login, make_user):
     login(make_user())
     assert client.delete("/api/import/batch/999999").status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Import history: reading batches back, resuming and undoing
+# ---------------------------------------------------------------------------
+def _confirm(client, fresh_conn, uid, batch_id):
+    staged = fresh_conn(lambda c: c.execute(
+        "SELECT id, type FROM import_staging WHERE import_batch_id = %s AND user_id = %s",
+        (batch_id, uid)).fetchall())
+    cat = fresh_conn(lambda c: c.execute(
+        "SELECT id FROM categories WHERE user_id = %s LIMIT 1", (uid,)).fetchone())["id"]
+    return client.post("/api/import/confirm", json={
+        "items": [{"id": r["id"], "category_id": cat, "type": r["type"]} for r in staged],
+        "batch_id": batch_id,
+    })
+
+
+def test_batches_endpoint_reports_what_an_import_brought_in(client, login, make_user, fresh_conn):
+    uid = make_user()
+    login(uid)
+    batch_id = _upload(client, FINNISH_BANK_CSV).get_json()["batch_id"]
+
+    pending = client.get("/api/import/batches").get_json()[0]
+    assert pending["status"] == "pending" and pending["staged"] == 2
+
+    assert _confirm(client, fresh_conn, uid, batch_id).status_code == 200
+    done = client.get("/api/import/batches").get_json()[0]
+    assert done["status"] == "completed"
+    # Both rows are now real transactions, tied back to the batch that made them.
+    assert done["imported"] == 2
+    assert done["sum_expense"] == 25.0 and done["sum_income"] == 1500.0
+
+
+def test_undo_removes_only_that_import(client, login, make_user, fresh_conn):
+    uid = make_user()
+    login(uid)
+    keep = _upload(client, FINNAIR_CSV).get_json()["batch_id"]
+    _confirm(client, fresh_conn, uid, keep)
+    drop = _upload(client, FINNISH_BANK_CSV).get_json()["batch_id"]
+    _confirm(client, fresh_conn, uid, drop)
+    assert _count(fresh_conn, "transactions", uid) == 4
+
+    res = client.post(f"/api/import/batch/{drop}/undo")
+    assert res.status_code == 200 and res.get_json()["removed"] == 2
+    # The other import is untouched.
+    assert _count(fresh_conn, "transactions", uid) == 2
+    # The batch record survives, saying what happened to it.
+    row = [b for b in client.get("/api/import/batches").get_json() if b["id"] == drop][0]
+    assert row["status"] == "undone" and row["imported"] == 0
+
+
+def test_confirm_keeps_the_staged_type_when_the_client_omits_it(client, login, make_user, fresh_conn):
+    uid = make_user()
+    login(uid)
+    batch_id = _upload(client, FINNISH_BANK_CSV).get_json()["batch_id"]
+    staged = fresh_conn(lambda c: c.execute(
+        "SELECT id FROM import_staging WHERE user_id = %s", (uid,)).fetchall())
+    cat = fresh_conn(lambda c: c.execute(
+        "SELECT id FROM categories WHERE user_id = %s LIMIT 1", (uid,)).fetchone())["id"]
+    # No "type" on any item: staging already knows which row was the salary,
+    # so defaulting the lot to expense would throw that away.
+    client.post("/api/import/confirm", json={
+        "items": [{"id": r["id"], "category_id": cat} for r in staged],
+        "batch_id": batch_id,
+    })
+    kinds = fresh_conn(lambda c: c.execute(
+        "SELECT type, count(*) n FROM transactions WHERE user_id = %s GROUP BY type",
+        (uid,)).fetchall())
+    assert {r["type"]: r["n"] for r in kinds} == {"expense": 1, "income": 1}
+
+
+def test_undo_refuses_a_review_that_was_never_confirmed(client, login, make_user):
+    login(make_user())
+    batch_id = _upload(client, FINNISH_BANK_CSV).get_json()["batch_id"]
+    assert client.post(f"/api/import/batch/{batch_id}/undo").status_code == 409
+
+
+def test_undo_refuses_an_import_predating_the_batch_link(client, login, make_user, fresh_conn):
+    uid = make_user()
+    login(uid)
+    batch_id = _upload(client, FINNISH_BANK_CSV).get_json()["batch_id"]
+    _confirm(client, fresh_conn, uid, batch_id)
+    # Imports made before transactions.import_batch_id existed have no link.
+    fresh_conn(lambda c: c.execute(
+        "UPDATE transactions SET import_batch_id = NULL WHERE user_id = %s", (uid,)))
+
+    res = client.post(f"/api/import/batch/{batch_id}/undo")
+    # Better to refuse than to report an undo that removed nothing.
+    assert res.status_code == 409
+    assert _count(fresh_conn, "transactions", uid) == 2
+
+
+def test_staging_fetch_matches_the_upload_shape(client, login, make_user):
+    login(make_user())
+    up = _upload(client, FINNISH_BANK_CSV).get_json()
+    resumed = client.get(f"/api/import/staging/{up['batch_id']}").get_json()
+    # Resuming feeds this straight into the review table, so the shapes must agree.
+    assert set(resumed) == set(up)
+    assert resumed["batch_id"] == up["batch_id"]
+    assert resumed["count"] == up["count"] == 2
+    assert len(resumed["items"]) == 2

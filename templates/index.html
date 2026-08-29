@@ -344,9 +344,15 @@
             <div class="drop-zone" id="drop-zone">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 4v12m0 0l-4-4m4 4l4-4"/></svg>
                 <p>Drop CSV file here or click to browse</p>
-                <p class="hint">Supports various CSV formats including Finnair credit card exports</p>
+                <p class="hint">Nordea account and card statements, Finnair credit card, or any CSV you map once</p>
                 <input type="file" id="csv-input" accept=".csv" style="display:none">
             </div>
+        </div>
+        <!-- Past imports. Filled by loadImportHistory(); hidden while there are
+             none, and while a review is open. -->
+        <div class="card mt-4" id="import-history" style="display:none">
+            <div class="card-title">Recent imports</div>
+            <div id="import-history-list"></div>
         </div>
         <div class="card mt-4" id="import-review" style="display:none;padding:0;overflow:hidden">
             <!-- Summary header: what this batch is and what confirming commits -->

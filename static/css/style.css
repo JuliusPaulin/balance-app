@@ -1024,6 +1024,36 @@ tbody tr:last-child td {
     to { opacity: 0; transform: translateY(-8px) scale(0.95); }
 }
 
+/* ── Import history rows ─────────────────────────────────────────── */
+.import-history-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1.6fr) auto auto minmax(0, 1.8fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: var(--text-body-sm, 13px);
+}
+.import-history-row:last-child { border-bottom: none; }
+.import-history-row .ih-file {
+    font-weight: 600;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+.import-history-row .ih-when,
+.import-history-row .ih-note { color: var(--text-secondary); }
+.import-history-row .ih-actions { display: flex; gap: 8px; justify-self: end; }
+.import-link-btn.danger { color: var(--red); }
+
+@media (max-width: 720px) {
+    .import-history-row {
+        grid-template-columns: 1fr auto;
+        row-gap: 4px;
+    }
+    .import-history-row .ih-note { grid-column: 1 / -1; }
+}
+
 /* A filter field holding text the app cannot parse. The filter is dropped from
    the query, so the field must show it — a quiet full list under a date the
    user typed reads as "no matches were excluded", which is a lie. */

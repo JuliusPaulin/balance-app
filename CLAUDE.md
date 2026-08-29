@@ -103,7 +103,7 @@ deleting the one user row and re-seeding.
 
 | Table | Key fields |
 |-------|-----------|
-| `transactions` | id, date, store, category_id (FK), amount, type (expense/income) |
+| `transactions` | id, date, store, category_id (FK), amount, type (expense/income), import_batch_id (FK, nullable — the import that created it, NULL if typed by hand or imported before the column) |
 | `categories` | id, name, type, is_default |
 | `merchant_rules` | id, pattern, category_id (FK), match_type (exact/contains/smart) |
 | `import_staging` | id, date, store, suggested_category, amount, type, confirmed, final_category_id, import_batch_id |
@@ -171,12 +171,38 @@ Supports three CSV formats:
   second click with nothing on screen to say the first had landed. It is a
   toggle now, and undo restores the exact amounts rather than doubling a
   rounded half.
-- **Cancel discards the batch** (`DELETE /api/import/batch/<id>`). Abandoning a
-  review used to leave the batch and its staged rows in the database for good —
-  nothing reads them back and nothing swept them up, so they piled up unseen.
-  A *confirmed* batch is the record of what was imported and is refused (409);
-  only a pending one can be discarded. Quitting mid-review still strands a
-  batch: `import_batches` has no reader, so there is nowhere to resume from.
+- **Cancel discards the batch** (`DELETE /api/import/batch/<id>`). A *confirmed*
+  batch is the record of what was imported and is refused (409); only a pending
+  one can be discarded.
+
+### Import history
+
+`import_batches` was written by three code paths and read by none, so an
+abandoned review vanished with nowhere to resume from and a finished one left
+no record. `GET /api/import/batches` is the reader, and the **Recent imports**
+card on the Import page shows it. Four states:
+
+| State | Shows | Offers |
+|-------|-------|--------|
+| `pending` | rows still waiting | **Resume** (reopens the review) · **Discard** |
+| `completed`, linked | transactions and sums | **Undo** |
+| `completed`, unlinked | "too old to undo" | nothing |
+| `undone` | "its transactions were removed" | nothing |
+
+**Undo** (`POST /api/import/batch/<id>/undo`) deletes the transactions one
+import created and marks the batch `undone` — the record stays, because the
+history should say what happened rather than pretend the import never did. An
+import writes hundreds of rows at once and the app has no other bulk undo.
+
+It works because `transactions.import_batch_id` stamps each row with the import
+that made it. Rows from before that column stay NULL and report **"too old to
+undo"**: there is no honest way to work out after the fact which rows were
+whose, and guessing would put an undo button on transactions it might not own.
+
+`GET /api/import/staging/<batch_id>` returns the same `{batch_id, count, items}`
+shape as an upload, because Resume feeds it straight into the review table. It
+used to return a bare array — two shapes for one resource, unnoticed because
+nothing read it.
 - Bulk category assignment, per-row delete, transaction split
 
 ### Open Banking Import (Enable Banking)
@@ -382,7 +408,9 @@ POST       /api/import/upload
 GET        /api/import/staging/<batch_id>
 POST       /api/import/confirm
 DELETE     /api/import/staging/<item_id>
+GET        /api/import/batches                     past imports, newest first
 DELETE     /api/import/batch/<batch_id>            discard a pending review
+POST       /api/import/batch/<batch_id>/undo       remove what a confirmed import added
 
 GET        /api/import/bank/status                 connection state + cached accounts
 GET        /api/import/bank/connect                302 → bank consent (mints CSRF state)

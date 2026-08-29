@@ -95,6 +95,10 @@ CREATE TABLE IF NOT EXISTS transactions (
     category_id INTEGER NOT NULL REFERENCES categories(id),
     amount      REAL NOT NULL,
     type        TEXT NOT NULL CHECK (type IN ('expense', 'income')),
+    -- Which import created this row, so an import can be taken back whole.
+    -- NULL for anything typed in by hand, and for everything imported before
+    -- the column existed. Cleared, not cascaded, if the batch record goes.
+    import_batch_id INTEGER REFERENCES import_batches(id) ON DELETE SET NULL,
     created_at  TEXT NOT NULL DEFAULT {_NOW_SQLITE},
     updated_at  TEXT NOT NULL DEFAULT {_NOW_SQLITE}
 );
@@ -275,6 +279,13 @@ def _ensure_sqlite_columns():
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(categories)").fetchall()}
         if "color" not in cols:
             conn.execute("ALTER TABLE categories ADD COLUMN color TEXT")
+        cols = {r["name"] for r in conn.execute("PRAGMA table_info(transactions)").fetchall()}
+        if "import_batch_id" not in cols:
+            # Rows imported before this column stay NULL: there is no way to
+            # work out after the fact which import they came from, and guessing
+            # would put an undo button on transactions it might not own.
+            conn.execute("ALTER TABLE transactions ADD COLUMN import_batch_id INTEGER "
+                         "REFERENCES import_batches(id) ON DELETE SET NULL")
     _ensure_closed_accounts_zeroed()
 
 
