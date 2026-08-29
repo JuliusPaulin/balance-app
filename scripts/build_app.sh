@@ -13,8 +13,8 @@ echo "=== Installing build dependencies ==="
 pip3 install pyinstaller --quiet
 
 echo "=== Building ${APP_NAME}.app ==="
-# The desktop build uses the SQLite engine only; exclude the Postgres modules
-# (and psycopg) so PyInstaller doesn't try to bundle the hosted-mode driver.
+# Exclude drivers left over from an old hosted build so PyInstaller neither
+# looks for them nor bundles them.
 python3 -m PyInstaller \
     --name "${APP_NAME}" \
     --windowed \
@@ -31,7 +31,6 @@ python3 -m PyInstaller \
     --hidden-import database \
     --hidden-import investment_import \
     --hidden-import openpyxl \
-    --exclude-module db_postgres \
     --exclude-module psycopg \
     --exclude-module psycopg_pool \
     --exclude-module authlib \

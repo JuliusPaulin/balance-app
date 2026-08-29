@@ -96,11 +96,11 @@ Both read the same database, so your figures carry over either way.
 ### Tests
 
 ```
-python3 -m pytest tests/test_import_formats.py
+python3 -m pytest tests/
 ```
 
-The import tests are the ones that matter for CSV work. Parts of the wider
-suite still expect the old hosted Postgres setup and fail on this branch.
+All 63 pass. They run against a throwaway database in a temp folder — your own
+figures are never opened.
 
 ### Where things live
 

@@ -4518,19 +4518,13 @@ function resetGuide() {
 // ── Init ─────────────────────────────────────────────────────────────
 // ── App state ────────────────────────────────────────────────────────
 // Single-user local app: no login. Fetch /api/me only to grab the CSRF token
-// (fallback for the fetch wrapper) and, defensively, hide any .desktop-only
-// actions if somehow running hosted.
+// (a fallback for the fetch wrapper, which normally reads it from the cookie).
 async function loadAppState() {
     try {
         const res = await fetch("/api/me");
         if (!res.ok) return;
         const me = await res.json();
         if (me && me.csrf_token) csrfTokenCache = me.csrf_token;
-        if (me.is_hosted) {
-            document.querySelectorAll(".desktop-only").forEach(el => {
-                el.style.display = "none";
-            });
-        }
     } catch (e) {
         // network hiccup — don't block the rest of init
     }

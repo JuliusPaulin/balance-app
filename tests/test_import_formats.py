@@ -235,36 +235,15 @@ def test_bad_amount_sign_400(client, login, make_user):
 
 
 # ---------------------------------------------------------------------------
-# Per-user isolation of saved formats
+# Saved formats can be listed and deleted
+#
+# This used to be two tests asserting user A could not see or delete user B's
+# saved format. The app has one user and no login, so there is no second tenant
+# to isolate from; what is left worth guarding is the list/delete round-trip.
 # ---------------------------------------------------------------------------
-def test_saved_format_isolated_per_user(client, login, make_user, fresh_conn):
-    user_a = make_user()
-    user_b = make_user()
-
-    # User A teaches the format.
-    login(client, user_a)
-    _upload_mapped(
-        client, UNKNOWN_CSV,
-        date_col="0", amount_col="2", store_col="1",
-        amount_sign="neg_expense", remember="1",
-    )
-
-    # User B uploads the same layout -> not learned for B -> still needs mapping.
-    login(client, user_b)
-    resp = _upload(client, UNKNOWN_CSV)
-    assert resp.status_code == 200
-    assert resp.get_json().get("needs_mapping") is True
-    assert _count(fresh_conn, "import_formats", user_b) == 0
-
-
-# ---------------------------------------------------------------------------
-# GET / DELETE formats are user-scoped
-# ---------------------------------------------------------------------------
-def test_get_and_delete_formats_user_scoped(client, login, make_user):
-    user_a = make_user()
-    user_b = make_user()
-
-    login(client, user_a)
+def test_get_and_delete_formats(client, login, make_user):
+    uid = make_user()
+    login(client, uid)
     _upload_mapped(
         client, UNKNOWN_CSV,
         date_col="0", amount_col="2", store_col="1",
@@ -275,15 +254,14 @@ def test_get_and_delete_formats_user_scoped(client, login, make_user):
     fmt_id = listing[0]["id"]
     assert listing[0]["date_col"] == 0
 
-    # User B can't see or delete A's format.
-    login(client, user_b)
-    assert client.get("/api/import/formats").get_json() == []
-    assert client.delete(f"/api/import/formats/{fmt_id}").status_code == 404
-
-    # Owner deletes successfully.
-    login(client, user_a)
     assert client.delete(f"/api/import/formats/{fmt_id}").status_code == 204
     assert client.get("/api/import/formats").get_json() == []
+
+
+def test_delete_unknown_format_404(client, login, make_user):
+    uid = make_user()
+    login(client, uid)
+    assert client.delete("/api/import/formats/999999").status_code == 404
 
 
 # ---------------------------------------------------------------------------

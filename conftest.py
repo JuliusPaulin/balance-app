@@ -1,144 +1,105 @@
-"""Shared pytest fixtures — run the suite against the real Postgres test DB.
+"""Shared pytest fixtures — run the suite against a throwaway SQLite database.
 
-The desktop suite used to build its own ``sqlite3.connect(":memory:")`` schema.
-The multi-user port moved every analytics function onto Postgres and made
-``user_id`` mandatory, so the tests now run against the local ``expense_test``
-database with proper per-test isolation.
+Balance is a local, single-user app: one SQLite file, one fixed user
+(``config.LOCAL_USER_ID``), no login. The suite runs against exactly that, so
+what the tests exercise is what ships.
 
-Design
-------
-- A **session-scoped autouse** fixture points the psycopg pool at
-  ``expense_test`` and builds the schema once (idempotently), tearing the pool
-  down at the end of the session.
-- A function-scoped ``user_conn`` fixture yields ``(conn, user_id)`` for a fresh
-  ``users`` row. On teardown it ``DELETE``s that user; every user-owned table
-  has ``ON DELETE CASCADE`` on its ``user_id`` FK, so the delete wipes all the
-  user's data and tests stay isolated even though they share one database.
-- ``seeded_user_conn`` additionally seeds the user's default categories.
-- ``make_category`` is a helper factory: identity PKs mean tests can't hardcode
-  category ids, so tests create the categories they need and map name -> id.
+Two things matter here.
 
-Because ``db.db_conn()`` commits on a clean exit and rolls back on exception, a
-failing test still leaves the DB in a clean state; the ``user_conn`` teardown
-then removes the user row regardless.
+**Never touch the real database.** ``SQLITE_PATH`` is pointed at a temporary
+file below, and it is set when this module is imported — before pytest collects
+any test module. Several test modules ``import config`` / ``import db`` at the
+top, and both read their settings once, on first import. Setting the path in a
+fixture would be too late: the first module to import ``config`` would already
+have pinned ``~/Library/Application Support/Balance/expenses.db``, and the suite
+would write into real figures.
+
+**Reset between tests.** Every table carries ``user_id`` with
+``ON DELETE CASCADE``, so deleting the one user row wipes all its data. Each
+test that asks for a user gets a freshly seeded one.
 """
 
 import os
-import uuid
+import tempfile
 
 import pytest
 
-TEST_DATABASE_URL = "postgresql://localhost/expense_test"
-
 # ---------------------------------------------------------------------------
-# Pick the backend at IMPORT time, not fixture time.
-#
-# pytest imports this file before it collects any test module. Several test
-# modules do `import db` / `import config` at module level, and `db` binds to
-# an engine the moment it is first imported, from `config.USE_SQLITE` — which
-# `config` computes from APP_MODE when IT is first imported.
-#
-# Setting these inside the session fixture was too late: the fixture runs after
-# collection, so whichever module imported `db` first had already pinned the
-# desktop default (SQLite) for the whole run. A test then got Postgres or
-# SQLite depending only on which files were collected alongside it, which is
-# why the suite failed differently run to run and why psycopg's `Json` adapter
-# ended up being handed to sqlite3.
+# Point the app at a scratch database BEFORE anything imports config.
 # ---------------------------------------------------------------------------
-os.environ["DATABASE_URL"] = TEST_DATABASE_URL
-os.environ.setdefault("APP_MODE", "hosted")
+_TMP_DIR = tempfile.mkdtemp(prefix="balance-tests-")
+TEST_SQLITE_PATH = os.path.join(_TMP_DIR, "expenses.db")
+os.environ["SQLITE_PATH"] = TEST_SQLITE_PATH
 
 
 @pytest.fixture(scope="session", autouse=True)
 def _test_db():
-    """Point the pool at expense_test and create the schema once per session."""
+    """Build the schema once per session in the scratch database."""
     import config
-    config.DATABASE_URL = TEST_DATABASE_URL
-
-    import db
     import database
 
-    assert not config.USE_SQLITE, (
-        "The suite must run against Postgres (expense_test). config.USE_SQLITE "
-        "is True, so something imported config before APP_MODE was set."
+    assert config.SQLITE_PATH == TEST_SQLITE_PATH, (
+        f"The suite must run against a scratch database, not {config.SQLITE_PATH}. "
+        "Something imported config before conftest set SQLITE_PATH."
     )
 
-    db.reset_pool(TEST_DATABASE_URL)
-    # init_db() creates the base schema; migrate_db() then idempotently adds the
-    # access-request columns + status index (a no-op on a fresh schema that
-    # already has them, and the upgrade path for an existing users table that
-    # predates them). This mirrors the prod upgrade order.
     database.init_db()
-    database.migrate_db()
-    try:
-        yield
-    finally:
-        db.close_pool()
+    yield
+    import db
+    db.close_pool()
 
 
-def _insert_user(conn, status="approved", role="user"):
-    """Insert a fresh users row with a unique google_sub; return its id.
+def _reset_local_user():
+    """Wipe the local user's data and re-seed a clean one.
 
-    Defaults to an APPROVED user so the existing isolation/security/auth tests
-    (which predate the access-request workflow and exercise the app as a normal
-    logged-in user) keep passing past the new status gate. Access-specific tests
-    pass ``status="pending"`` / ``"denied"`` explicitly.
+    Deleting the ``users`` row cascades through every table that references it,
+    which is every table holding data. ``seed_local_user()`` then puts the row
+    and its default categories back.
     """
-    sub = f"test-{uuid.uuid4()}"
-    row = conn.execute(
-        "INSERT INTO users (google_sub, email, name, status, role) "
-        "VALUES (%s, %s, %s, %s, %s) RETURNING id",
-        (sub, f"{sub}@example.test", "Test User", status, role),
-    ).fetchone()
-    return row["id"]
-
-
-@pytest.fixture
-def user_conn(_test_db):
-    """Yield ``(conn, user_id)`` for a fresh user; cascade-delete on teardown.
-
-    Opens a pooled connection, inserts a unique ``users`` row, and yields the
-    live connection plus the new user id. On teardown the user is ``DELETE``d
-    (cascading to all their data) so each test is fully isolated.
-
-    The cleanup must run on a connection that can *see* the test's data. Pooled
-    connections don't share an uncommitted transaction, so the DELETE is issued
-    on a fresh connection only AFTER the test's connection has closed (and thus
-    committed its data). If the test raised, ``db_conn()`` already rolled the
-    test connection back, leaving nothing for the cascade to remove — the user
-    row is then deleted on its own. Either way the test leaves no rows behind.
-    """
+    import config
+    import database
     import db
 
-    user_id = None
-    try:
-        with db.db_conn() as conn:
-            user_id = _insert_user(conn)
-            yield conn, user_id
-    finally:
-        # The test connection has now closed: it committed on a clean exit or
-        # rolled back if the test raised. Either way, clean up on a fresh
-        # connection that can see whatever was committed. (A failing test rolls
-        # back ALL its data, including the user insert, so there's nothing left;
-        # a passing test committed everything and the cascade clears it here.)
-        if user_id is not None:
-            with db.db_conn() as cleanup:
-                cleanup.execute("DELETE FROM users WHERE id = %s", (user_id,))
+    with db.db_conn() as conn:
+        conn.execute("DELETE FROM users WHERE id = %s", (config.LOCAL_USER_ID,))
+    database.seed_local_user()
+    return config.LOCAL_USER_ID
+
+
+@pytest.fixture(autouse=True)
+def _clean_db(_test_db):
+    """Give every test an empty database, and leave one behind."""
+    _reset_local_user()
+    yield
+    _reset_local_user()
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+@pytest.fixture
+def user_conn():
+    """Yield ``(conn, user_id)`` on a live connection to the local user.
+
+    There is only ever one user. ``_clean_db`` has already reset the database,
+    so the user starts with default categories and no data.
+    """
+    import config
+    import db
+
+    with db.db_conn() as conn:
+        yield conn, config.LOCAL_USER_ID
 
 
 @pytest.fixture
 def seeded_user_conn(user_conn):
-    """Like ``user_conn`` but with the user's default categories seeded."""
-    import database
-
-    conn, user_id = user_conn
-    database.seed_categories_for_user(conn, user_id)
-    return conn, user_id
+    """Alias kept for the tests that ask for it — the local user is always seeded."""
+    return user_conn
 
 
 @pytest.fixture
 def make_category():
-    """Factory: insert a category for a user and return its id.
+    """Factory: insert a category and return its id.
 
     Identity PKs mean tests can't hardcode category ids, so tests that reference
     categories by id create them through this helper and map name -> id.
@@ -157,34 +118,16 @@ def make_category():
 
 
 # ---------------------------------------------------------------------------
-# HTTP-level fixtures (data isolation tests)
+# HTTP-level fixtures
 # ---------------------------------------------------------------------------
-# The fixtures below drive the Flask app through its real HTTP surface via the
-# test client. Unlike ``user_conn`` — whose connection is held open for the whole
-# test and therefore commits only on teardown — these tests must *commit* a
-# user's data before an HTTP request runs, because the test client borrows a
-# DIFFERENT pooled connection that can't see another connection's uncommitted
-# transaction. So data is created in short-lived ``db.db_conn()`` blocks (each
-# commits on exit) and the user rows are cascade-deleted on teardown.
-
-
-def _delete_user(user_id):
-    """Cascade-delete a user (and all their data) on a fresh connection."""
-    import db
-
-    with db.db_conn() as cleanup:
-        cleanup.execute("DELETE FROM users WHERE id = %s", (user_id,))
-
-
 @pytest.fixture
-def client(_test_db):
+def client():
     """A Flask test client against the real app, with TESTING enabled."""
     import app as app_module
 
     app_module.app.config["TESTING"] = True
-    # The existing suite mutates without a CSRF token; disable enforcement here
-    # so those tests pass unchanged. The dedicated CSRF tests (test_security.py)
-    # flip CSRF_ENABLED back on per-test.
+    # Most tests mutate without a CSRF token; the dedicated CSRF tests in
+    # test_security.py flip enforcement back on per-test.
     app_module.app.config["CSRF_ENABLED"] = False
     with app_module.app.test_client() as c:
         yield c
@@ -192,58 +135,34 @@ def client(_test_db):
 
 @pytest.fixture
 def login():
-    """Return a helper that logs a client in as a given user id.
-
-    There is no login route yet (Phase 3), so the session is injected directly,
-    exactly as the real auth flow will eventually set it.
-
-        login(client, user_id)
-    """
-    def _login(client, user_id, status="approved", role="user"):
-        with client.session_transaction() as s:
-            s["user_id"] = user_id
-            # Mirror what the real auth flow sets so the status gate lets the
-            # (approved-by-default) test user through.
-            s["status"] = status
-            s["role"] = role
+    """No-op: there is no login. Kept so tests can read as they always did."""
+    def _login(client, user_id=None, **_ignored):
+        return None
 
     return _login
 
 
 @pytest.fixture
 def make_user():
-    """Factory creating a fresh, category-seeded user; auto-deleted on teardown.
+    """Return the local user's id, freshly seeded.
 
-    Returns the new user's id. Each call commits the user + seeded categories so
-    the test client (on its own pooled connection) can see them. Every created
-    user is cascade-deleted at the end of the test.
+    The app has exactly one user, so this hands back the same id every time —
+    ``config.LOCAL_USER_ID``. Calling it twice in one test does NOT produce two
+    users; tests that need two tenants no longer have anything to test.
     """
-    import db
-    import database
-
-    created = []
-
     def _make():
-        with db.db_conn() as conn:
-            user_id = _insert_user(conn)
-            database.seed_categories_for_user(conn, user_id)
-        created.append(user_id)
-        return user_id
+        return _reset_local_user()
 
-    try:
-        yield _make
-    finally:
-        for uid in created:
-            _delete_user(uid)
+    return _make
 
 
 @pytest.fixture
 def fresh_conn():
-    """Yield a short-lived helper that runs a callable inside a committed txn.
+    """Yield a helper that runs a callable inside a committed transaction.
 
-    ``fresh_conn(fn)`` opens a pooled connection, calls ``fn(conn)``, and commits
-    on clean exit (the pool's context manager handles the commit). Use it to set
-    up or read back a specific user's rows out-of-band from the HTTP requests.
+    ``fresh_conn(fn)`` opens a connection, calls ``fn(conn)``, and commits on a
+    clean exit. Use it to set up or read back rows out-of-band from the HTTP
+    requests the test client makes.
     """
     import db
 

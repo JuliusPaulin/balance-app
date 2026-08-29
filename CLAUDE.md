@@ -5,22 +5,20 @@
 | Layer | Tech |
 |-------|------|
 | Backend | Python, Flask |
-| Database | **SQLite (desktop/local)** or Postgres (hosted) — same query layer, see "Runtime modes" |
+| Database | SQLite — one local file |
 | Frontend | Vanilla HTML/CSS/JS, Apple-style design |
 | Desktop shell | pywebview (native window on port 5050, `PORT` env-overridable) |
 | Charts | Chart.js |
-| iOS reader | SwiftUI (iOS 26+, Liquid Glass), Swift Charts |
 
 **Entry points:**
 - `main.py` — desktop app launcher (pywebview); on launch creates the schema,
-  backs up the DB, and seeds the single local user.
+  backs up the DB, and seeds the local user.
 - `app.py` — Flask server with all API routes
-- `config.py` — runtime config; `APP_MODE` (`desktop`/`hosted`) drives `USE_SQLITE`
-- `db.py` — **database dispatcher**: re-exports the active engine's public surface
-- `db_sqlite.py` — local SQLite engine (translates `%s`→`?`, `now()`→`datetime('now')`, dict rows)
-- `db_postgres.py` — hosted psycopg connection-pool engine
-- `database.py` — schema DDL (one per backend) + seeding + backups
-- `scripts/migrate_to_local_sqlite.py` — one-time import of an old single-user DB into the local schema
+- `config.py` — runtime config (all optional; safe defaults throughout)
+- `db.py` — the single import point for the database; re-exports `db_sqlite`
+- `db_sqlite.py` — the SQLite engine (translates `%s`→`?`, `now()`→`datetime('now')`, dict rows)
+- `database.py` — schema DDL + seeding + backups
+- `scripts/migrate_to_local_sqlite.py` — one-time import of an old DB into this schema
 - `recurring.py` — recurring/subscription detection over transaction history
 - `networth.py` — net worth tracking (carry-forward over manual account balances; grouped + holdings).
   Totals come from balances alone: an account you leave out of an update keeps its
@@ -28,40 +26,49 @@
   it, so past months stay true. Never filter `is_archived` in the total queries.
 - `investment_import.py` — Nordnet CSV / Nordea xlsx portfolio parsers (→ holdings + Net Worth)
 
-**Single-user local app:** there is no login/OAuth/admin. `current_user_id()`
-returns the fixed `config.LOCAL_USER_ID` (one local user, seeded at startup); the
-`users` table + `user_id` columns are kept only as an internal anchor so the
-query layer is unchanged. iCloud export and the multi-user/auth/admin surface
-were removed for the local build (the `ios/` reader and `auth.py`/`mailer.py`
-are gone).
+---
+
+## One user, one file, no server
+
+There is no login, no OAuth, no admin, no network database. `current_user_id()`
+returns the fixed `config.LOCAL_USER_ID`. The `users` table and the `user_id`
+columns on every table survive from an earlier multi-user port and are kept
+**purely as an internal anchor**, so the user-scoped queries throughout the app
+run unchanged — do not try to remove them without rewriting every query and
+migrating existing databases.
+
+The database is a single SQLite file at
+**`~/Library/Application Support/Balance/expenses.db`** (override with
+`SQLITE_PATH`). Run with `python3 main.py`; package with
+`./scripts/build_app.sh` → `Balance.app` / `Balance.dmg`.
+
+The SQL throughout the app is psycopg-flavoured — `%s` placeholders, `RETURNING`,
+`ON CONFLICT`, dict rows. `db_sqlite` translates that on the way to the driver,
+which is why route code reads the way it does. Driver-specific bits funnel
+through `db`: `db.IntegrityError`, `db.DatabaseError`, `db.Json(...)`,
+`db.load_json(...)` — never import `sqlite3` directly in route code.
+
+> History: this began as a single-user SQLite desktop app, was ported wholesale
+> to multi-user Postgres for a Supabase/Render deployment, then brought back to
+> local SQLite to drop the hosting costs. The hosted build — Postgres, Google
+> OAuth, access approval, gunicorn, the SMTP notifier — has now been removed
+> outright. The investment **holdings** feature lived on a separate branch and
+> is NOT in this lineage.
 
 ---
 
-## Runtime modes (desktop SQLite vs hosted Postgres)
+## Tests
 
-`config.APP_MODE` (env, default `desktop`) selects everything:
+`python3 -m pytest tests/` — 63 tests, all green.
 
-- **Desktop / local (default, `USE_SQLITE=True`)** — a single-user macOS app.
-  No Postgres, no Supabase, no Google OAuth, no network DB. The DB is a local
-  SQLite file at **`~/Library/Application Support/Balance/expenses.db`**
-  (override with `SQLITE_PATH`). `require_login` auto-attaches a fixed local user
-  (`config.LOCAL_USER_ID = 1`, approved admin) to the session, so the OAuth/access
-  gates are satisfied without any login. Run with `python3 main.py`; package with
-  `./scripts/build_app.sh` → `Balance.app` / `Balance.dmg`.
-- **Hosted (`APP_MODE=hosted`)** — the multi-user cloud build: Postgres via
-  `DATABASE_URL`, Google OAuth, access-request approval, gunicorn. Unchanged.
+`conftest.py` points `SQLITE_PATH` at a throwaway file **at import time**, before
+pytest collects any test module. This matters: test modules `import config` /
+`import db` at the top, and both read their settings once on first import, so
+setting the path in a fixture would be too late and the suite would write into
+the real database. There is an assert guarding it.
 
-The app is written once against a psycopg-style API (`%s` placeholders, dict
-rows, `RETURNING`, `ON CONFLICT`). `db_sqlite` makes that run on SQLite by
-translating SQL on the way to the driver and returning dict rows, so route code
-is identical on both backends. Backend-specific bits are funnelled through `db`:
-`db.IntegrityError`, `db.DatabaseError`, `db.Json(...)`, `db.load_json(...)`.
-
-> History: this codebase began as a single-user SQLite desktop app, was ported
-> wholesale to multi-user Postgres for a Supabase/Render deployment, then brought
-> back to local SQLite (this mode) to drop the hosting/usage costs while keeping
-> all the newer features. The investment **holdings** feature lived on a separate
-> branch and is NOT in this lineage.
+Every table has `user_id` with `ON DELETE CASCADE`, so each test resets by
+deleting the one user row and re-seeding.
 
 ---
 
@@ -139,22 +146,21 @@ Module: `enable_banking.py`.
 - **Fetch:** `get_transactions()` paginates via `continuation_key`, keeps `status == "BOOK"`,
   maps DBIT→expense/creditor, CRDT→income/debtor (fallbacks: remittance info → "Unknown"),
   stages into `import_staging` with `suggest_category`. Response shape is identical to `/api/import/upload`.
-- **Per-user isolation:** every bank query is scoped by `current_user_id()`; `account_uid` must
-  belong to the session; `bank_sessions` cascade-deletes with the user.
+- **Scoping:** every bank query goes through `current_user_id()` and `account_uid` must
+  belong to the stored session; `bank_sessions` cascade-deletes with the user row.
 - **Consent lifetime:** PSD2 caps consent at ~90 days; expired → 401, UI prompts reconnect.
 
 **Current live state (as of 2026-06):**
 - Enable Banking app is **PRODUCTION**, **Restricted Mode** (account-linking / whitelisted
-  own accounts). This means **only the owner's whitelisted accounts return data** — effectively
-  single-user. Opening up to other users connecting their *own* banks requires full production
-  activation (commercial agreement with Enable Banking).
+  own accounts): only the owner's whitelisted accounts return data. Which suits an app
+  with one user.
 - Default ASPSP `Nordea` / country `FI` (`ENABLE_BANKING_ASPSP`, `ENABLE_BANKING_COUNTRY`).
-- Render env vars required: `ENABLE_BANKING_APP_ID`, `ENABLE_BANKING_PRIVATE_KEY` (base64 PEM).
-- `bank_sessions` table must exist in Supabase (`init_db()` / the Step-1 DDL creates it).
+- Needs `ENABLE_BANKING_APP_ID` and `ENABLE_BANKING_PRIVATE_KEY` (base64 PEM) in the
+  environment; without both, `enable_banking_configured()` is False and the routes 400.
+- The bank returns the browser to `BANK_REDIRECT_BASE` + `/api/import/bank/callback`
+  (default `http://localhost:5050`), which must be registered in the EB app config.
 - ⚠️ Error mapping is currently coarse: a 403 at **connect** (app JWT rejected) is reported as
   "consent expired", which is misleading at that stage. Candidate cleanup.
-- This feature is **hosted-only** (`main` lineage). The desktop `dev` branch has a separate,
-  local variant (reads `~/.bank-mcp/config.json` + SQLite).
 
 ### Dashboard
 Card order: Monthly Overview → Expenses by Category → Income by Category →

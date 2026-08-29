@@ -1,29 +1,23 @@
-"""Schema + seeding, for both backends (SQLite desktop / Postgres hosted).
+"""Schema + seeding for the local SQLite database.
 
-This module owns the **schema** and per-user category seeding. It supports two
-backends selected by :data:`config.USE_SQLITE`:
+This module owns the **schema**, the category seeding and the file backups.
 
-- **Desktop (SQLite)** — a local single-user file. The app is still multi-tenant
-  in shape (a ``users`` table, ``user_id`` on every table), but desktop mode
-  auto-logs-in one fixed local user (``config.LOCAL_USER_ID``), so the same
-  user-scoped queries run unchanged.
-- **Hosted (Postgres)** — the original multi-user cloud schema.
+The app is single-user. A ``users`` table and a ``user_id`` column on every
+table survive from an earlier multi-user port; they are kept purely as an
+internal anchor so the user-scoped queries throughout the app run unchanged
+against the one fixed local user (``config.LOCAL_USER_ID``).
 
-Public shape (kept stable so app.py / recurring.py / networth.py / auth.py keep
-importing it regardless of backend):
+Public shape (app.py / recurring.py / networth.py import from here):
 
-- ``db_conn``            — re-exported from :mod:`db` (the active engine's ctx mgr).
+- ``db_conn``            — re-exported from :mod:`db`.
 - ``get_db()``           — a direct connection the caller commits + closes.
-- ``init_db()``          — build the full schema idempotently for the active engine.
-- ``migrate_db()``       — upgrade an existing install in place (Postgres only;
-                           SQLite builds the complete schema in ``init_db``).
-- ``seed_categories_for_user(conn, user_id)`` — seed default categories for a user.
-- ``seed_local_user()``  — ensure the single desktop user + its categories exist.
-- ``backup_db`` / ``list_backups`` — real file-copy backups in SQLite mode;
-                           no-ops in hosted Postgres mode.
+- ``init_db()``          — build the full schema idempotently.
+- ``seed_categories_for_user(conn, user_id)`` — seed default categories.
+- ``seed_local_user()``  — ensure the local user + its categories exist.
+- ``backup_db`` / ``list_backups`` — timestamped file copies of the database.
 
-Param style is ``%s`` and rows are dicts on **both** backends (the SQLite engine
-translates ``%s`` → ``?`` and returns dict rows — see :mod:`db_sqlite`).
+Param style is ``%s`` and rows come back as dicts: the SQL is written
+psycopg-flavoured and :mod:`db_sqlite` translates it on the way to sqlite3.
 """
 
 import os
@@ -249,209 +243,25 @@ CREATE INDEX IF NOT EXISTS idx_holdings_account_asof ON holdings(account_id, as_
 """
 
 
-# ===========================================================================
-# Postgres schema (hosted) — unchanged from the cloud build
-# ===========================================================================
-_NOW_TEXT = "to_char(now() AT TIME ZONE 'UTC','YYYY-MM-DD HH24:MI:SS')"
-
-SCHEMA_DDL_PG = f"""
-CREATE TABLE IF NOT EXISTS users (
-    id            BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    google_sub    TEXT NOT NULL UNIQUE,
-    email         TEXT NOT NULL,
-    name          TEXT,
-    picture       TEXT,
-    created_at    TEXT NOT NULL DEFAULT {_NOW_TEXT},
-    last_login_at TEXT,
-    status        TEXT NOT NULL DEFAULT 'pending'
-                  CHECK (status IN ('pending','approved','denied')),
-    role          TEXT NOT NULL DEFAULT 'user'
-                  CHECK (role IN ('user','admin')),
-    note          TEXT,
-    decided_at    TEXT,
-    decided_by    BIGINT REFERENCES users(id)
-);
-
-CREATE TABLE IF NOT EXISTS categories (
-    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name       TEXT NOT NULL,
-    type       TEXT NOT NULL CHECK (type IN ('expense', 'income')),
-    is_default INTEGER NOT NULL DEFAULT 1,
-    color      TEXT,
-    created_at TEXT NOT NULL DEFAULT {_NOW_TEXT},
-    updated_at TEXT NOT NULL DEFAULT {_NOW_TEXT}
-);
-
-CREATE TABLE IF NOT EXISTS transactions (
-    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    date        TEXT NOT NULL,
-    store       TEXT NOT NULL DEFAULT '',
-    category_id BIGINT NOT NULL REFERENCES categories(id),
-    amount      DOUBLE PRECISION NOT NULL,
-    type        TEXT NOT NULL CHECK (type IN ('expense', 'income')),
-    created_at  TEXT NOT NULL DEFAULT {_NOW_TEXT},
-    updated_at  TEXT NOT NULL DEFAULT {_NOW_TEXT}
-);
-
-CREATE TABLE IF NOT EXISTS import_batches (
-    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    filename    TEXT NOT NULL,
-    imported_at TEXT NOT NULL DEFAULT {_NOW_TEXT},
-    status      TEXT NOT NULL DEFAULT 'pending'
-);
-
-CREATE TABLE IF NOT EXISTS import_staging (
-    id                 BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id            BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    date               TEXT NOT NULL,
-    store              TEXT NOT NULL DEFAULT '',
-    suggested_category TEXT,
-    amount             DOUBLE PRECISION NOT NULL,
-    type               TEXT NOT NULL DEFAULT 'expense',
-    confirmed          INTEGER NOT NULL DEFAULT 0,
-    final_category_id  BIGINT REFERENCES categories(id),
-    import_batch_id    BIGINT NOT NULL REFERENCES import_batches(id)
-);
-
-CREATE TABLE IF NOT EXISTS import_formats (
-    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    signature   TEXT NOT NULL,
-    delimiter   TEXT NOT NULL,
-    date_col    INT NOT NULL,
-    amount_col  INT NOT NULL,
-    store_col   INT,
-    amount_sign TEXT NOT NULL DEFAULT 'neg_expense'
-                CHECK (amount_sign IN ('neg_expense','pos_expense')),
-    created_at  TEXT NOT NULL DEFAULT {_NOW_TEXT},
-    UNIQUE (user_id, signature)
-);
-
-CREATE TABLE IF NOT EXISTS merchant_rules (
-    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    pattern     TEXT NOT NULL,
-    category_id BIGINT NOT NULL REFERENCES categories(id),
-    match_type  TEXT NOT NULL DEFAULT 'exact' CHECK (match_type IN ('exact', 'contains', 'smart')),
-    created_at  TEXT NOT NULL DEFAULT {_NOW_TEXT}
-);
-
-CREATE TABLE IF NOT EXISTS month_notes (
-    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    month      TEXT NOT NULL,
-    note       TEXT NOT NULL DEFAULT '',
-    updated_at TEXT NOT NULL DEFAULT {_NOW_TEXT},
-    UNIQUE (user_id, month)
-);
-
-CREATE TABLE IF NOT EXISTS accounts (
-    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    name        TEXT NOT NULL,
-    type        TEXT NOT NULL CHECK (type IN ('asset', 'liability')),
-    sort_order  INTEGER NOT NULL DEFAULT 0,
-    is_archived INTEGER NOT NULL DEFAULT 0,
-    created_at  TEXT NOT NULL DEFAULT {_NOW_TEXT}
-);
-
-CREATE TABLE IF NOT EXISTS recurring_dismissed (
-    id           BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id      BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    signature    TEXT NOT NULL,
-    dismissed_at TEXT NOT NULL DEFAULT {_NOW_TEXT},
-    UNIQUE (user_id, signature)
-);
-
-CREATE TABLE IF NOT EXISTS manual_subscriptions (
-    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    store      TEXT NOT NULL,
-    amount     DOUBLE PRECISION NOT NULL,
-    cadence    TEXT NOT NULL DEFAULT 'monthly'
-               CHECK (cadence IN ('monthly', 'quarterly', 'yearly')),
-    category   TEXT,
-    type       TEXT NOT NULL DEFAULT 'expense' CHECK (type IN ('expense', 'income')),
-    created_at TEXT NOT NULL DEFAULT {_NOW_TEXT}
-);
-
-CREATE TABLE IF NOT EXISTS account_balances (
-    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    account_id BIGINT NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
-    as_of      TEXT NOT NULL,
-    balance    DOUBLE PRECISION NOT NULL,
-    created_at TEXT NOT NULL DEFAULT {_NOW_TEXT},
-    UNIQUE (account_id, as_of)
-);
-
-CREATE TABLE IF NOT EXISTS bank_sessions (
-    id            BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    session_id    TEXT NOT NULL,
-    aspsp_name    TEXT,
-    aspsp_country TEXT,
-    valid_until   TIMESTAMPTZ,
-    accounts      JSONB,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (user_id)
-);
-CREATE INDEX IF NOT EXISTS idx_bank_sessions_user ON bank_sessions(user_id);
-
-CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
-CREATE INDEX IF NOT EXISTS idx_categories_user ON categories(user_id);
-CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id);
-CREATE INDEX IF NOT EXISTS idx_transactions_user_date ON transactions(user_id, date);
-CREATE INDEX IF NOT EXISTS idx_transactions_user_category ON transactions(user_id, category_id);
-CREATE INDEX IF NOT EXISTS idx_transactions_user_type ON transactions(user_id, type);
-CREATE INDEX IF NOT EXISTS idx_merchant_rules_user_pattern ON merchant_rules(user_id, pattern);
-CREATE INDEX IF NOT EXISTS idx_account_balances_user_asof ON account_balances(user_id, as_of);
-CREATE INDEX IF NOT EXISTS idx_account_balances_account ON account_balances(account_id);
-CREATE INDEX IF NOT EXISTS idx_manual_subscriptions_user ON manual_subscriptions(user_id);
-"""
-
-
 # ---------------------------------------------------------------------------
 # Direct (non-pooled) connection — caller commits + closes
 # ---------------------------------------------------------------------------
 def get_db():
-    """Return a direct connection the caller is responsible for committing + closing.
-
-    Desktop mode returns the SQLite engine's connection; hosted mode opens a
-    fresh psycopg connection (autocommit off, ``dict_row`` rows). Both mirror the
-    old SQLite ``get_db()`` contract.
-    """
-    if config.USE_SQLITE:
-        return db.get_db()
-
-    import psycopg
-    from psycopg.rows import dict_row
-
-    url = config.DATABASE_URL
-    if not url:
-        raise RuntimeError(
-            "DATABASE_URL is not set — Postgres mode requires a connection "
-            "string. Set DATABASE_URL (e.g. in .env) before using get_db()."
-        )
-    return psycopg.connect(url, row_factory=dict_row)
+    """Return a direct connection the caller is responsible for committing + closing."""
+    return db.get_db()
 
 
 # ---------------------------------------------------------------------------
 # Schema creation
 # ---------------------------------------------------------------------------
 def init_db():
-    """Create the full schema for the active backend, idempotently.
+    """Create the full schema, idempotently.
 
     Everything is ``IF NOT EXISTS`` so this is safe to run repeatedly. Does NOT
-    seed categories — categories are per-user (see :func:`seed_categories_for_user`
-    / :func:`seed_local_user`).
+    seed categories — see :func:`seed_categories_for_user` / :func:`seed_local_user`.
     """
-    db.run_sql_script(SCHEMA_DDL_SQLITE if config.USE_SQLITE else SCHEMA_DDL_PG)
-    if config.USE_SQLITE:
-        _ensure_sqlite_columns()
+    db.run_sql_script(SCHEMA_DDL_SQLITE)
+    _ensure_sqlite_columns()
 
 
 def _ensure_sqlite_columns():
@@ -503,90 +313,6 @@ def _ensure_closed_accounts_zeroed():
 
 
 # ---------------------------------------------------------------------------
-# Schema migration (hosted/Postgres: upgrade existing installs in place)
-# ---------------------------------------------------------------------------
-_MIGRATION_DDL = f"""
-ALTER TABLE categories ADD COLUMN IF NOT EXISTS color TEXT;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS status TEXT NOT NULL DEFAULT 'pending';
-ALTER TABLE users ADD COLUMN IF NOT EXISTS role TEXT NOT NULL DEFAULT 'user';
-ALTER TABLE users ADD COLUMN IF NOT EXISTS note TEXT;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS decided_at TEXT;
-ALTER TABLE users ADD COLUMN IF NOT EXISTS decided_by BIGINT REFERENCES users(id);
-CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
-
-CREATE TABLE IF NOT EXISTS import_formats (
-    id          BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id     BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    signature   TEXT NOT NULL,
-    delimiter   TEXT NOT NULL,
-    date_col    INT NOT NULL,
-    amount_col  INT NOT NULL,
-    store_col   INT,
-    amount_sign TEXT NOT NULL DEFAULT 'neg_expense'
-                CHECK (amount_sign IN ('neg_expense','pos_expense')),
-    created_at  TEXT NOT NULL DEFAULT {_NOW_TEXT},
-    UNIQUE (user_id, signature)
-);
-
-CREATE TABLE IF NOT EXISTS bank_sessions (
-    id            BIGINT GENERATED BY DEFAULT AS IDENTITY PRIMARY KEY,
-    user_id       BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    session_id    TEXT NOT NULL,
-    aspsp_name    TEXT,
-    aspsp_country TEXT,
-    valid_until   TIMESTAMPTZ,
-    accounts      JSONB,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT now(),
-    UNIQUE (user_id)
-);
-CREATE INDEX IF NOT EXISTS idx_bank_sessions_user ON bank_sessions(user_id);
-
-CREATE TABLE IF NOT EXISTS manual_subscriptions (
-    id         BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    user_id    BIGINT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
-    store      TEXT NOT NULL,
-    amount     DOUBLE PRECISION NOT NULL,
-    cadence    TEXT NOT NULL DEFAULT 'monthly'
-               CHECK (cadence IN ('monthly', 'quarterly', 'yearly')),
-    category   TEXT,
-    type       TEXT NOT NULL DEFAULT 'expense' CHECK (type IN ('expense', 'income')),
-    created_at TEXT NOT NULL DEFAULT {_NOW_TEXT}
-);
-CREATE INDEX IF NOT EXISTS idx_manual_subscriptions_user ON manual_subscriptions(user_id);
-"""
-
-
-def migrate_db():
-    """Upgrade an existing install in place.
-
-    SQLite (desktop) builds the complete schema in :func:`init_db`, so this is a
-    no-op there. In hosted Postgres mode it idempotently adds the access-request
-    columns + later tables to an existing DB and backfills admin/allowed emails.
-    """
-    if config.USE_SQLITE:
-        return
-
-    db.run_sql_script(_MIGRATION_DDL)
-
-    admin_emails = list(config.ADMIN_EMAILS)
-    allowed_emails = list(config.ALLOWED_EMAILS)
-
-    with db.db_conn() as conn:
-        if admin_emails:
-            conn.execute(
-                "UPDATE users SET role = 'admin', status = 'approved' "
-                "WHERE lower(email) = ANY(%s)",
-                (admin_emails,),
-            )
-        if allowed_emails:
-            conn.execute(
-                "UPDATE users SET status = 'approved' "
-                "WHERE lower(email) = ANY(%s) AND status <> 'denied'",
-                (allowed_emails,),
-            )
-
-
-# ---------------------------------------------------------------------------
 # Per-user category seeding
 # ---------------------------------------------------------------------------
 def seed_categories_for_user(conn, user_id):
@@ -624,19 +350,15 @@ def seed_categories(conn):
 
 
 # ---------------------------------------------------------------------------
-# Desktop single-user bootstrap
+# Single-user bootstrap
 # ---------------------------------------------------------------------------
 def seed_local_user():
-    """Ensure the fixed desktop user (``config.LOCAL_USER_ID``) exists, approved.
+    """Ensure the one local user (``config.LOCAL_USER_ID``) exists.
 
-    Desktop mode is single-user: it auto-logs-in one local user rather than going
-    through Google OAuth. This creates that user row (id = LOCAL_USER_ID,
-    approved admin) if absent and seeds its default categories. Idempotent —
-    safe to call on every launch. No-op outside SQLite/desktop mode.
+    Creates that row if absent and seeds its default categories, so every
+    user-scoped query has a valid user to attach to on a fresh install.
+    Idempotent — safe to call on every launch.
     """
-    if not config.USE_SQLITE:
-        return
-
     uid = config.LOCAL_USER_ID
     with db.db_conn() as conn:
         existing = conn.execute(
@@ -652,7 +374,7 @@ def seed_local_user():
 
 
 # ---------------------------------------------------------------------------
-# Backups — real file copy in SQLite mode; no-ops in hosted Postgres mode
+# Backups — timestamped file copies next to the database
 # ---------------------------------------------------------------------------
 def _backups_dir():
     """Directory that holds timestamped SQLite backups (next to the DB file)."""
@@ -660,14 +382,10 @@ def _backups_dir():
 
 
 def backup_db(reason: str = "manual"):
-    """Copy the SQLite DB to ``backups/expenses-<ts>-<reason>.db`` and return its path.
+    """Copy the database to ``backups/expenses-<ts>-<reason>.db``; return its path.
 
-    No-op (returns None) in hosted Postgres mode — managed backups / pg_dump are
-    the provider's job there. In SQLite mode, returns None if the DB file does
-    not exist yet (nothing to back up).
+    Returns None when the database file does not exist yet — nothing to copy.
     """
-    if not config.USE_SQLITE:
-        return None
     src = config.SQLITE_PATH
     if not os.path.exists(src):
         return None
@@ -681,9 +399,7 @@ def backup_db(reason: str = "manual"):
 
 
 def list_backups() -> list[dict]:
-    """List available SQLite backups (newest first); ``[]`` in hosted mode."""
-    if not config.USE_SQLITE:
-        return []
+    """List available backups, newest first."""
     dest_dir = _backups_dir()
     if not os.path.isdir(dest_dir):
         return []

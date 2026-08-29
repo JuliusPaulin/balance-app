@@ -9,7 +9,7 @@ from datetime import datetime, date, timedelta
 from dateutil import parser as date_parser
 from flask import Flask, request, jsonify, render_template, send_from_directory, session, abort, redirect
 import db
-from database import get_db, db_conn, init_db, migrate_db, backup_db, list_backups
+from database import get_db, db_conn, init_db, backup_db, list_backups
 from recurring import detect_recurring
 import networth
 import investment_import
@@ -33,39 +33,26 @@ app.secret_key = config.FLASK_SECRET_KEY
 app.config["MAX_CONTENT_LENGTH"] = 16 * 1024 * 1024
 
 # ── Cookie hardening (Step 4.2) ────────────────────────────────────────
-# Session cookie is httpOnly (no JS access) and SameSite=Lax (sent on top-level
-# navigations — needed for the OAuth redirect back from Google — but not on
-# cross-site subrequests). Secure is tied to hosted mode so http://localhost dev
-# still works; in production (HTTPS) the cookie is only sent over TLS.
+# The session cookie carries nothing but the CSRF token — there is no login.
+# httpOnly keeps it away from JS; SameSite=Lax is the sane default. Not Secure:
+# the app is served over plain http on 127.0.0.1, where TLS does not apply.
 app.config["SESSION_COOKIE_HTTPONLY"] = True
 app.config["SESSION_COOKIE_SAMESITE"] = "Lax"
-app.config["SESSION_COOKIE_SECURE"] = config.IS_HOSTED
+app.config["SESSION_COOKIE_SECURE"] = False
 app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 
-# ── Schema bootstrap on hosted boot ───────────────────────────────────
-# Render runs `gunicorn app:app`, which imports this module but never executes
-# the __main__ block — so init_db()/migrate_db() would otherwise never run on a
-# deploy, and new tables/columns (e.g. manual_subscriptions) wouldn't reach the
-# prod DB. Both are fully idempotent (IF NOT EXISTS / ADD COLUMN IF NOT EXISTS),
-# so we run them once at import in hosted mode. Wrapped so a transient DB hiccup
-# or a concurrent-CREATE race between workers doesn't abort boot.
-if config.IS_HOSTED:
-    try:
-        init_db()
-        migrate_db()
-    except Exception as _e:  # pragma: no cover - depends on live DB
-        app.logger.warning("Startup schema init/migrate failed: %s", _e)
-elif config.USE_SQLITE:
-    # Desktop/local: create the SQLite schema and ensure the single local user
-    # (+ its default categories) exist, so the app is usable on first launch and
-    # every user-scoped query has a valid user to attach to. Both are idempotent.
-    from database import seed_local_user
+# ── Schema bootstrap ──────────────────────────────────────────────────
+# Create the schema and ensure the local user (+ its default categories) exist,
+# so the app is usable on first launch and every user-scoped query has a valid
+# user to attach to. Both are idempotent, and both run at import so the app is
+# ready however it was started.
+from database import seed_local_user
 
-    try:
-        init_db()
-        seed_local_user()
-    except Exception as _e:  # pragma: no cover
-        app.logger.warning("Startup SQLite init/seed failed: %s", _e)
+try:
+    init_db()
+    seed_local_user()
+except Exception as _e:  # pragma: no cover
+    app.logger.warning("Startup schema init/seed failed: %s", _e)
 
 # ── CSRF enable flag (Step 4.1d) ───────────────────────────────────────
 # On by default so production is protected. The test suite flips this False in
@@ -143,7 +130,7 @@ def security_headers(response):
             "csrf_token",
             token,
             samesite="Lax",
-            secure=config.IS_HOSTED,
+            secure=False,   # served over plain http on 127.0.0.1
             httponly=False,
         )
     return response
@@ -248,14 +235,10 @@ def index():
 def me():
     """Minimal app-state endpoint for the SPA.
 
-    Single-user local app — no login, so there is no real identity here. Returns
-    ``is_hosted`` (always False locally, so the frontend keeps the native Quit
-    action) and the per-session CSRF token the fetch wrapper echoes back.
+    Single-user local app — no login, so there is no identity to report. All
+    this carries is the per-session CSRF token the fetch wrapper echoes back.
     """
-    return jsonify({
-        "is_hosted": config.IS_HOSTED,
-        "csrf_token": _ensure_csrf_token(),
-    })
+    return jsonify({"csrf_token": _ensure_csrf_token()})
 
 
 # ── Categories API ─────────────────────────────────────────────────────
@@ -2851,7 +2834,7 @@ def bank_connect():
 
     A random ``state`` nonce is stored in the Flask session and passed to Enable
     Banking; the callback verifies the echoed value matches. The redirect target
-    is our own callback under OAUTH_REDIRECT_BASE. A full-page browser redirect
+    is our own callback under BANK_REDIRECT_BASE. A full-page browser redirect
     (302) is returned so the user lands on their bank's authorization page.
     """
     current_user_id()  # enforce auth (raises 401 otherwise)
@@ -2860,7 +2843,7 @@ def bank_connect():
 
     state = secrets.token_urlsafe(32)
     session[_BANK_STATE_KEY] = state
-    redirect_url = config.OAUTH_REDIRECT_BASE + "/api/import/bank/callback"
+    redirect_url = config.BANK_REDIRECT_BASE + "/api/import/bank/callback"
     try:
         auth_url = enable_banking.start_auth(
             config.ENABLE_BANKING_ASPSP,
@@ -3035,17 +3018,12 @@ def _valid_iso_date(value):
 
 @app.route("/api/backups")
 def get_backups():
-    # Desktop-only (file-based backups). No-op/absent in hosted mode, like /api/quit.
-    if config.IS_HOSTED:
-        abort(404)
     current_user_id()
     return jsonify(list_backups())
 
 
 @app.route("/api/backups", methods=["POST"])
 def create_backup():
-    if config.IS_HOSTED:
-        abort(404)
     current_user_id()
     reason = (request.json or {}).get("reason", "manual")
     path = backup_db(reason)
@@ -3056,10 +3034,7 @@ def create_backup():
 
 @app.route("/api/quit", methods=["POST"])
 def quit_app():
-    # Quitting kills the local process — meaningless (and a denial-of-service
-    # vector) on the shared hosted server. No-op there.
-    if config.IS_HOSTED:
-        abort(404)
+    # Quitting kills the local process — there is only ever the one.
     import os, signal
     backup_db("on-quit")
     os.kill(os.getpid(), signal.SIGTERM)

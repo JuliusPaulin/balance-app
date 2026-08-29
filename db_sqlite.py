@@ -41,8 +41,7 @@ from contextlib import contextmanager
 
 import config
 
-# Backend-agnostic exception classes (mirrored by db_postgres) so callers can
-# catch DB errors without importing a specific driver.
+# Named here so callers can catch DB errors without importing sqlite3 directly.
 IntegrityError = sqlite3.IntegrityError
 DatabaseError = sqlite3.Error
 
@@ -51,15 +50,14 @@ def Json(obj):
     """Adapt a Python value for a JSON column.
 
     SQLite has no native JSON type, so JSON columns are TEXT: serialize here.
-    Mirrors psycopg's ``Json`` wrapper used in hosted mode (see db_postgres)."""
+    Named after psycopg's ``Json`` wrapper, which the app's SQL was written for."""
     return json.dumps(obj if obj is not None else None)
 
 
 def load_json(value):
     """Decode a JSON column value read back from the DB.
 
-    SQLite returns the stored TEXT, so parse it; ``None``/empty yields ``None``.
-    In hosted mode JSONB is already parsed, so db_postgres.load_json is identity."""
+    SQLite returns the stored TEXT, so parse it; ``None``/empty yields ``None``."""
     if value is None or value == "":
         return None
     if isinstance(value, (list, dict)):

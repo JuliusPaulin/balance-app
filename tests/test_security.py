@@ -1,8 +1,7 @@
-"""Security hardening tests (Phase 4).
+"""Security hardening tests.
 
-Covers CSRF protection (Step 4.1), cookie/header hardening + disabled
-desktop-only routes (Step 4.2). Runs against the real ``expense_test`` DB via
-``conftest.py``; created users are cascade-deleted on teardown.
+Covers CSRF protection and cookie/header hardening. Runs against the scratch
+SQLite database built by ``conftest.py``.
 
 The shared ``client`` fixture disables CSRF (so the rest of the suite mutates
 without a token). The CSRF tests here use ``csrf_client``, which flips
@@ -77,10 +76,15 @@ def test_get_needs_no_token(csrf_client, make_user, login):
     assert csrf_client.get("/api/transactions").status_code == 200
 
 
-def test_unauthed_mutation_is_401_not_403(csrf_client):
-    """Auth is checked before CSRF: an unauthenticated mutation gets 401."""
+def test_mutation_without_token_is_403_even_with_no_body(csrf_client):
+    """CSRF is the first gate: there is no login, so nothing is checked before it.
+
+    (This replaced a test asserting 401-before-403. That ordering only meant
+    something when the app had accounts to be unauthenticated against.)
+    """
     res = csrf_client.post("/api/transactions", json={})
-    assert res.status_code == 401
+    assert res.status_code == 403
+    assert res.get_json()["error"] == "CSRF validation failed"
 
 
 def test_me_exposes_csrf_token(csrf_client, make_user, login):
@@ -109,24 +113,6 @@ def test_cookie_hardening_config():
     """Session cookie flags are configured for hardening."""
     assert app_module.app.config["SESSION_COOKIE_HTTPONLY"] is True
     assert app_module.app.config["SESSION_COOKIE_SAMESITE"] == "Lax"
-    # Secure tracks hosted mode (False locally so http dev works).
-    assert app_module.app.config["SESSION_COOKIE_SECURE"] == config.IS_HOSTED
-
-
-# ── Desktop-only routes disabled when hosted (Step 4.2) ────────────────
-
-
-def test_quit_disabled_when_hosted(client, make_user, login, monkeypatch):
-    """POST /api/quit is a no-op (404) when running hosted."""
-    uid = make_user()
-    login(client, uid)
-    monkeypatch.setattr(config, "IS_HOSTED", True)
-    assert client.post("/api/quit").status_code == 404
-
-
-def test_icloud_export_disabled_when_hosted(client, make_user, login, monkeypatch):
-    """POST /api/icloud/export is disabled (404) when running hosted."""
-    uid = make_user()
-    login(client, uid)
-    monkeypatch.setattr(config, "IS_HOSTED", True)
-    assert client.post("/api/icloud/export").status_code == 404
+    # Not Secure: the app is served over plain http on 127.0.0.1, where TLS
+    # does not apply. A Secure cookie would simply never be sent.
+    assert app_module.app.config["SESSION_COOKIE_SECURE"] is False

@@ -1,6 +1,6 @@
 """Tests for the hosted Open Banking import (Enable Banking).
 
-Covers four layers, all with the EB network mocked (no real key, no HTTP):
+Covers three layers, all with the EB network mocked (no real key, no HTTP):
 
 1. ``enable_banking`` core: JWT built from the base64 env key (verified by
    decoding it back with the matching public key + checking the ``kid`` header),
@@ -9,12 +9,10 @@ Covers four layers, all with the EB network mocked (no real key, no HTTP):
 2. Routes: ``/connect`` issues a 302 and stores the CSRF state; ``/callback``
    rejects a bad state and upserts on a good code; ``/fetch`` stages user-scoped
    rows in the SAME shape as /api/import/upload; an expired session → 401.
-3. Tenant isolation: user B cannot read user A's bank session, cannot fetch with
-   it, and disconnect/fetch are scoped to the caller.
-4. Migration: ``init_db()`` creates the ``bank_sessions`` table.
+3. Schema: ``init_db()`` creates the ``bank_sessions`` table and its index.
 
-The route/isolation/migration tests use the shared ``conftest.py`` Postgres
-fixtures (``client``, ``login``, ``make_user``, ``fresh_conn``); the EB module
+The route tests use the shared ``conftest.py`` fixtures (``client``,
+``make_user``, ``fresh_conn``) against a scratch SQLite database; the EB module
 tests are pure and need no DB.
 """
 
@@ -246,9 +244,7 @@ def test_session_valid():
 
 def _insert_bank_session(user_id, *, session_id="sess-A", valid_until="2999-01-01T00:00:00+00:00",
                          accounts=None, aspsp="Nordea"):
-    """Insert a bank_sessions row for a user (committed); return its id."""
-    from psycopg.types.json import Json
-
+    """Insert a bank_sessions row (committed); return its id."""
     if accounts is None:
         accounts = [{"uid": "acc-1", "iban": "FI00", "name": "Acc", "currency": "EUR"}]
     with db.db_conn() as conn:
@@ -256,7 +252,7 @@ def _insert_bank_session(user_id, *, session_id="sess-A", valid_until="2999-01-0
             "INSERT INTO bank_sessions "
             "(user_id, session_id, aspsp_name, aspsp_country, valid_until, accounts) "
             "VALUES (%s, %s, %s, %s, %s, %s) RETURNING id",
-            (user_id, session_id, aspsp, "FI", valid_until, Json(accounts)),
+            (user_id, session_id, aspsp, "FI", valid_until, db.Json(accounts)),
         ).fetchone()
     return row["id"]
 
@@ -463,55 +459,14 @@ def test_disconnect_deletes_row(client, login, make_user):
 
 
 # ───────────────────────────────────────────────────────────────────────
-# 3. Tenant isolation (user B vs user A)
+# 3. Tenant isolation — removed
+#
+# Three tests used to assert that user B could not read, fetch with, or
+# disconnect user A's bank session. The app has one user and no login, so
+# there is no second tenant to isolate from. What those tests actually
+# guarded — a fetch with no session 401s as "not_connected" — is covered by
+# test_fetch_not_connected and test_status_not_connected above.
 # ───────────────────────────────────────────────────────────────────────
-
-
-def test_user_b_cannot_read_user_a_session(client, login, make_user):
-    a = make_user()
-    b = make_user()
-    _insert_bank_session(a, session_id="sess-A")
-    # B has no session of their own.
-    login(client, b)
-    body = client.get("/api/import/bank/status").get_json()
-    assert body["connected"] is False
-    assert body["accounts"] == []
-
-
-def test_user_b_cannot_fetch_with_user_a_session(client, login, make_user, monkeypatch):
-    import app as app_module
-
-    a = make_user()
-    b = make_user()
-    _insert_bank_session(a, session_id="sess-A")
-
-    # If the route were unscoped it might use A's session; assert it does NOT —
-    # B has no connection, so fetch must 401 not_connected and never call EB.
-    called = {"n": 0}
-
-    def spy(*args, **kwargs):
-        called["n"] += 1
-        return []
-
-    monkeypatch.setattr(app_module.enable_banking, "get_transactions", spy)
-    login(client, b)
-    r = client.post("/api/import/bank/fetch", json={
-        "account_uid": "acc-1", "date_from": "2025-01-01", "date_to": "2025-01-31",
-    })
-    assert r.status_code == 401
-    assert r.get_json()["error"] == "not_connected"
-    assert called["n"] == 0
-    assert _staging_count(b) == 0
-
-
-def test_user_b_disconnect_does_not_touch_user_a(client, login, make_user):
-    a = make_user()
-    b = make_user()
-    _insert_bank_session(a, session_id="sess-A")
-    login(client, b)
-    client.post("/api/import/bank/disconnect")
-    # A's session is untouched.
-    assert _bank_session_count(a) == 1
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -526,11 +481,11 @@ def test_init_db_creates_bank_sessions():
     database.init_db()
     with db.db_conn() as conn:
         exists = conn.execute(
-            "SELECT to_regclass('public.bank_sessions') AS t"
-        ).fetchone()["t"]
-        assert exists == "bank_sessions"
+            "SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'bank_sessions'"
+        ).fetchone()
+        assert exists is not None and exists["name"] == "bank_sessions"
         idx = conn.execute(
-            "SELECT indexname FROM pg_indexes "
-            "WHERE tablename = 'bank_sessions' AND indexname = 'idx_bank_sessions_user'"
+            "SELECT name FROM sqlite_master "
+            "WHERE type = 'index' AND name = 'idx_bank_sessions_user'"
         ).fetchone()
         assert idx is not None

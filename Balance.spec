@@ -17,7 +17,7 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['db_postgres', 'psycopg', 'psycopg_pool', 'authlib'],
+    excludes=['psycopg', 'psycopg_pool', 'authlib'],
     noarchive=False,
     optimize=0,
 )

@@ -11,8 +11,6 @@ from __future__ import annotations
 from calendar import monthrange
 from datetime import date
 
-import config
-
 
 def _month_end(year: int, month: int, today: date) -> date:
     """Last day of the given month, clamped to ``today`` for the current month."""
@@ -110,21 +108,15 @@ def summary(conn, user_id, today: date | None = None):
     hist = compute_history(conn, user_id, months=2, today=today)
     prev_net = hist[0]["net_worth"] if len(hist) >= 2 else net
 
-    # Investment grouping + holdings drill-down (local/SQLite build): accounts can
-    # belong to a broker group (``group_name``) and carry imported holdings. These
-    # columns exist only in the local SQLite schema, so include them only there;
-    # the hosted Postgres schema has neither, and uses the plain account query.
-    if config.USE_SQLITE:
-        group_col = "a.group_name AS group_name"
-        holdings_count_col = (
-            "(SELECT COUNT(*) FROM holdings h "
-            "  WHERE h.account_id = a.id AND h.as_of = ("
-            "      SELECT MAX(as_of) FROM holdings WHERE account_id = a.id"
-            "  )) AS holdings_count"
-        )
-        extra_cols = f"{group_col}, {holdings_count_col},"
-    else:
-        extra_cols = ""
+    # Investment grouping + holdings drill-down: accounts can belong to a broker
+    # group (``group_name``) and carry imported holdings.
+    extra_cols = (
+        "a.group_name AS group_name, "
+        "(SELECT COUNT(*) FROM holdings h "
+        "  WHERE h.account_id = a.id AND h.as_of = ("
+        "      SELECT MAX(as_of) FROM holdings WHERE account_id = a.id"
+        "  )) AS holdings_count,"
+    )
 
     accounts = conn.execute(
         f"""

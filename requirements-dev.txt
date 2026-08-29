@@ -1,3 +1,4 @@
 # Dev/test-only dependencies (not needed at runtime).
-# Tests run against the local Postgres `expense_test` database.
+# Tests run against a throwaway SQLite file (see conftest.py); nothing else
+# is needed and your real database is never opened.
 pytest>=8
