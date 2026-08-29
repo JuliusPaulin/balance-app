@@ -2316,6 +2316,9 @@ body.fs-active { overflow: hidden; }
 .recurring-active  { background: rgba(120, 120, 128, 0.10); color: var(--text-secondary); }
 /* Attention state — orange, not the positive accent (design #14). */
 .recurring-due     { background: rgba(255, 149, 0, 0.12);   color: var(--orange); }
+/* Lapsed, not urgent: the charge never came, so the series may be cancelled.
+   Quiet pill, orange text — the same signal as the past "next due" date. */
+.recurring-overdue { background: rgba(120, 120, 128, 0.12); color: var(--orange); }
 .recurring-price   { background: rgba(255, 56, 48, 0.10);   color: var(--red); }
 .recurring-income,
 .recurring-manual  {

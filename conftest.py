@@ -30,20 +30,38 @@ import pytest
 
 TEST_DATABASE_URL = "postgresql://localhost/expense_test"
 
+# ---------------------------------------------------------------------------
+# Pick the backend at IMPORT time, not fixture time.
+#
+# pytest imports this file before it collects any test module. Several test
+# modules do `import db` / `import config` at module level, and `db` binds to
+# an engine the moment it is first imported, from `config.USE_SQLITE` — which
+# `config` computes from APP_MODE when IT is first imported.
+#
+# Setting these inside the session fixture was too late: the fixture runs after
+# collection, so whichever module imported `db` first had already pinned the
+# desktop default (SQLite) for the whole run. A test then got Postgres or
+# SQLite depending only on which files were collected alongside it, which is
+# why the suite failed differently run to run and why psycopg's `Json` adapter
+# ended up being handed to sqlite3.
+# ---------------------------------------------------------------------------
+os.environ["DATABASE_URL"] = TEST_DATABASE_URL
+os.environ.setdefault("APP_MODE", "hosted")
+
 
 @pytest.fixture(scope="session", autouse=True)
 def _test_db():
     """Point the pool at expense_test and create the schema once per session."""
-    # Set env BEFORE importing db/database so config picks up the test URL even
-    # for any code path that reads config.DATABASE_URL directly.
-    os.environ["DATABASE_URL"] = TEST_DATABASE_URL
-    os.environ.setdefault("APP_MODE", "hosted")
-
     import config
     config.DATABASE_URL = TEST_DATABASE_URL
 
     import db
     import database
+
+    assert not config.USE_SQLITE, (
+        "The suite must run against Postgres (expense_test). config.USE_SQLITE "
+        "is True, so something imported config before APP_MODE was set."
+    )
 
     db.reset_pool(TEST_DATABASE_URL)
     # init_db() creates the base schema; migrate_db() then idempotently adds the

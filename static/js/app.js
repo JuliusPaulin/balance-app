@@ -3503,6 +3503,7 @@ async function loadTrends() {
 const RECURRING_STATUS = {
     active:        { label: "Active",     cls: "recurring-active" },
     due_soon:      { label: "Due soon",   cls: "recurring-due" },
+    overdue:       { label: "Overdue",    cls: "recurring-overdue" },
     price_changed: { label: "Price ↑",    cls: "recurring-price" },
 };
 

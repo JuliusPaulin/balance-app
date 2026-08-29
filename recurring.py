@@ -28,6 +28,10 @@ CADENCES = [
 ]
 
 _DUE_SOON_DAYS = 7
+# How late an expected charge may be before the series counts as overdue: the
+# slack its own cadence bucket allows (monthly 5 days, quarterly 9, yearly 35).
+# A charge that merely drifts a few days around its usual date stays active.
+_OVERDUE_GRACE = {label: high - ideal for label, ideal, _low, high in CADENCES}
 _PRICE_CHANGE_PCT = 0.10
 _MIN_CONFIDENCE = 0.5
 # Subscription gates (see RECURRING_DETECTION_PLAN.md "subscription-focused"):
@@ -385,8 +389,14 @@ def detect_recurring(conn, user_id, lookback_months: int = 18,
         # against the typical (median) of the prior charges — not last-vs-previous.
         baseline = statistics.median(amounts[:-1])
         baseline_stable = _cov(amounts[:-1]) <= _STABLE_COV
-        if (baseline_stable and baseline
-                and abs(last_amount - baseline) / baseline > _PRICE_CHANGE_PCT):
+        price_changed = (baseline_stable and baseline
+                         and abs(last_amount - baseline) / baseline > _PRICE_CHANGE_PCT)
+
+        # Overdue outranks a price change: if the charge never arrived, that the
+        # last one cost more is stale news. A forgotten or cancelled service.
+        if days_to_next < -_OVERDUE_GRACE.get(cadence, _DUE_SOON_DAYS):
+            status = "overdue"
+        elif price_changed:
             status = "price_changed"
         elif 0 <= days_to_next <= _DUE_SOON_DAYS:
             status = "due_soon"
