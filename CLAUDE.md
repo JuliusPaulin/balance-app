@@ -13,7 +13,11 @@
 **Entry points:**
 - `main.py` — desktop app launcher (pywebview); on launch creates the schema,
   backs up the DB, and seeds the local user.
-- `app.py` — Flask server with all API routes
+- `app.py` — the wiring: registers the blueprints and runs the server. ~30 lines.
+- `core.py` — the Flask `app` object and the request plumbing every route shares:
+  the rate limiter, CSRF, `current_user_id()`, the security headers, the
+  before-request guards, and the recurring-detection cache.
+- `routes/` — one module per area, each owning a blueprint (see below)
 - `config.py` — runtime config (all optional; safe defaults throughout)
 - `db.py` — the single import point for the database; re-exports `db_sqlite`
 - `db_sqlite.py` — the SQLite engine (translates `%s`→`?`, `now()`→`datetime('now')`, dict rows)
@@ -25,6 +29,29 @@
   last value, and closing one writes a zero at the closing date rather than hiding
   it, so past months stay true. Never filter `is_archived` in the total queries.
 - `investment_import.py` — Nordnet CSV / Nordea xlsx portfolio parsers (→ holdings + Net Worth)
+
+**The `routes/` package.** `app.py` held every route until it reached 3,000
+lines; the routes now sit one area per module, and `routes/__init__.py` lists
+the blueprints `app.py` registers — the only place a new area is added.
+
+| Module | Covers |
+|--------|--------|
+| `system.py` | the page itself, `/api/me`, health checks, backups, quit |
+| `categories.py` | spending categories |
+| `merchant_rules.py` | the store-name patterns that auto-assign a category |
+| `notes.py` | per-month notes |
+| `transactions.py` | the filtered list, and create / update / delete |
+| `dashboard.py` | Dashboard, Reports and Trends |
+| `subscriptions.py` | recurring charges: detected, dismissed, hand-added |
+| `net_worth.py` | accounts, balances, net worth, holdings, investment import |
+| `csv_import.py` | parse a statement, stage it, confirm it |
+| `bank_import.py` | Open Banking consent, fetch, disconnect |
+
+They lean on each other in **one direction only**, so nothing imports in a
+circle: everything imports `core`; `csv_import` takes the rule rebuilder from
+`merchant_rules`; `bank_import` takes the staging helpers from `csv_import`.
+Blueprint endpoint names are now prefixed (`categories.get_categories`), which
+costs nothing here because the app has never used `url_for`.
 
 ---
 

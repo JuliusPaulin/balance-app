@@ -367,13 +367,12 @@ def test_status_expired(client, login, make_user):
 
 
 def test_connect_redirects_and_sets_state(client, login, make_user, monkeypatch, configure_eb):
-    import app as app_module
 
     uid = make_user()
     login(client, uid)
 
     monkeypatch.setattr(
-        app_module.enable_banking, "start_auth",
+        eb, "start_auth",
         lambda name, country, redirect_url, state: f"https://bank/auth?state={state}",
     )
     r = client.get("/api/import/bank/connect")
@@ -384,11 +383,10 @@ def test_connect_redirects_and_sets_state(client, login, make_user, monkeypatch,
 
 
 def test_connect_not_configured(client, login, make_user, monkeypatch):
-    import app as app_module
 
     uid = make_user()
     login(client, uid)
-    monkeypatch.setattr(app_module.config, "enable_banking_configured", lambda: False)
+    monkeypatch.setattr(config, "enable_banking_configured", lambda: False)
     r = client.get("/api/import/bank/connect")
     # /connect is a full-page navigation: send the browser back to the Import tab
     # with a reason code instead of leaving the user on a page of raw JSON.
@@ -400,7 +398,6 @@ def test_connect_credential_failure_does_not_say_reconnect(
     client, login, make_user, monkeypatch, configure_eb
 ):
     """The bug this fixes: a refused app key used to read as "consent expired"."""
-    import app as app_module
 
     uid = make_user()
     login(client, uid)
@@ -408,21 +405,20 @@ def test_connect_credential_failure_does_not_say_reconnect(
     def boom(*a, **kw):
         raise eb.BankAuthError("Enable Banking refused this app's credentials")
 
-    monkeypatch.setattr(app_module.enable_banking, "start_auth", boom)
+    monkeypatch.setattr(eb, "start_auth", boom)
     r = client.get("/api/import/bank/connect")
     assert r.status_code == 302
     assert "bank=auth_error" in r.headers["Location"]
 
 
 def test_connect_other_bank_error(client, login, make_user, monkeypatch, configure_eb):
-    import app as app_module
 
     def boom(*a, **kw):
         raise eb.BankError("gateway is down")
 
     uid = make_user()
     login(client, uid)
-    monkeypatch.setattr(app_module.enable_banking, "start_auth", boom)
+    monkeypatch.setattr(eb, "start_auth", boom)
     r = client.get("/api/import/bank/connect")
     assert r.status_code == 302
     assert "bank=error" in r.headers["Location"]
@@ -431,7 +427,6 @@ def test_connect_other_bank_error(client, login, make_user, monkeypatch, configu
 def test_callback_credential_failure_redirects(
     client, login, make_user, monkeypatch, configure_eb
 ):
-    import app as app_module
 
     uid = make_user()
     login(client, uid)
@@ -441,7 +436,7 @@ def test_callback_credential_failure_redirects(
     def boom(code):
         raise eb.BankAuthError("refused")
 
-    monkeypatch.setattr(app_module.enable_banking, "create_session", boom)
+    monkeypatch.setattr(eb, "create_session", boom)
     r = client.get("/api/import/bank/callback?state=good-state&code=abc")
     assert r.status_code == 302
     assert "bank=auth_error" in r.headers["Location"]
@@ -462,7 +457,6 @@ def test_callback_declined_at_bank_reads_as_cancelled(
 
 
 def test_callback_rejects_bad_state(client, login, make_user, monkeypatch, configure_eb):
-    import app as app_module
 
     uid = make_user()
     login(client, uid)
@@ -475,7 +469,7 @@ def test_callback_rejects_bad_state(client, login, make_user, monkeypatch, confi
         called["create"] = True
         return {"session_id": "x", "accounts": [], "valid_until": None}
 
-    monkeypatch.setattr(app_module.enable_banking, "create_session", fake_create)
+    monkeypatch.setattr(eb, "create_session", fake_create)
     r = client.get("/api/import/bank/callback?state=WRONG&code=abc")
     assert r.status_code == 400
     assert called["create"] is False
@@ -483,7 +477,6 @@ def test_callback_rejects_bad_state(client, login, make_user, monkeypatch, confi
 
 
 def test_callback_upserts_on_good_state(client, login, make_user, monkeypatch, configure_eb):
-    import app as app_module
 
     uid = make_user()
     login(client, uid)
@@ -491,7 +484,7 @@ def test_callback_upserts_on_good_state(client, login, make_user, monkeypatch, c
         s["bank_oauth_state"] = "good-state"
 
     monkeypatch.setattr(
-        app_module.enable_banking, "create_session",
+        eb, "create_session",
         lambda code: {
             "session_id": "sess-new",
             "accounts": [{"uid": "acc-9", "iban": "FI9", "name": "A", "currency": "EUR"}],
@@ -507,7 +500,7 @@ def test_callback_upserts_on_good_state(client, login, make_user, monkeypatch, c
     with client.session_transaction() as s:
         s["bank_oauth_state"] = "good-state-2"
     monkeypatch.setattr(
-        app_module.enable_banking, "create_session",
+        eb, "create_session",
         lambda code: {"session_id": "sess-2", "accounts": [], "valid_until": None},
     )
     client.get("/api/import/bank/callback?state=good-state-2&code=def")
@@ -515,14 +508,13 @@ def test_callback_upserts_on_good_state(client, login, make_user, monkeypatch, c
 
 
 def test_fetch_stages_user_scoped_rows(client, login, make_user, monkeypatch):
-    import app as app_module
 
     uid = make_user()
     _insert_bank_session(uid, session_id="sess-A")
     login(client, uid)
 
     monkeypatch.setattr(
-        app_module.enable_banking, "get_transactions",
+        eb, "get_transactions",
         lambda session_id, account_uid, date_from, date_to: [
             {"date": "2025-01-05", "store": "K-Market", "amount": 12.5,
              "type": "expense", "currency": "EUR", "reference": "r1"},
@@ -569,7 +561,6 @@ def test_fetch_session_expired(client, login, make_user):
 def test_fetch_credential_failure_is_not_session_expired(
     client, login, make_user, monkeypatch
 ):
-    import app as app_module
 
     uid = make_user()
     _insert_bank_session(uid)
@@ -578,7 +569,7 @@ def test_fetch_credential_failure_is_not_session_expired(
     def boom(session_id, account_uid, date_from, date_to):
         raise eb.BankAuthError("refused")
 
-    monkeypatch.setattr(app_module.enable_banking, "get_transactions", boom)
+    monkeypatch.setattr(eb, "get_transactions", boom)
     r = client.post("/api/import/bank/fetch", json={
         "account_uid": "acc-1", "date_from": "2025-01-01", "date_to": "2025-01-31",
     })
