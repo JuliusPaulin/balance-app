@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>B · Compact bar</title>
+<link rel="stylesheet" href="../../../static/css/style.css">
+<link rel="stylesheet" href="_shared.css">
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
+<style>
+
+/* B — the big title scrolls away and a slim bar takes over. Costs ~44px
+   instead of ~62px, and the "Dashboard" label only fades in once the real
+   title has gone, so nothing is said twice. */
+.page-header { margin-bottom: 12px; }
+
+.control-bar {
+    position: sticky;
+    top: 0;
+    z-index: 60;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    margin: 0 -32px 20px;
+    padding: 8px 32px;
+    background: color-mix(in srgb, var(--bg-secondary) 78%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+    border-bottom: 0.5px solid transparent;
+    transition: border-color var(--transition);
+}
+.control-bar.stuck { border-bottom-color: var(--separator); }
+
+/* Compact echo of the title — only once the real one is off screen */
+.control-bar-title {
+    font-size: var(--text-headline);
+    font-weight: 700;
+    letter-spacing: -0.2px;
+    opacity: 0;
+    transform: translateX(-4px);
+    transition: opacity var(--transition), transform var(--transition);
+}
+.control-bar.stuck .control-bar-title { opacity: 1; transform: none; }
+
+/* Controls sit right; the spacer pushes them there */
+.control-bar-spacer { flex: 1; }
+
+</style>
+</head>
+<body>
+<div class="mock-switch">
+    <span>Sticky picker:</span>
+    <a href="a-sticky-header.html" data-v="a">A · Header</a>
+    <a href="b-compact-bar.html" data-v="b">B · Compact bar</a>
+    <a href="c-floating-pill.html" data-v="c">C · Floating pill</a>
+</div>
+<aside class="sidebar">
+    <div class="sidebar-logo">Balance<span>.</span></div>
+    <nav class="sidebar-nav">
+        <button class="nav-item active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</button>
+        <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/><path d="M9 14l2 2 4-4"/></svg>Transactions</button>
+        <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 4v12m0 0l-4-4m4 4l4-4"/></svg>Import</button>
+        <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 7h.01M7 3h5a1.99 1.99 0 011.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.99 1.99 0 013 12V7a4 4 0 014-4z"/></svg>Categories</button>
+        <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 17l6-6 4 4 8-8"/></svg>Trends</button>
+        <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 1v22M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6"/></svg>Net Worth</button>
+    </nav>
+    <div style="padding:8px 12px;border-top:0.5px solid var(--separator)">
+        <button class="nav-item" onclick="toggleTheme()"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>Toggle theme</button>
+    </div>
+</aside>
+<main class="main">
+<div class="page active" id="page-dashboard">
+<div class="page-header">
+    <h1 class="page-title">Dashboard</h1>
+</div>
+<div class="control-bar" id="control-bar">
+    <span class="control-bar-title">Dashboard</span>
+    <span class="control-bar-spacer"></span>
+<div class="btn-group">
+    <button class="btn btn-secondary btn-sm horizon-btn" onclick="setHorizon(this)">6M</button>
+    <button class="btn btn-secondary btn-sm horizon-btn active" onclick="setHorizon(this)">YTD</button>
+    <button class="btn btn-secondary btn-sm horizon-btn" onclick="setHorizon(this)">1Y</button>
+    <button class="btn btn-secondary btn-sm horizon-btn" onclick="setHorizon(this)">2Y</button>
+    <button class="btn btn-secondary btn-sm horizon-btn" onclick="setHorizon(this)">All</button>
+</div>
+<div class="period-selector" id="period-selector">
+    <button class="btn btn-secondary btn-sm period-selector-btn" onclick="togglePeriodDropdown()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        <span id="period-label">Pick period</span>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div class="period-dropdown" id="period-dropdown" style="display:none">
+        <div id="period-dropdown-items"></div>
+    </div>
+</div>
+
+</div>
+<div id="dash-body"></div>
+</div>
+</main>
+<script>
+const bar = document.getElementById("control-bar");
+const barTop = bar.offsetTop;   /* NB: not `top` — that collides with window.top */
+addEventListener("scroll", () => bar.classList.toggle("stuck", scrollY >= barTop), { passive: true });
+</script>
+</div>
+<script src="_body.js"></script>
+<script src="_shared.js"></script>
+<script>document.querySelector('.mock-switch a[data-v="b"]').classList.add('on');</script>
+</body>
+</html>

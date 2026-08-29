@@ -157,6 +157,9 @@ Module: `enable_banking.py`.
   local variant (reads `~/.bank-mcp/config.json` + SQLite).
 
 ### Dashboard
+Card order: Monthly Overview → Expenses by Category → Income by Category →
+Expense Trends → Spending Heatmap → Monthly Summary.
+
 - Monthly expense vs income bar chart
   - No grid lines or y-axis labels; clean look
   - Y-axis max = data max × 1.15 (15% headroom for labels)
@@ -164,11 +167,25 @@ Module: `enable_banking.py`.
   - Net diff badge (green/red pill) floats above tallest bar in each group; clamped to chart area top, never overlaps bar
 - Expense/income over time line chart
 - Top 5 expense categories trend (last N months)
-- Category breakdown bar chart (latest month or selected period)
+- **Expenses by Category** and **Income by Category** — the same bars from one
+  renderer (`renderBreakdownBars`), over the same period. The expense card
+  resolves the period; `loadIncomeBreakdown()` then pins income to it, so the
+  two can never describe different months. Category lookup matches on **name
+  and type** — "Other" and "Investments" exist on both sides.
   - **Clicking a bar** opens a drill-down modal: all transactions for that category in the same period, sorted largest → smallest
-- Daily totals chart
+- **Monthly Summary** — clicking any row (monthly or yearly view) opens every
+  transaction in that month, income and expense, newest first. The note button
+  stops propagation so it still opens only the note.
+- **Floating period pill** — once the page title scrolls out of view, the
+  horizon buttons and period picker are **moved** (never copied) from
+  `#dash-header-controls` into `#dash-float-pill`, so there is only ever one
+  period dropdown in the DOM. See `initDashboardFloatPill()`.
 - Annual report view (`/api/reports/annual`)
 - Period filter: YTD, last 3/6/12 months, all time, or custom month picker
+
+> The Cash Flow Calendar was removed — the Spending Heatmap covers the same
+> ground over a whole year. Its endpoint `/api/dashboard/daily-totals` is still
+> served but now has no caller.
 
 ### Month Notes
 - Per-month text notes stored in `month_notes`
@@ -215,8 +232,9 @@ PUT/DELETE /api/transactions/<id>      date_from, date_to, amount_min, amount_ma
 GET        /api/dashboard/monthly-summary
 GET        /api/dashboard/top-expenses
 GET        /api/dashboard/category-trends
-GET        /api/dashboard/category-breakdown   ?month, months, year
-GET        /api/dashboard/daily-totals
+GET        /api/dashboard/category-breakdown   ?month, months, year, type
+                                               (type = expense | income; default expense)
+GET        /api/dashboard/daily-totals          (unused since the calendar went)
 
 GET        /api/reports/annual
 

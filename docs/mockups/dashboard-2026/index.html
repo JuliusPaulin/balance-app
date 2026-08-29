@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Dashboard 2026 — pick a sticky period picker</title>
+<style>
+  :root { color-scheme: dark; }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
+    font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", sans-serif;
+    background: radial-gradient(1200px 800px at 70% -10%, #1b2233 0%, #0b0e14 55%) fixed;
+    color: #e6e9ef; min-height: 100vh; padding: 64px 24px;
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; }
+  h1 { font-size: 34px; font-weight: 700; letter-spacing: -0.02em; }
+  .sub { color: #8b94a7; margin-top: 10px; font-size: 15px; line-height: 1.6; max-width: 720px; }
+  h2 { font-size: 13px; letter-spacing: .08em; text-transform: uppercase; color: #6f7889; margin: 44px 0 16px; }
+  .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); gap: 18px; }
+  a.card {
+    text-decoration: none; color: inherit; border-radius: 18px; padding: 24px;
+    border: 1px solid rgba(255,255,255,0.09); background: rgba(255,255,255,0.03);
+    transition: transform .18s ease, border-color .18s ease, background .18s ease; display: block;
+  }
+  a.card:hover { transform: translateY(-4px); border-color: rgba(0,229,153,0.5); background: rgba(255,255,255,0.05); }
+  .tag { font-size: 12px; font-weight: 600; letter-spacing: .08em; color: #00e599; text-transform: uppercase; }
+  .name { font-size: 20px; font-weight: 650; margin: 10px 0 8px; letter-spacing: -0.01em; }
+  .desc { font-size: 13.5px; color: #97a0b3; line-height: 1.55; }
+  .effort { margin-top: 14px; font-size: 12px; color: #6f7889; }
+  .effort b { color: #c6cdda; }
+  ul.fixed { list-style: none; display: grid; gap: 10px; }
+  ul.fixed li {
+    border: 1px solid rgba(255,255,255,0.07); border-radius: 12px; padding: 14px 18px;
+    font-size: 14px; color: #c6cdda; background: rgba(255,255,255,0.02);
+  }
+  ul.fixed li b { color: #e6e9ef; }
+  ul.fixed li span { color: #8b94a7; }
+  footer { margin-top: 48px; color: #6f7889; font-size: 13px; line-height: 1.6; }
+</style>
+</head>
+<body>
+<div class="wrap">
+  <h1>Dashboard — 2026 changes</h1>
+  <p class="sub">Three ways to keep the period picker on screen while you scroll. Every page carries the same
+  sample figures and links the app's real stylesheet, so what you see is what ships. Open one, scroll, and
+  the switcher at the foot of the page moves you between them. None of this touches your database — the
+  numbers are made up.</p>
+
+  <h2>Pick one</h2>
+  <div class="grid">
+    <a class="card" href="a-sticky-header.html">
+      <div class="tag">Option A</div>
+      <div class="name">Sticky header</div>
+      <div class="desc">The whole header pins: title on the left, controls on the right, exactly where they
+      already are. The title shrinks a little once you scroll and a hairline appears underneath.</div>
+      <div class="effort">Costs <b>~62px</b> of height, always · Nothing new to learn</div>
+    </a>
+
+    <a class="card" href="b-compact-bar.html">
+      <div class="tag">Option B</div>
+      <div class="name">Compact bar</div>
+      <div class="desc">The big title scrolls away and a slim bar takes over, holding just the controls. A
+      small "Dashboard" label fades in on the left once the real title has gone.</div>
+      <div class="effort">Costs <b>~44px</b> of height · Two titles to keep in step</div>
+    </a>
+
+    <a class="card" href="c-floating-pill.html">
+      <div class="tag">Option C</div>
+      <div class="name">Floating pill</div>
+      <div class="desc">The header scrolls away for good. Past 110px the controls re-form as a rounded pill
+      floating over the content. They are moved, not copied, so there is only ever one set.</div>
+      <div class="effort">Costs <b>nothing</b> permanent · Something moves as you scroll</div>
+    </a>
+  </div>
+
+  <h2>The same in all three</h2>
+  <ul class="fixed">
+    <li><b>Cash Flow Calendar is gone.</b> <span>The Spending Heatmap stays — it covers the same ground over a whole year.</span></li>
+    <li><b>Income by Category is new.</b> <span>Same bars, same colours, same drill-down as Expenses by Category, sitting directly beneath it.</span></li>
+    <li><b>Monthly Summary rows open the month.</b> <span>Click any row for every transaction in it. A chevron shows on hover; the note button still works on its own.</span></li>
+  </ul>
+
+  <footer>Rebuild after editing the shared parts: <code>python3 _build.py</code></footer>
+</div>
+</body>
+</html>

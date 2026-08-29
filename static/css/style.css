@@ -1456,115 +1456,80 @@ tbody tr:last-child td {
     border-bottom: none;
 }
 
-/* ── Cash Flow Calendar ──────────────────────────────────────────── */
-.calendar-nav {
+/* ── Dashboard: floating period pill ─────────────────────────────
+   The page header scrolls away for good; past it the horizon buttons and
+   the period picker re-form here. app.js MOVES the controls in and out, so
+   there is only ever one of each in the DOM. */
+.header-controls {
     display: flex;
     align-items: center;
-    gap: 12px;
-    margin-bottom: 16px;
-    justify-content: space-between;
+    gap: 8px;
 }
 
-.calendar-nav-center {
+.float-dock {
+    position: fixed;
+    top: 14px;
+    left: var(--sidebar-width);
+    right: 0;
+    z-index: 60;
     display: flex;
-    align-items: center;
-    gap: 10px;
-}
-
-.calendar-month-label {
-    font-size: var(--text-body);
-    font-weight: 600;
-    min-width: 120px;
-    text-align: center;
-    color: var(--text-primary);
-}
-
-.calendar-grid {
-    display: grid;
-    grid-template-columns: repeat(7, 1fr);
-    gap: 4px;
-}
-
-.calendar-day-header {
-    text-align: center;
-    font-size: var(--text-caption);
-    font-weight: 600;
-    color: var(--text-tertiary);
-    padding: 4px 0 8px;
-    text-transform: uppercase;
-    letter-spacing: 0.3px;
-}
-
-.calendar-day {
-    /* Compact rows (was aspect-ratio:1 → ~160px tall cells); the amount is
-       the primary figure, the day number a small corner label (design #10). */
-    min-height: 56px;
-    border-radius: var(--radius-sm);
-    display: flex;
-    flex-direction: column;
-    align-items: center;
     justify-content: center;
-    gap: 2px;
-    padding: 4px;
-    font-size: var(--text-caption);
-    cursor: default;
-    transition: all var(--transition);
-    min-height: 52px;
+    pointer-events: none;   /* the gap either side stays click-through */
 }
 
-.calendar-day.empty {
-    background: transparent;
-}
-
-.calendar-day.today {
-    outline: 2px solid var(--accent);
-    outline-offset: -2px;
-}
-
-.calendar-day-num {
-    font-size: var(--text-caption);
-    font-weight: 500;
-    color: var(--text-tertiary);
-    line-height: 1;
-}
-
-.calendar-day-amount {
-    font-size: var(--text-subhead);
-    font-weight: 700;
-    font-variant-numeric: tabular-nums;
-    line-height: 1;
-}
-
-.calendar-day.has-expense {
-    cursor: pointer;
-}
-
-.calendar-day.has-expense:hover {
-    filter: brightness(0.95);
-}
-
-.calendar-legend {
+.float-pill {
     display: flex;
-    gap: 16px;
-    margin-top: 12px;
-    font-size: var(--text-caption);
-    color: var(--text-tertiary);
     align-items: center;
+    gap: 8px;
+    padding: 7px 10px;
+    border-radius: 999px;
+    background: color-mix(in srgb, var(--bg) 88%, transparent);
+    -webkit-backdrop-filter: blur(20px) saturate(180%);
+    backdrop-filter: blur(20px) saturate(180%);
+    border: 0.5px solid var(--separator);
+    box-shadow: var(--shadow-lg);
+    opacity: 0;
+    transform: translateY(-14px) scale(0.96);
+    transition: opacity var(--transition-spring), transform var(--transition-spring);
+    pointer-events: none;
 }
 
-.calendar-legend-dot {
-    width: 10px;
-    height: 10px;
-    border-radius: 50%;
-    display: inline-block;
-    margin-right: 4px;
+.float-dock.shown .float-pill {
+    opacity: 1;
+    transform: none;
+    pointer-events: auto;
 }
 
-.calendar-total {
-    font-size: var(--text-subhead);
-    color: var(--text-secondary);
-    font-variant-numeric: tabular-nums;
+/* The period list must drop out of the pill, not out of a page header */
+.float-pill .period-dropdown { top: calc(100% + 8px); }
+
+@media (prefers-reduced-motion: reduce) {
+    .float-pill { transition: opacity var(--transition); transform: none; }
+    .float-dock.shown .float-pill { transform: none; }
 }
+
+@media (max-width: 1024px) {
+    /* No fixed sidebar below this width, and the 52px mobile top bar owns
+       the top of the screen — clear it, notch included. */
+    .float-dock {
+        left: 0;
+        top: calc(62px + env(safe-area-inset-top));
+    }
+}
+
+/* ── Monthly Summary: a row opens that month ─────────────────────── */
+#summary-table tbody tr.row-clickable { cursor: pointer; }
+#summary-table tbody tr.row-clickable:hover { background: var(--row-hover); }
+
+/* A chevron on hover only — the table stays quiet at rest */
+#summary-table tbody tr.row-clickable .row-go {
+    opacity: 0;
+    margin-left: 8px;
+    color: var(--text-tertiary);
+    font-size: var(--text-caption);
+    transition: opacity var(--transition);
+}
+#summary-table tbody tr.row-clickable:hover .row-go { opacity: 1; }
 
 /* ── Merchant Rules ───────────────────────────────────────────────── */
 .merchant-rule-row {
@@ -2198,8 +2163,8 @@ tbody tr:last-child td {
 .heatmap-cell.has-data { cursor: pointer; }
 .heatmap-cell.empty { background: transparent; pointer-events: none; }
 
-/* One heat encoding across the app: the same theme-aware green ramp the
-   cash-flow calendar uses — more spend, deeper green (design #10). */
+/* One heat encoding across the app: a theme-aware green ramp — more spend,
+   deeper green (design #10). */
 .heatmap-cell[data-level="0"] { background: var(--heat-0); }
 .heatmap-cell[data-level="1"] { background: var(--heat-1); }
 .heatmap-cell[data-level="2"] { background: var(--heat-2); }
@@ -2297,8 +2262,8 @@ tbody tr:last-child td {
 }
 
 .card.is-fullscreen .heatmap-scroll,
-.card.is-fullscreen .calendar-grid,
 .card.is-fullscreen #category-bars,
+.card.is-fullscreen #income-bars,
 .card.is-fullscreen #report-category-bars,
 .card.is-fullscreen #report-income-bars,
 .card.is-fullscreen .table-container {
@@ -2819,14 +2784,6 @@ body.fs-active { overflow: hidden; }
     .heatmap-grid { grid-auto-columns: 10px; }
     .heatmap-month-labels { grid-auto-columns: 10px; gap: 2px; }
     .heatmap-cell { width: 10px; height: 10px; }
-
-    /* ── Cash-flow calendar: keep day cells legible ───────────────── */
-    .calendar-grid { gap: 3px; }
-    .calendar-day { min-height: 42px; padding: 3px; }
-    .calendar-nav {
-        flex-wrap: wrap;
-        gap: 8px;
-    }
 
     /* ── Touch & misc ─────────────────────────────────────────────── */
     .btn { min-height: 38px; }

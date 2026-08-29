@@ -1,0 +1,38 @@
+/* ── Mockup-only scaffolding ─────────────────────────────────────────
+   These files link the REAL static/css/style.css, so everything below is
+   only what the dashboard change would ADD. Anything here is a candidate
+   for style.css when a variant is picked.                              */
+
+/* Variant switcher — mockup chrome, never ships */
+.mock-switch {
+    position: fixed; bottom: 16px; left: 50%; transform: translateX(-50%); z-index: 500;
+    display: flex; gap: 6px; align-items: center;
+    background: var(--bg); border: 0.5px solid var(--separator);
+    border-radius: 999px; padding: 5px 8px; box-shadow: var(--shadow-md);
+    font-size: 12px;
+}
+.mock-switch a {
+    color: var(--text-secondary); text-decoration: none;
+    padding: 4px 10px; border-radius: 999px; font-weight: 600;
+}
+.mock-switch a.on { background: var(--accent); color: var(--on-accent); }
+.mock-switch span { color: var(--text-quaternary); padding-left: 4px; font-weight: 600; }
+
+/* ── Income by Category ──────────────────────────────────────────────
+   Reuses .cat-bar-* wholesale so it is visually identical to Expenses by
+   Category. Only the data source and the drill-down type differ.        */
+/* Identical to the expense bars on purpose — same shape, same colour, so
+   the two cards read as one pair. Swap this for a second hue only if you
+   want income to stand apart at a glance. */
+.cat-bar-fill { background: color-mix(in srgb, var(--accent) 55%, transparent); }
+
+/* ── Monthly Summary: whole row opens that month ─────────────────── */
+#summary-table tbody tr.row-clickable { cursor: pointer; }
+#summary-table tbody tr.row-clickable:hover { background: var(--row-hover); }
+#summary-table tbody tr.row-clickable td:first-child { position: relative; }
+/* A chevron that only shows on hover — keeps the table quiet at rest */
+#summary-table tbody tr.row-clickable .row-go {
+    opacity: 0; margin-left: 8px; color: var(--text-tertiary);
+    font-size: 11px; transition: opacity var(--transition);
+}
+#summary-table tbody tr.row-clickable:hover .row-go { opacity: 1; }

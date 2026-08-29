@@ -1,0 +1,17 @@
+<div class="btn-group">
+    <button class="btn btn-secondary btn-sm horizon-btn" onclick="setHorizon(this)">6M</button>
+    <button class="btn btn-secondary btn-sm horizon-btn active" onclick="setHorizon(this)">YTD</button>
+    <button class="btn btn-secondary btn-sm horizon-btn" onclick="setHorizon(this)">1Y</button>
+    <button class="btn btn-secondary btn-sm horizon-btn" onclick="setHorizon(this)">2Y</button>
+    <button class="btn btn-secondary btn-sm horizon-btn" onclick="setHorizon(this)">All</button>
+</div>
+<div class="period-selector" id="period-selector">
+    <button class="btn btn-secondary btn-sm period-selector-btn" onclick="togglePeriodDropdown()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+        <span id="period-label">Pick period</span>
+        <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+    </button>
+    <div class="period-dropdown" id="period-dropdown" style="display:none">
+        <div id="period-dropdown-items"></div>
+    </div>
+</div>

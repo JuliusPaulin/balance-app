@@ -8,10 +8,6 @@ let charts = {};
 let merchantRules = [];
 let monthsWithNotes = new Set();
 
-// Calendar state
-let calendarMonth = null;  // "YYYY-MM"
-let calendarData = {};     // date -> {expense, income}
-
 // ── CSRF: global fetch wrapper ───────────────────────────────────────
 // Server enforces a double-submit CSRF token on POST/PUT/PATCH/DELETE. Rather
 // than touch each of the ~21 mutating call sites, we wrap window.fetch once so
@@ -2094,10 +2090,9 @@ async function applyPeriodFilter() {
     if (cachedTopExpenses) drawTrendsFromData(cachedTopExpenses);
     renderSummaryTable(cachedMonthly);
     // Category bars need fresh API call for correct aggregation
-    let catUrl = "/api/dashboard/category-breakdown";
-    if (selectedPeriods.size > 0) catUrl += `?months=${[...selectedPeriods].join(",")}`;
-    const catBreakdown = await api(catUrl);
+    const catBreakdown = await api(expenseBreakdownUrl());
     renderCategoryBars(catBreakdown);
+    await loadIncomeBreakdown(catBreakdown);
 }
 
 // ── Data filter ─────────────────────────────────────────────────────
@@ -2119,13 +2114,10 @@ function filterData(monthly) {
 function filterByHorizon(monthly) { return filterData(monthly); }
 
 async function loadDashboard() {
-    let catUrl = "/api/dashboard/category-breakdown";
-    if (selectedPeriods.size > 0) catUrl += `?months=${[...selectedPeriods].join(",")}`;
-
     const [monthly, topExpenses, catBreakdown] = await Promise.all([
         api("/api/dashboard/monthly-summary"),
         api("/api/dashboard/top-expenses"),
-        api(catUrl),
+        api(expenseBreakdownUrl()),
     ]);
 
     cachedMonthly = monthly;
@@ -2139,12 +2131,25 @@ async function loadDashboard() {
     renderTrendsChart(topExpenses);
     renderSummaryTable(monthly);
 
-    if (!calendarMonth) {
-        const allMonths = [...new Set(monthly.map(r => r.month))].sort();
-        calendarMonth = allMonths[allMonths.length - 1] || new Date().toISOString().slice(0, 7);
-    }
-    await loadCalendar(calendarMonth);
+    await loadIncomeBreakdown(catBreakdown);
     await loadHeatmap();
+}
+
+// The expense card decides the period; with no explicit months the endpoint
+// falls back to the latest month that has expenses.
+function expenseBreakdownUrl() {
+    let url = "/api/dashboard/category-breakdown";
+    if (selectedPeriods.size > 0) url += `?months=${[...selectedPeriods].join(",")}`;
+    return url;
+}
+
+// Income is pinned to whatever period the expense card resolved to, so the
+// two cards can never end up describing different months.
+async function loadIncomeBreakdown(expenseBreakdown) {
+    const params = new URLSearchParams({ type: "income" });
+    if (selectedPeriods.size > 0)    params.set("months", [...selectedPeriods].join(","));
+    else if (expenseBreakdown.month) params.set("month", expenseBreakdown.month);
+    renderIncomeBars(await api(`/api/dashboard/category-breakdown?${params}`));
 }
 
 function renderSummaryCards(monthly) {
@@ -2291,26 +2296,35 @@ function renderMonthlyChart(monthly) {
     });
 }
 
-function renderCategoryBars(breakdown) {
+// Expenses and Income share one renderer: same bars, same period, same
+// drill-down. Only the data and the empty-state wording differ.
+function renderCategoryBars(breakdown) { renderBreakdownBars("category-bars", breakdown, "expense"); }
+function renderIncomeBars(breakdown)   { renderBreakdownBars("income-bars",   breakdown, "income"); }
+
+function renderBreakdownBars(containerId, breakdown, type) {
     // Capture which months this breakdown covers so drill-down can match
     breakdownMonths = breakdown.months || (breakdown.month ? [breakdown.month] : []);
 
-    const container = document.getElementById("category-bars");
+    const container = document.getElementById(containerId);
+    if (!container) return;
     if (!breakdown.items || breakdown.items.length === 0) {
-        container.innerHTML = '<div class="empty-state"><p>No data for this period</p></div>';
+        container.innerHTML = `<div class="empty-state"><p>No ${type === "income" ? "income" : "expenses"} for this period</p></div>`;
         return;
     }
     const total = breakdown.items.reduce((s, i) => s + i.total, 0);
     const max   = breakdown.items[0].total;
     // One quiet bar color; the category's identity color lives in the label
     // dot (design #8). Bars keep a minimum width so tail rows stay visible.
+    const fill = rgbaVar(type === "income" ? "--green" : "--accent", 0.55);
     container.innerHTML = breakdown.items.map(item => {
         const pct   = ((item.total / total) * 100).toFixed(1);
         const width = Math.max(2, (item.total / max) * 100).toFixed(1);
-        const catId = categories.find(c => c.name === item.name)?.id ?? "";
+        // Match the type as well as the name — "Other" and "Investments" exist
+        // on both sides, and the wrong id would drill into the wrong category.
+        const catId = categories.find(c => c.name === item.name && c.type === type)?.id ?? "";
         return `<div class="cat-bar-row" style="cursor:pointer" onclick="openCategoryDrilldown(${catId},'${item.name.replace(/'/g,"\\'")}')">
             <div class="cat-bar-label"><span class="cat-dot" style="background:${catDotColor(catId)}"></span>${item.name}</div>
-            <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${width}%;background:${rgbaVar("--accent", 0.55)}"></div></div>
+            <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${width}%;background:${fill}"></div></div>
             <div class="cat-bar-amount">${fmt(item.total)} <span class="cat-bar-pct-inline">· ${pct}%</span></div>
         </div>`;
     }).join("");
@@ -2346,6 +2360,47 @@ async function openCategoryDrilldown(catId, catName) {
                         <td colspan="2" style="font-size:13px;font-weight:600;padding-top:8px">Total (${rows.length} transactions)</td>
                         <td class="amount" style="font-size:13px;font-weight:600;padding-top:8px">${fmt(total)}</td>
                     </tr></tfoot>
+                </table>
+            </div>
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Close</button>
+            </div>
+        </div>
+    </div>`;
+    document.body.insertAdjacentHTML("beforeend", html);
+}
+
+// Clicking a Monthly Summary row lists everything in that month.
+async function openMonthDrilldown(month) {
+    const data = await api(`/api/transactions?months=${month}&sort=date&dir=desc&per_page=1000`);
+    const rows = data.items || [];
+
+    const tableRows = rows.length ? rows.map(r => `
+        <tr>
+            <td style="font-size:13px;white-space:nowrap">${fmtDate(r.date)}</td>
+            <td style="font-size:13px">${r.store || "—"}</td>
+            <td style="font-size:13px;color:var(--text-secondary)">${r.category_name || "—"}</td>
+            <td class="amount ${r.type === "income" ? "income" : ""}" style="font-size:13px;white-space:nowrap;text-align:right">${r.type === "income" ? "+" : "−"}${fmt2(r.amount)}</td>
+        </tr>`).join("")
+        : `<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--text-tertiary)">No transactions this month</td></tr>`;
+
+    const net = data.sum_income - data.sum_expense;
+    const html = `<div class="modal-overlay" onclick="if(event.target===this)this.remove()">
+        <div class="modal" style="max-width:680px">
+            <div class="modal-title">${monthLabelFull(month)}</div>
+            <div style="font-size:13px;color:var(--text-secondary);margin:-8px 0 12px">
+                ${fmt(data.sum_income)} in · ${fmt(data.sum_expense)} out ·
+                <span class="${net >= 0 ? "diff-positive" : "diff-negative"}">${net >= 0 ? "+" : ""}${fmt(net)} net</span>
+            </div>
+            <div style="max-height:440px;overflow-y:auto;margin:0 -4px">
+                <table style="width:100%">
+                    <thead><tr>
+                        <th style="font-size:12px">Date</th>
+                        <th style="font-size:12px">Store</th>
+                        <th style="font-size:12px">Category</th>
+                        <th style="font-size:12px;text-align:right">Amount</th>
+                    </tr></thead>
+                    <tbody>${tableRows}</tbody>
                 </table>
             </div>
             <div class="modal-actions">
@@ -2464,105 +2519,6 @@ async function resetTrendToTop5() {
     if (cachedTopExpenses) drawTrendsFromData(cachedTopExpenses);
 }
 
-// ── Cash Flow Calendar ──────────────────────────────────────────────
-async function loadCalendar(month) {
-    calendarMonth = month;
-    const data = await api(`/api/dashboard/daily-totals?month=${month}`);
-
-    calendarData = {};
-    (data.items || []).forEach(d => {
-        const day = d.date;
-        if (!calendarData[day]) calendarData[day] = { expense: 0, income: 0 };
-        calendarData[day][d.type] += d.total;
-    });
-
-    const label = document.getElementById("calendar-month-label");
-    if (label) label.textContent = monthLabelFull(month);
-
-    const totalEl = document.getElementById("calendar-total");
-    const totalExp = Object.values(calendarData).reduce((s, d) => s + (d.expense || 0), 0);
-    if (totalEl) totalEl.textContent = totalExp > 0 ? `Total: ${fmt(totalExp)}` : "";
-
-    renderCalendar(month);
-}
-
-function renderCalendar(month) {
-    const grid = document.getElementById("calendar-grid");
-    if (!grid) return;
-
-    const [year, monthNum] = month.split("-").map(Number);
-    const daysInMonth = new Date(year, monthNum, 0).getDate();
-    // getDay() = 0 (Sun). We want Mon as first col (0=Mon..6=Sun)
-    let firstDow = new Date(year, monthNum - 1, 1).getDay();
-    firstDow = (firstDow + 6) % 7; // shift so Mon=0
-
-    // Find max expense for color scaling
-    const expenses = Object.values(calendarData).map(d => d.expense || 0);
-    const maxExp = Math.max(...expenses, 1);
-
-    const today = new Date().toISOString().slice(0, 10);
-    const dayHeaders = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
-
-    let html = dayHeaders.map(d =>
-        `<div class="calendar-day-header">${d}</div>`
-    ).join("");
-
-    // Empty cells before first day
-    for (let i = 0; i < firstDow; i++) {
-        html += `<div class="calendar-day empty"></div>`;
-    }
-
-    for (let d = 1; d <= daysInMonth; d++) {
-        const dateStr = `${month}-${String(d).padStart(2, "0")}`;
-        const dayData = calendarData[dateStr];
-        const expense = dayData?.expense || 0;
-        const isToday = dateStr === today;
-
-        let bg = "var(--bg-secondary)";
-        let amountText = "";
-        let hasExpense = false;
-
-        if (expense > 0) {
-            hasExpense = true;
-            const intensity = expense / maxExp;
-            // Single-hue accent intensity ramp: heavier spend = more opaque accent.
-            // Theme-aware (works in light and dark) since --accent is read live.
-            const alpha = 0.10 + intensity * 0.75;
-            bg = rgbaVar("--accent", alpha);
-            amountText = expense >= 1000
-                ? `${(expense / 1000).toFixed(1)}k`
-                : expense >= 100
-                    ? Math.round(expense)
-                    : expense.toFixed(0);
-        }
-
-        html += `<div class="calendar-day ${isToday ? "today" : ""} ${hasExpense ? "has-expense" : ""}"
-                     style="background:${bg}"
-                     title="${dateStr}${expense > 0 ? ": " + fmt(expense) : ""}">
-            <div class="calendar-day-num">${d}</div>
-            ${amountText ? `<div class="calendar-day-amount" style="color:${expense > maxExp * 0.6 ? cssVar("--on-accent") : "var(--text-primary)"}">${amountText}</div>` : ""}
-        </div>`;
-    }
-
-    grid.innerHTML = html;
-}
-
-function calendarPrev() {
-    if (!calendarMonth) return;
-    const [y, m] = calendarMonth.split("-").map(Number);
-    const d = new Date(y, m - 2, 1);
-    calendarMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    loadCalendar(calendarMonth);
-}
-
-function calendarNext() {
-    if (!calendarMonth) return;
-    const [y, m] = calendarMonth.split("-").map(Number);
-    const d = new Date(y, m, 1);
-    calendarMonth = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}`;
-    loadCalendar(calendarMonth);
-}
-
 // ── Summary Table ───────────────────────────────────────────────────
 function toggleYearView() {
     showYearView = !showYearView;
@@ -2592,7 +2548,8 @@ function renderSummaryTable(monthly) {
 
     function noteBtn(month) {
         const hasNote = monthsWithNotes.has(month);
-        return `<button class="note-btn ${hasNote ? "has-note" : ""}" onclick="openNoteModal('${month}')" title="${hasNote ? "View/edit note" : "Add note"}">
+        // stopPropagation: the row itself now opens the month.
+        return `<button class="note-btn ${hasNote ? "has-note" : ""}" onclick="event.stopPropagation();openNoteModal('${month}')" title="${hasNote ? "View/edit note" : "Add note"}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                 <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5"/>
                 <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
@@ -2626,8 +2583,8 @@ function renderSummaryTable(monthly) {
             </tr>`;
 
             y.months.reverse().forEach(d => {
-                html += `<tr class="row-month ${collapsed ? "hidden" : ""}" data-year="${year}">
-                    <td style="padding-left:36px">${monthLabel(d.month)}</td>
+                html += `<tr class="row-month row-clickable ${collapsed ? "hidden" : ""}" data-year="${year}" onclick="openMonthDrilldown('${d.month}')">
+                    <td style="padding-left:36px">${monthLabel(d.month)}<span class="row-go">&#8250;</span></td>
                     <td style="text-align:right" class="amount income">+${fmt(d.income)}</td>
                     <td style="text-align:right" class="amount">${fmt(d.expense)}</td>
                     <td style="text-align:right" class="${d.diff >= 0 ? "diff-positive" : "diff-negative"}">${d.diff >= 0 ? "+" : ""}${fmt(d.diff)}</td>
@@ -2638,8 +2595,8 @@ function renderSummaryTable(monthly) {
 
         tbody.innerHTML = html;
     } else {
-        tbody.innerHTML = monthData.slice().reverse().map(d => `<tr>
-            <td>${monthLabel(d.month)}</td>
+        tbody.innerHTML = monthData.slice().reverse().map(d => `<tr class="row-clickable" onclick="openMonthDrilldown('${d.month}')">
+            <td>${monthLabel(d.month)}<span class="row-go">&#8250;</span></td>
             <td style="text-align:right" class="amount income">+${fmt(d.income)}</td>
             <td style="text-align:right" class="amount">${fmt(d.expense)}</td>
             <td style="text-align:right" class="${d.diff >= 0 ? "diff-positive" : "diff-negative"}">${d.diff >= 0 ? "+" : ""}${fmt(d.diff)}</td>
@@ -4313,6 +4270,46 @@ async function openDayDrilldown(dateStr) {
     document.body.insertAdjacentHTML("beforeend", html);
 }
 
+// ── Dashboard: floating period pill ─────────────────────────────────
+// Once the header has scrolled away, the horizon buttons and the period
+// picker re-form as a pill over the content. The controls are MOVED, not
+// copied, so there is only ever one period dropdown in the DOM.
+function initDashboardFloatPill() {
+    const page = document.getElementById("page-dashboard");
+    const dock = document.getElementById("dash-float-dock");
+    const pill = document.getElementById("dash-float-pill");
+    const home = document.getElementById("dash-header-controls");
+    if (!page || !dock || !pill || !home) return;
+
+    const title = page.querySelector(".page-title");
+    let floating = false;
+
+    function setFloating(on) {
+        if (on === floating) return;
+        floating = on;
+        const from = on ? home : pill;
+        const to   = on ? pill : home;
+        [...from.children].forEach(n => to.appendChild(n));
+        dock.classList.toggle("shown", on);
+    }
+
+    // The title is the landmark: it never changes container, so moving the
+    // controls can't feed back into the measurement. Float once it is gone.
+    function update() {
+        setFloating(page.classList.contains("active") &&
+                    title.getBoundingClientRect().bottom < 0);
+    }
+
+    window.addEventListener("scroll", update, { passive: true });
+    window.addEventListener("resize", update);
+    // Switching tabs doesn't reset the scroll position, so re-check after
+    // every page change — the handler at the top of this file has already
+    // moved `.active` by the time this one runs.
+    document.querySelectorAll(".nav-item[data-page]")
+            .forEach(btn => btn.addEventListener("click", update));
+    update();
+}
+
 // ── Card fullscreen ─────────────────────────────────────────────────
 const FS_ICON_OPEN = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 9V4h5M20 9V4h-5M4 15v5h5M20 15v5h-5"/></svg>';
 const FS_ICON_CLOSE = '<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M9 4H4v5M15 4h5v5M9 20H4v-5M15 20h5v-5"/></svg>';
@@ -4322,8 +4319,8 @@ function _isVisualCard(card) {
     return !!(
         card.querySelector("canvas") ||
         card.querySelector(".heatmap-grid") ||
-        card.querySelector(".calendar-grid") ||
         card.querySelector("#category-bars") ||
+        card.querySelector("#income-bars") ||
         card.querySelector("#report-category-bars") ||
         card.querySelector("#report-income-bars")
     );
@@ -4332,8 +4329,6 @@ function _isVisualCard(card) {
 function _findCardHeader(card) {
     const flex = card.querySelector(":scope > .flex.items-center");
     if (flex) return flex;
-    const calNav = card.querySelector(":scope > .calendar-nav");
-    if (calNav) return calNav;
     const title = card.querySelector(":scope > .card-title");
     if (!title) return null;
     // Wrap loose .card-title in a flex header so we can drop the button next to it
@@ -4549,6 +4544,7 @@ async function init() {
     await loadCategories();
     await loadDashboard();
     injectFullscreenButtons();
+    initDashboardFloatPill();
     handleBankReturn();
 }
 

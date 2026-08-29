@@ -1,0 +1,6 @@
+</div>
+<script src="_body.js"></script>
+<script src="_shared.js"></script>
+<script>document.querySelector('.mock-switch a[data-v="VARIANT"]').classList.add('on');</script>
+</body>
+</html>

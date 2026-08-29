@@ -996,6 +996,10 @@ def category_breakdown():
     uid = current_user_id()
     month = request.args.get("month")
     year  = request.args.get("year")
+    # "expense" (default) or "income" — the dashboard draws one card of each.
+    txn_type = request.args.get("type", "expense")
+    if txn_type not in ("expense", "income"):
+        txn_type = "expense"
 
     with db_conn() as conn:
         months_param = request.args.get("months")  # comma-separated YYYY-MM
@@ -1007,47 +1011,47 @@ def category_breakdown():
                     SELECT c.name, SUM(t.amount) as total
                     FROM transactions t
                     JOIN categories c ON t.category_id = c.id
-                    WHERE t.user_id = %s AND t.type = 'expense'
+                    WHERE t.user_id = %s AND t.type = %s
                       AND substr(t.date, 1, 7) IN ({placeholders})
                     GROUP BY c.id, c.name
                     ORDER BY total DESC
-                """, [uid] + months_list).fetchall()
-                return jsonify({"months": months_list, "items": [dict(r) for r in rows]})
+                """, [uid, txn_type] + months_list).fetchall()
+                return jsonify({"type": txn_type, "months": months_list, "items": [dict(r) for r in rows]})
 
         if year:
             rows = conn.execute("""
                 SELECT c.name, SUM(t.amount) as total
                 FROM transactions t
                 JOIN categories c ON t.category_id = c.id
-                WHERE t.user_id = %s AND t.type = 'expense'
+                WHERE t.user_id = %s AND t.type = %s
                   AND substr(t.date, 1, 4) = %s
                 GROUP BY c.id, c.name
                 ORDER BY total DESC
-            """, (uid, year)).fetchall()
-            return jsonify({"year": year, "items": [dict(r) for r in rows]})
+            """, (uid, txn_type, year)).fetchall()
+            return jsonify({"type": txn_type, "year": year, "items": [dict(r) for r in rows]})
 
         if not month:
             latest = conn.execute("""
                 SELECT substr(date, 1, 7) as month
-                FROM transactions WHERE user_id = %s AND type = 'expense'
+                FROM transactions WHERE user_id = %s AND type = %s
                 ORDER BY date DESC LIMIT 1
-            """, (uid,)).fetchone()
+            """, (uid, txn_type)).fetchone()
             month = latest["month"] if latest else None
 
         if not month:
-            return jsonify({"month": None, "items": []})
+            return jsonify({"type": txn_type, "month": None, "items": []})
 
         rows = conn.execute("""
             SELECT c.name, SUM(t.amount) as total
             FROM transactions t
             JOIN categories c ON t.category_id = c.id
-            WHERE t.user_id = %s AND t.type = 'expense'
+            WHERE t.user_id = %s AND t.type = %s
               AND substr(t.date, 1, 7) = %s
             GROUP BY c.id, c.name
             ORDER BY total DESC
-        """, (uid, month)).fetchall()
+        """, (uid, txn_type, month)).fetchall()
 
-    return jsonify({"month": month, "items": [dict(r) for r in rows]})
+    return jsonify({"type": txn_type, "month": month, "items": [dict(r) for r in rows]})
 
 
 @app.route("/api/dashboard/heatmap")

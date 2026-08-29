@@ -48,8 +48,9 @@ figures are untouched — they live outside the app.
 - **Auto-categories** — merchant rules (exact, contains, fuzzy) sort rows for
   you, with a live preview while you write a rule and one-click re-apply to past
   transactions
-- **Dashboard** — month by month spend against income, category breakdown, daily
-  totals and annual reports
+- **Dashboard** — month by month spend against income, spending and income
+  broken down by category, and annual reports. Click a month to see everything
+  in it; the period picker follows you down the page
 - **Spending heatmap** — a year calendar you can drill into by day
 - **Net worth** — accounts, loans and investment holdings over time
 - **Split costs** — halve every imported amount in one click, for shared spending

@@ -1,0 +1,6 @@
+<div class="mock-switch">
+    <span>Sticky picker:</span>
+    <a href="a-sticky-header.html" data-v="a">A · Header</a>
+    <a href="b-compact-bar.html" data-v="b">B · Compact bar</a>
+    <a href="c-floating-pill.html" data-v="c">C · Floating pill</a>
+</div>

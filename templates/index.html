@@ -96,9 +96,15 @@
 
     <!-- Dashboard Page -->
     <div class="page active" id="page-dashboard">
+        <!-- Once the header scrolls away the controls below are MOVED into this
+             pill (never copied), so there is only ever one of each. See
+             initDashboardFloatPill() in app.js. -->
+        <div class="float-dock" id="dash-float-dock">
+            <div class="float-pill" id="dash-float-pill"></div>
+        </div>
         <div class="page-header">
             <h1 class="page-title">Dashboard</h1>
-            <div style="display:flex;align-items:center;gap:8px">
+            <div class="header-controls" id="dash-header-controls">
                 <div class="btn-group">
                     <button class="btn btn-secondary btn-sm horizon-btn" data-horizon="6" onclick="setHorizon('6')">6M</button>
                     <button class="btn btn-secondary btn-sm horizon-btn active" data-horizon="ytd" onclick="setHorizon('ytd')">YTD</button>
@@ -127,6 +133,10 @@
             <div class="card full-width">
                 <div class="card-title">Expenses by Category</div>
                 <div id="category-bars"></div>
+            </div>
+            <div class="card full-width">
+                <div class="card-title">Income by Category</div>
+                <div id="income-bars"></div>
             </div>
             <div class="card full-width">
                 <div class="flex items-center" style="justify-content:space-between;margin-bottom:14px">
@@ -176,25 +186,6 @@
                     <span class="heatmap-cell" data-level="3"></span>
                     <span class="heatmap-cell" data-level="4"></span>
                     <span>More</span>
-                </div>
-            </div>
-
-            <!-- Cash Flow Calendar -->
-            <div class="card full-width">
-                <div class="calendar-nav">
-                    <div class="card-title" style="margin:0">Cash Flow Calendar</div>
-                    <div class="calendar-nav-center">
-                        <button class="btn btn-secondary btn-sm" onclick="calendarPrev()">&#8249;</button>
-                        <span class="calendar-month-label" id="calendar-month-label">—</span>
-                        <button class="btn btn-secondary btn-sm" onclick="calendarNext()">&#8250;</button>
-                    </div>
-                    <span class="calendar-total" id="calendar-total"></span>
-                </div>
-                <div class="calendar-grid" id="calendar-grid"></div>
-                <div class="calendar-legend">
-                    <span><span class="calendar-legend-dot" style="background:var(--heat-1)"></span>Low spend</span>
-                    <span><span class="calendar-legend-dot" style="background:var(--heat-3)"></span>High spend</span>
-                    <span><span class="calendar-legend-dot" style="background:var(--bg-secondary)"></span>No spend</span>
                 </div>
             </div>
 
