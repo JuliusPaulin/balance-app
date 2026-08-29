@@ -45,7 +45,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['static/icon_512.png'],
+    icon=['static/icon.icns'],
 )
 coll = COLLECT(
     exe,
@@ -59,7 +59,7 @@ coll = COLLECT(
 app = BUNDLE(
     coll,
     name='Balance.app',
-    icon='static/icon_512.png',
+    icon='static/icon.icns',
     bundle_identifier='com.juliuspaulin.balance',
     version=VERSION,
     info_plist={

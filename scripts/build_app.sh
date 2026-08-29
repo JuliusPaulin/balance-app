@@ -19,7 +19,7 @@ python3 -m PyInstaller \
     --name "${APP_NAME}" \
     --windowed \
     --onedir \
-    --icon static/icon_512.png \
+    --icon static/icon.icns \
     --add-data "templates:templates" \
     --add-data "static:static" \
     --hidden-import webview \
