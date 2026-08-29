@@ -228,17 +228,30 @@ def annual_report():
     prev_year_str = str(year - 1)
 
     with db_conn() as conn:
+        # Which calendar months this year actually has. Everything compared
+        # against last year is held to the same months: seven months of a year
+        # in progress measured against a full twelve reads as a collapse in
+        # both income and spending, which is an artefact of the calendar and
+        # not of anything the user did.
+        compare_months = [r["mm"] for r in conn.execute("""
+            SELECT DISTINCT substr(date, 6, 2) as mm
+            FROM transactions WHERE user_id = %s AND substr(date, 1, 4) = %s
+            ORDER BY mm
+        """, (uid, year_str)).fetchall()]
+        mm_ph = ",".join(["%s"] * len(compare_months))
+
         totals = conn.execute("""
             SELECT type, SUM(amount) as total
             FROM transactions WHERE user_id = %s AND substr(date, 1, 4) = %s
             GROUP BY type
         """, (uid, year_str)).fetchall()
 
-        prev_totals = conn.execute("""
+        prev_totals = conn.execute(f"""
             SELECT type, SUM(amount) as total
             FROM transactions WHERE user_id = %s AND substr(date, 1, 4) = %s
+              AND substr(date, 6, 2) IN ({mm_ph})
             GROUP BY type
-        """, (uid, prev_year_str)).fetchall()
+        """, [uid, prev_year_str] + compare_months).fetchall() if compare_months else []
 
         categories_data = conn.execute("""
             SELECT c.name, SUM(t.amount) as total, COUNT(*) as count
@@ -261,15 +274,16 @@ def annual_report():
         """, (uid, year_str)).fetchall()
 
         # Previous-year expense totals per category, for YoY deltas in the
-        # category breakdown (design change #16).
-        prev_categories = conn.execute("""
+        # category breakdown (design change #16). Same months as above.
+        prev_categories = conn.execute(f"""
             SELECT c.name, SUM(t.amount) as total
             FROM transactions t
             JOIN categories c ON t.category_id = c.id
             WHERE t.user_id = %s AND t.type = 'expense'
               AND substr(t.date, 1, 4) = %s
+              AND substr(t.date, 6, 2) IN ({mm_ph})
             GROUP BY c.id, c.name
-        """, (uid, prev_year_str)).fetchall()
+        """, [uid, prev_year_str] + compare_months).fetchall() if compare_months else []
 
         top_transactions = conn.execute("""
             SELECT t.*, c.name as category_name
@@ -322,6 +336,8 @@ def annual_report():
         "year": year,
         "totals": {r["type"]: r["total"] for r in totals},
         "prev_totals": {r["type"]: r["total"] for r in prev_totals},
+        # The months both sides of every year-on-year figure are limited to.
+        "compare_months": compare_months,
         "categories": [dict(r) for r in categories_data],
         "prev_categories": {r["name"]: r["total"] for r in prev_categories},
         "income_categories": [dict(r) for r in income_categories],

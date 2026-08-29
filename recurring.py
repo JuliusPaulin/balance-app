@@ -3,7 +3,7 @@
 Pure analytics over the ``transactions`` table — no schema changes. Groups
 transactions by normalized merchant + type, infers a cadence from the median
 gap between occurrences, scores confidence on gap/amount regularity, predicts
-the next due date, and flags a status (active / due_soon / overdue /
+the next due date, and flags a status (active / due_soon / overdue / stopped /
 price_changed).
 
 See RECURRING_DETECTION_PLAN.md. Phase 2 adds: fuzzy merging of duplicate
@@ -32,6 +32,13 @@ _DUE_SOON_DAYS = 7
 # slack its own cadence bucket allows (monthly 5 days, quarterly 9, yearly 35).
 # A charge that merely drifts a few days around its usual date stays active.
 _OVERDUE_GRACE = {label: high - ideal for label, ideal, _low, high in CADENCES}
+# How many expected charges may go missing before the series counts as stopped
+# rather than late. One or two and the bill is merely overdue — a payment date
+# that slipped, or a statement not imported yet. Three and the service has
+# almost certainly ended, which is a different thing to tell the user: without
+# the split every long-dead series shouts "Overdue" alongside the real ones and
+# the column stops meaning anything.
+_STOPPED_MISSED_CYCLES = 3
 _PRICE_CHANGE_PCT = 0.10
 _MIN_CONFIDENCE = 0.5
 # Subscription gates (see RECURRING_DETECTION_PLAN.md "subscription-focused"):
@@ -235,6 +242,7 @@ def _load_manual(conn, user_id) -> list:
             "monthly_cost": round(amount * (30.4 / interval), 2),
             "annual_cost": round(amount * (365.0 / interval), 2),
             "status": "active",
+            "missed_cycles": 0,
             "confidence": 1.0,
             "signature": None,
             "is_transfer": is_transfer,
@@ -394,8 +402,10 @@ def detect_recurring(conn, user_id, lookback_months: int = 18,
 
         # Overdue outranks a price change: if the charge never arrived, that the
         # last one cost more is stale news. A forgotten or cancelled service.
+        missed = 0
         if days_to_next < -_OVERDUE_GRACE.get(cadence, _DUE_SOON_DAYS):
-            status = "overdue"
+            missed = 1 + (-days_to_next) // interval
+            status = "stopped" if missed >= _STOPPED_MISSED_CYCLES else "overdue"
         elif price_changed:
             status = "price_changed"
         elif 0 <= days_to_next <= _DUE_SOON_DAYS:
@@ -429,6 +439,7 @@ def detect_recurring(conn, user_id, lookback_months: int = 18,
             "monthly_cost": round(avg_amount * (30.4 / interval), 2),
             "annual_cost": round(avg_amount * (365.0 / interval), 2),
             "status": status,
+            "missed_cycles": missed,
             "confidence": confidence,
             "signature": sig,
             "is_transfer": is_transfer,
@@ -443,11 +454,20 @@ def detect_recurring(conn, user_id, lookback_months: int = 18,
 
     # Transfers/investments are real recurring movements but not consumption, so
     # they're excluded from the monthly/annual EXPENSE total (the UI surfaces
-    # them in a separate subsection via the is_transfer flag).
+    # them in a separate subsection via the is_transfer flag). Stopped series
+    # are excluded for a different reason: a service that ended is not part of
+    # what the user pays each month, and counting it makes the headline figure
+    # overstate the real bill. They stay in `items` so the table can still list
+    # them.
     expenses = [i for i in items
-                if i["type"] == "expense" and not i["is_transfer"]]
+                if i["type"] == "expense"
+                and not i["is_transfer"]
+                and i["status"] != "stopped"]
     summary = {
         "count": len(items),
+        # How many series the totals are actually built from — the table below
+        # is longer, because it also lists the transfers and the stopped ones.
+        "active_count": len(expenses),
         "monthly_total": round(sum(i["monthly_cost"] for i in expenses), 2),
         "annual_total": round(sum(i["annual_cost"] for i in expenses), 2),
     }

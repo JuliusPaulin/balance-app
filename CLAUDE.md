@@ -217,10 +217,15 @@ Expense Trends → Spending Heatmap → Monthly Summary.
 - Expense/income over time line chart
 - Top 5 expense categories trend (last N months)
 - **Expenses by Category** and **Income by Category** — the same bars from one
-  renderer (`renderBreakdownBars`), over the same period. The expense card
-  resolves the period; `loadIncomeBreakdown()` then pins income to it, so the
-  two can never describe different months. Category lookup matches on **name
-  and type** — "Other" and "Investments" exist on both sides.
+  renderer (`renderBreakdownBars`), over the same period. `breakdownPeriodMonths()`
+  is the single answer to "which months are we showing": the explicit month
+  picks if there are any, otherwise **every month the horizon covers**. Both
+  cards ask it, so they cannot drift from each other or from the rest of the
+  page. They once ignored the horizon and always drew the latest single month,
+  which put a 3 300 € breakdown beside a 95 616 € total on the same screen —
+  the reason `loadDashboard()` now waits for the monthly rows before asking for
+  the breakdown. Category lookup matches on **name and type** — "Other" and
+  "Investments" exist on both sides.
   - **Clicking a bar** opens a drill-down modal: all transactions for that category in the same period, sorted largest → smallest
 - **Monthly Summary** — clicking any row (monthly or yearly view) opens every
   transaction in that month, income and expense, newest first. The note button
@@ -229,11 +234,46 @@ Expense Trends → Spending Heatmap → Monthly Summary.
   horizon buttons and period picker are **moved** (never copied) from
   `#dash-header-controls` into `#dash-float-pill`, so there is only ever one
   period dropdown in the DOM. See `initDashboardFloatPill()`.
-- Annual report view (`/api/reports/annual`)
+- Annual report view (`/api/reports/annual`). Every year-on-year figure is held
+  to the months the chosen year actually has: `compare_months` limits the
+  previous year to the same calendar months, and the labels name the range
+  ("Income vs 2025 (Jan–Jul)"). Measuring a part-finished year against a full
+  one reported a 28% collapse in income that was really a 12% rise.
 - Period filter: YTD, last 3/6/12 months, all time, or custom month picker
 
 > The Cash Flow Calendar was removed — the Spending Heatmap covers the same
 > ground over a whole year, so it took over.
+
+### Trends
+
+One category (or several) charted over a range. **The page charts income as
+well as spending, so nothing on it may assume spending.** `data.category.type`
+comes back from `/api/trends/category` already resolved for a multi-category
+pick ("income" only when every one of them is), and three things read it: the
+stat card ("Total Earned" vs "Total Spent"), the month chart's title, and the
+colours. Up is red on an expense and green on an income — a rising salary
+painted red reads as a warning about earning more.
+
+### Subscriptions (recurring detection)
+
+`recurring.py` groups transactions by merchant, infers a cadence from the median
+gap, and flags each series:
+
+| Status | Means |
+|--------|-------|
+| `active` | charging on schedule |
+| `due_soon` | next charge within 7 days |
+| `price_changed` | an amount-stable series whose latest charge moved >10% |
+| `overdue` | one or two expected charges never came — late, probably still live |
+| `stopped` | **three or more** missed (`_STOPPED_MISSED_CYCLES`) — the service ended |
+
+The overdue/stopped split exists because without it every long-dead series
+shouted "Overdue" beside the genuinely late ones and the column said nothing: on
+real data ten rows out of ten were red. Stopped series stay in the table but are
+kept **out of `monthly_total` / `annual_total`** — a service that ended is not
+part of what you pay each month — so the header reads "737 €/mo · 5 active",
+not 855 € across 10. Transfers and investments are excluded from those totals
+too, for a different reason (they are movements, not consumption).
 
 ### Month Notes
 - Per-month text notes stored in `month_notes`
@@ -257,10 +297,27 @@ Re-run anytime with `python3 scripts/generate_merchant_rules.py` — clears and 
 ---
 
 ## Design System
-- Apple-style: white bg, `#f5f5f7` secondary, `#1d1d1f` text, `#0071e3` accent
+- Light: `#ffffff` bg, `#f6f7f9` grouped, `#0d1320` text, **`#00a06b` green accent**
+- Dark: the same roles re-pointed, accent `#00e599`. Both themes are defined in
+  full — never give a colour its only value inside the dark block.
+- The accent has been green since the redesign. `rgba(0, 122, 255, …)` anywhere
+  in the CSS is a leftover from the old blue and is a bug, not a choice.
 - 8px spacing grid, rounded corners, subtle shadows
 - Sidebar navigation, smooth transitions
 - `fmt(amount)` — global currency formatter (fi-FI locale, EUR, **0 decimal places**)
+
+**Every range selector is styled by one rule.** `.horizon-btn`,
+`.trends-period-btn`, `.trends-toptx-btn` and `.nw-period-btn` share the
+`.active` styling, so the chosen range is marked the same way on every page. A
+new selector that does not join that list toggles a class nothing paints, and
+no button ever looks selected.
+
+**A filter that cannot be applied has to say so.** `readDateFilter()` marks a
+date box `.input-invalid` when it holds text the parser cannot read: the filter
+is dropped from the query rather than refused, so without the mark the list
+quietly shows everything under a date the user typed. The Filters button
+carries the same duty in reverse — it shows how many drawer filters are
+narrowing the list, because those are the ones you cannot see when it is shut.
 
 ---
 
