@@ -1102,6 +1102,8 @@ async function uploadCSV(file) {
 function enterReview(data) {
     stagingBatchId = data.batch_id;
     stagingItems = data.items;
+    stagingHalved = false;
+    syncHalveButton();
     renderStaging();
     document.getElementById("import-upload").style.display = "none";
     const bankCard = document.getElementById("import-bank");
@@ -1325,6 +1327,18 @@ function fiToIso(s) {
     return null;                                              // unparseable
 }
 
+// The row's amount box, read the way fiToIso reads its date box. A comma is a
+// decimal separator here: the app prints amounts as "16,05" and the CSVs it
+// imports are written "-25,00", so a comma is what a Finnish hand types. The
+// old type="number" input threw one away before any of our code saw it.
+// Returns null when the value cannot stand as an amount.
+function parseAmountInput(raw) {
+    const s = String(raw ?? "").trim().replace(",", ".");
+    if (s === "") return null;
+    const n = Number(s);
+    return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
+}
+
 function syncStagingFromDom() {
     stagingItems.forEach(item => {
         const typeSel   = document.querySelector(`[data-staging-type="${item.id}"]`);
@@ -1334,7 +1348,8 @@ function syncStagingFromDom() {
         if (typeSel)   item._selectedType  = typeSel.value;
         if (storeInp)  item._editedStore   = storeInp.value;
         if (dateInp)   item._editedDate    = fiToIso(dateInp.value) || item._editedDate || item.date;
-        if (amountInp) item._editedAmount  = parseFloat(amountInp.value) || item.amount;
+        if (amountInp) item._editedAmount  = parseAmountInput(amountInp.value)
+                                             ?? item._editedAmount ?? item.amount;
     });
 }
 
@@ -1529,8 +1544,14 @@ function onStagingStoreChange(inp, itemId) {
 function onStagingAmountChange(inp, itemId) {
     const item = stagingItems.find(i => String(i.id) === String(itemId));
     if (!item) return;
-    const v = parseFloat(inp.value);
-    if (isNaN(v) || v <= 0) { inp.value = effAmount(item); return; }
+    const v = parseAmountInput(inp.value);
+    // Snapping the box back with nothing said is how an edit disappears. The
+    // date box beside this one has always explained itself; so does this now.
+    if (v === null) {
+        toast("Amount must be more than 0 — e.g. 12,50");
+        inp.value = effAmount(item);
+        return;
+    }
     item._editedAmount = v;
     renderStaging();
 }
@@ -1567,8 +1588,8 @@ function renderStagingRow(item) {
         </span>
         <span class="cell-amount ${type}">
             <span class="sign">${type === "income" ? "+" : "−"}</span>
-            <input type="number" class="cell-input" data-staging-amount="${item.id}"
-                   value="${effAmount(item)}" step="0.01" min="0.01"
+            <input type="text" inputmode="decimal" class="cell-input" data-staging-amount="${item.id}"
+                   value="${effAmount(item)}" title="Amount — comma or dot, e.g. 12,50"
                    onchange="onStagingAmountChange(this, '${item.id}')">
             <span class="sign">€</span>
         </span>
@@ -1873,13 +1894,61 @@ async function confirmAllImports() {
     cancelImport();
 }
 
+// "÷2 Split costs" is for a statement you share with someone: your half of the
+// costs. It used to halve every row, salary included, which is not a cost and
+// is not shared. It also compounded — a second click quartered the import with
+// nothing on screen to say the first had landed — so it is a toggle now, and
+// undoing restores the amounts exactly rather than doubling a rounded half.
+let stagingHalved = false;
+
 function halveAllAmounts() {
     syncStagingFromDom();
-    stagingItems.forEach(item => {
-        item._editedAmount = Math.round((effAmount(item) / 2) * 100) / 100;
-    });
+    const shared = stagingItems.filter(i => effType(i) === "expense");
+    if (!shared.length) { toast("Nothing to split — no expenses in this import"); return; }
+
+    if (stagingHalved) {
+        shared.forEach(item => {
+            if (item._preHalveAmount != null) item._editedAmount = item._preHalveAmount;
+            delete item._preHalveAmount;
+        });
+        stagingHalved = false;
+    } else {
+        shared.forEach(item => {
+            item._preHalveAmount = effAmount(item);
+            item._editedAmount = Math.round((effAmount(item) / 2) * 100) / 100;
+        });
+        stagingHalved = true;
+    }
     renderStaging();
-    toast("All amounts halved");
+    syncHalveButton();
+    const kept = stagingItems.length - shared.length;
+    toast(stagingHalved
+        ? `Expenses halved${kept ? ` · ${kept} income row${kept === 1 ? "" : "s"} left alone` : ""}`
+        : "Amounts restored");
+}
+
+function syncHalveButton() {
+    const btn = document.getElementById("halve-btn");
+    if (!btn) return;
+    btn.classList.toggle("active-filter", stagingHalved);
+    btn.textContent = stagingHalved ? "÷2 Halved — undo" : "÷2 Split costs";
+}
+
+// Cancel means cancel. Without this the batch and its staged rows outlived the
+// screen that made them: nothing reads them back, nothing cleans them up, and
+// they pile up unseen. confirmAllImports() deliberately does NOT come through
+// here — a confirmed batch is the record of what was imported.
+async function discardImport() {
+    const id = stagingBatchId;
+    cancelImport();
+    if (id == null) return;
+    try {
+        await api(`/api/import/batch/${id}`, { method: "DELETE" });
+    } catch (e) {
+        // The rows are already off the screen; a failed cleanup is not worth
+        // dragging the user back into a review they asked to leave.
+        console.warn("Could not discard import batch", id, e);
+    }
 }
 
 function cancelImport() {

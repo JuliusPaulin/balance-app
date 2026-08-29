@@ -94,6 +94,12 @@ def parse_amount(amount_str):
         return None
 
 
+# How much of a store's history must agree before the past is allowed to speak
+# for it. Matches the threshold scripts/generate_merchant_rules.py uses when
+# deciding whether a store deserves a rule at all.
+_HISTORY_CONFIDENCE = 0.70
+
+
 def suggest_category(store_name, conn, user_id):
     if not store_name:
         return None
@@ -129,15 +135,26 @@ def suggest_category(store_name, conn, user_id):
     # Fall back to past transactions with same store (case-insensitive match;
     # Postgres '=' is case-sensitive, so compare lowered values to preserve the
     # original SQLite LOWER(...) = LOWER(...) behaviour).
-    row = conn.execute("""
-        SELECT c.name FROM transactions t
+    #
+    # Held to the same bar as the rule generator, which skips a store whose
+    # history does not agree with itself 70% of the time. Without it the two
+    # halves of one feature disagreed: a store too ambiguous to earn a rule
+    # still got a confident-looking suggestion here, from a bare plurality.
+    # Two of four is a coin toss, and the review table draws it exactly like a
+    # hand-written rule. No suggestion sends the row to "needs review", which
+    # is the truth.
+    rows = conn.execute("""
+        SELECT c.name, COUNT(*) AS n FROM transactions t
         JOIN categories c ON t.category_id = c.id
         WHERE t.user_id = %s AND LOWER(t.store) = LOWER(%s)
         GROUP BY c.id, c.name
-        ORDER BY COUNT(*) DESC
-        LIMIT 1
-    """, (user_id, store_name.strip())).fetchone()
-    return row["name"] if row else None
+        ORDER BY n DESC
+    """, (user_id, store_name.strip())).fetchall()
+    if not rows:
+        return None
+    total = sum(r["n"] for r in rows)
+    top = rows[0]
+    return top["name"] if total and top["n"] / total >= _HISTORY_CONFIDENCE else None
 
 
 COLUMN_ALIASES = {
@@ -454,6 +471,29 @@ def upload_csv():
         return jsonify({"error": f"Import failed: {e}"}), status
     finally:
         conn.close()
+
+
+@bp.route("/api/import/batch/<int:batch_id>", methods=["DELETE"])
+def discard_import_batch(batch_id):
+    """Throw away an unconfirmed batch and its staged rows.
+
+    Cancelling a review used to reset the screen and nothing else, so the batch
+    and its staging rows stayed in the database with no way to see or resume
+    them — they simply accumulated. A confirmed batch is history and is left
+    alone; only a pending one can be discarded.
+    """
+    uid = current_user_id()
+    with db_conn() as conn:
+        batch = conn.execute(
+            "SELECT status FROM import_batches WHERE id = %s AND user_id = %s",
+            (batch_id, uid),
+        ).fetchone()
+        if not batch:
+            return jsonify({"error": "No such import"}), 404
+        if batch["status"] == "completed":
+            return jsonify({"error": "That import was already confirmed"}), 409
+        _cleanup_import_batch(conn, batch_id, uid)
+    return jsonify({"status": "discarded"})
 
 
 def _cleanup_import_batch(conn, batch_id, user_id):

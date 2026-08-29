@@ -367,7 +367,7 @@
                 <button type="button" class="cat-chip-btn bulk" id="bulk-category-btn" onclick="openBulkCatPicker(this)"></button>
                 <button class="import-link-btn" onclick="applyBulkCategory()">Apply</button>
                 <div style="flex:1"></div>
-                <button class="import-link-btn" onclick="halveAllAmounts()" title="Divide all amounts by 2 (shared expenses)">÷2 Split costs</button>
+                <button class="import-link-btn" id="halve-btn" onclick="halveAllAmounts()" title="Halve the expense rows — your share of a statement you split with someone. Income is left alone.">÷2 Split costs</button>
             </div>
 
             <!-- Day-grouped ledger -->
@@ -375,7 +375,7 @@
 
             <div class="import-footer">
                 <span class="note" id="import-footer-note"></span>
-                <button class="btn btn-secondary btn-sm" onclick="cancelImport()">Cancel</button>
+                <button class="btn btn-secondary btn-sm" onclick="discardImport()">Cancel</button>
                 <button class="btn btn-primary btn-sm" onclick="confirmAllImports()" id="confirm-all-btn">Confirm all</button>
             </div>
         </div>

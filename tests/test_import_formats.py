@@ -346,3 +346,42 @@ def test_recognized_finnair_format(client, login, make_user):
     assert by_date["2024-03-01"]["store"] == "Helsinki Cafe"
     assert by_date["2024-03-01"]["amount"] == 12.0
     assert by_date["2024-03-01"]["type"] == "expense"
+
+
+# ---------------------------------------------------------------------------
+# Cancelling a review discards the batch
+# ---------------------------------------------------------------------------
+def test_discard_removes_pending_batch_and_its_rows(client, login, make_user, fresh_conn):
+    uid = make_user()
+    login(uid)
+    res = _upload(client, FINNISH_BANK_CSV)
+    assert res.status_code == 200
+    batch_id = res.get_json()["batch_id"]
+    assert _count(fresh_conn, "import_staging", uid) == 2
+
+    assert client.delete(f"/api/import/batch/{batch_id}").status_code == 200
+    # Nothing of the abandoned review is left behind.
+    assert _count(fresh_conn, "import_staging", uid) == 0
+    assert _count(fresh_conn, "import_batches", uid) == 0
+
+
+def test_discard_refuses_a_confirmed_batch(client, login, make_user, fresh_conn):
+    uid = make_user()
+    login(uid)
+    batch_id = _upload(client, FINNISH_BANK_CSV).get_json()["batch_id"]
+    staged = fresh_conn(lambda c: c.execute(
+        "SELECT id FROM import_staging WHERE user_id = %s", (uid,)).fetchall())
+    cat = fresh_conn(lambda c: c.execute(
+        "SELECT id FROM categories WHERE user_id = %s LIMIT 1", (uid,)).fetchone())["id"]
+    items = [{"id": r["id"], "category_id": cat} for r in staged]
+    assert client.post("/api/import/confirm",
+                       json={"items": items, "batch_id": batch_id}).status_code == 200
+
+    # A confirmed batch is the record of what was imported, not scratch space.
+    assert client.delete(f"/api/import/batch/{batch_id}").status_code == 409
+    assert _count(fresh_conn, "import_batches", uid) == 1
+
+
+def test_discard_of_an_unknown_batch_is_a_404(client, login, make_user):
+    login(make_user())
+    assert client.delete("/api/import/batch/999999").status_code == 404
