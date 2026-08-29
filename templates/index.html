@@ -373,7 +373,7 @@
             <div class="import-toolbar" id="bulk-bar">
                 <input type="checkbox" class="import-select-all" id="select-all-check" onchange="toggleSelectAll(this.checked)">
                 <span id="bulk-count">0 selected</span>
-                <select class="form-select" id="bulk-category-select" style="width:190px;padding:4px 8px;font-size:12px"></select>
+                <button type="button" class="cat-chip-btn bulk" id="bulk-category-btn" onclick="openBulkCatPicker(this)"></button>
                 <button class="import-link-btn" onclick="applyBulkCategory()">Apply</button>
                 <div style="flex:1"></div>
                 <button class="import-link-btn" onclick="halveAllAmounts()" title="Divide all amounts by 2 (shared expenses)">÷2 Split costs</button>

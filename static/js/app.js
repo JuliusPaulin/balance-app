@@ -1294,15 +1294,10 @@ function fiToIso(s) {
 
 function syncStagingFromDom() {
     stagingItems.forEach(item => {
-        const catSel    = document.querySelector(`[data-staging-cat="${item.id}"]`);
         const typeSel   = document.querySelector(`[data-staging-type="${item.id}"]`);
         const storeInp  = document.querySelector(`[data-staging-store="${item.id}"]`);
         const dateInp   = document.querySelector(`[data-staging-date="${item.id}"]`);
         const amountInp = document.querySelector(`[data-staging-amount="${item.id}"]`);
-        if (catSel && catSel.value) {
-            item._selectedCatId = parseInt(catSel.value);
-            item._selectedType  = catById(item._selectedCatId)?.type || item._selectedType;
-        }
         if (typeSel)   item._selectedType  = typeSel.value;
         if (storeInp)  item._editedStore   = storeInp.value;
         if (dateInp)   item._editedDate    = fiToIso(dateInp.value) || item._editedDate || item.date;
@@ -1358,27 +1353,119 @@ function distinctCatColors(catIds) {
 }
 
 // Category <select> with Expense/Income optgroups; empty selection allowed.
-function categoryOptgroups(selectedId, placeholder) {
-    const group = type => categories.filter(c => c.type === type).map(c =>
-        `<option value="${c.id}" ${selectedId === c.id ? "selected" : ""}>${escapeHtml(c.name)}</option>`
-    ).join("");
-    const ph = `<option value="" disabled ${selectedId == null ? "selected" : ""}>${placeholder}</option>`;
-    return `${ph}<optgroup label="Expense">${group("expense")}</optgroup><optgroup label="Income">${group("income")}</optgroup>`;
+// ── Category picker ─────────────────────────────────────────────────
+// Replaces the per-row <select>. Shows every category at once in a colour-dotted
+// grid and filters as you type: with 34 categories, scrolling a native dropdown
+// was the slowest part of reviewing an import.
+let _catPop = null;
+
+function closeCatPicker() {
+    if (!_catPop) return;
+    document.removeEventListener("mousedown", _catPop.onDocDown, true);
+    window.removeEventListener("scroll", closeCatPicker);
+    _catPop.el.remove();
+    _catPop = null;
+}
+
+function positionCatPop(el, anchor) {
+    const r = anchor.getBoundingClientRect();
+    const w = el.offsetWidth, h = el.offsetHeight;
+    el.style.left = Math.max(8, Math.min(r.left + window.scrollX,
+                                         window.scrollX + window.innerWidth - w - 12)) + "px";
+    const fitsBelow = r.bottom + h + 12 < window.innerHeight;
+    el.style.top = (fitsBelow ? r.bottom + window.scrollY + 6
+                              : Math.max(window.scrollY + 8, r.top + window.scrollY - h - 6)) + "px";
+}
+
+function openCatPicker(anchor, currentId, onPick) {
+    const sameChip = _catPop && _catPop.anchor === anchor;
+    closeCatPicker();
+    if (sameChip) return;   // clicking the open chip again closes it
+
+    const el = document.createElement("div");
+    el.className = "cat-pop";
+    el.innerHTML = `<input class="cat-pop-search" placeholder="Search categories…" autocomplete="off">
+        <div class="cat-pop-body"></div>
+        <div class="cat-pop-foot"><span><kbd>↑</kbd><kbd>↓</kbd> move</span>
+            <span><kbd>⏎</kbd> pick</span><span><kbd>esc</kbd> close</span></div>`;
+    document.body.appendChild(el);
+
+    const input = el.querySelector(".cat-pop-search");
+    const body  = el.querySelector(".cat-pop-body");
+    let hits = [], cursor = 0;
+
+    function pick(id) {
+        const cat = catById(id);
+        closeCatPicker();
+        if (cat) onPick(cat);
+    }
+
+    function draw() {
+        const q = input.value.trim().toLowerCase();
+        hits = categories.filter(c => c.name.toLowerCase().includes(q));
+        if (cursor >= hits.length) cursor = Math.max(0, hits.length - 1);
+        if (!hits.length) {
+            body.innerHTML = `<div class="cat-pop-empty">Nothing matches “${escapeHtml(input.value)}”</div>`;
+            return;
+        }
+        const section = (type, label) => {
+            const cells = hits.map((c, i) => c.type !== type ? "" :
+                `<button type="button" class="cat-pop-item ${i === cursor ? "on" : ""}" data-i="${i}">
+                    <span class="dot" style="background:${catDotColor(c.id)}"></span>
+                    <span class="n">${escapeHtml(c.name)}</span>
+                    ${c.id === currentId ? `<span class="tick">✓</span>` : ""}
+                </button>`).join("");
+            return cells ? `<div class="cat-pop-group">${label}</div>
+                            <div class="cat-pop-grid">${cells}</div>` : "";
+        };
+        body.innerHTML = section("expense", "Expense") + section("income", "Income");
+        body.querySelectorAll(".cat-pop-item").forEach(b => {
+            b.onmousedown = ev => { ev.preventDefault(); pick(hits[parseInt(b.dataset.i)].id); };
+        });
+        const on = body.querySelector(".cat-pop-item.on");
+        if (on) on.scrollIntoView({ block: "nearest" });
+    }
+
+    input.oninput = () => { cursor = 0; draw(); };
+    input.onkeydown = e => {
+        if (e.key === "ArrowDown")    { e.preventDefault(); cursor = Math.min(cursor + 1, hits.length - 1); draw(); }
+        else if (e.key === "ArrowUp") { e.preventDefault(); cursor = Math.max(cursor - 1, 0); draw(); }
+        else if (e.key === "Enter")   { e.preventDefault(); if (hits[cursor]) pick(hits[cursor].id); }
+        else if (e.key === "Escape")  { e.preventDefault(); closeCatPicker(); anchor.focus(); }
+    };
+
+    draw();
+    positionCatPop(el, anchor);
+    input.focus();
+
+    const onDocDown = ev => {
+        if (!el.contains(ev.target) && ev.target !== anchor && !anchor.contains(ev.target)) closeCatPicker();
+    };
+    document.addEventListener("mousedown", onDocDown, true);
+    window.addEventListener("scroll", closeCatPicker);
+    _catPop = { el, anchor, onDocDown };
+}
+
+function catChipInner(catId, placeholder) {
+    const cat = catById(catId);
+    return `<span class="dot" style="background:${catDotColor(catId)}"></span>
+        <span class="cat-chip-label">${cat ? escapeHtml(cat.name) : placeholder}</span>
+        <span class="cat-chip-caret">⌄</span>`;
+}
+
+function openStagingCatPicker(btn, itemId) {
+    const item = stagingItems.find(i => String(i.id) === String(itemId));
+    if (!item) return;
+    openCatPicker(btn, effCatId(item), cat => {
+        item._selectedCatId = cat.id;
+        item._selectedType  = cat.type;
+        renderStaging();
+    });
 }
 
 function weekdayLabel(iso) {
     const d = new Date(iso + "T00:00:00");
     return isNaN(d) ? "" : d.toLocaleDateString("en-US", { weekday: "long" });
-}
-
-function onStagingCatChange(sel, itemId) {
-    const item = stagingItems.find(i => String(i.id) === String(itemId));
-    if (!item) return;
-    const cat = catById(parseInt(sel.value));
-    if (!cat) return;
-    item._selectedCatId = cat.id;
-    item._selectedType  = cat.type;
-    renderStaging();
 }
 
 function onStagingDateChange(inp, itemId) {
@@ -1429,10 +1516,10 @@ function renderStagingRow(item) {
             ${partBadge}
         </span>
         <span class="chip-cat ${needsCat ? "review" : ""}">
-            <span class="dot" style="background:${catDotColor(catId)}"></span>
-            <select data-staging-cat="${item.id}" onchange="onStagingCatChange(this, '${item.id}')">
-                ${categoryOptgroups(catId, "Pick category")}
-            </select>
+            <button type="button" class="cat-chip-btn" data-staging-cat="${item.id}"
+                    onclick="openStagingCatPicker(this, '${item.id}')">
+                ${catChipInner(catId, "Pick category")}
+            </button>
         </span>
         <span class="cell-amount ${type}">
             <span class="sign">${type === "income" ? "+" : "−"}</span>
@@ -1543,15 +1630,25 @@ function toggleSelectAll(checked) {
     syncBulkBar();
 }
 
+// Category chosen in the toolbar, waiting to be applied to the ticked rows.
+let bulkCatId = null;
+
 function populateBulkCategorySelect() {
-    const sel = document.getElementById("bulk-category-select");
-    if (!sel) return;
-    sel.innerHTML = categoryOptgroups(null, "Assign category…");
+    bulkCatId = null;
+    renderBulkCatBtn();
+}
+
+function renderBulkCatBtn() {
+    const btn = document.getElementById("bulk-category-btn");
+    if (btn) btn.innerHTML = catChipInner(bulkCatId, "Assign category…");
+}
+
+function openBulkCatPicker(btn) {
+    openCatPicker(btn, bulkCatId, cat => { bulkCatId = cat.id; renderBulkCatBtn(); });
 }
 
 function applyBulkCategory() {
-    const catId = parseInt(document.getElementById("bulk-category-select").value);
-    const cat = catById(catId);
+    const cat = catById(bulkCatId);
     if (!cat) { toast("Pick a category first"); return; }
     const checked = [...document.querySelectorAll(".staging-checkbox:checked")];
     if (!checked.length) { toast("Select rows first"); return; }

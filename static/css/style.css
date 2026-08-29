@@ -1764,7 +1764,12 @@ tbody tr:last-child td {
     min-width: 0;
 }
 .chip-cat .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
-.chip-cat select {
+
+/* The chip that opens the category picker (import rows + bulk bar). */
+.cat-chip-btn {
+    display: flex;
+    align-items: center;
+    gap: 7px;
     width: 100%;
     font-family: inherit;
     font-size: var(--text-subhead);
@@ -1773,15 +1778,114 @@ tbody tr:last-child td {
     background: var(--bg-tertiary);
     border: 1px solid transparent;
     border-radius: 999px;
-    padding: 4px 10px;
+    padding: 5px 11px;
     cursor: pointer;
+    text-align: left;
 }
-.chip-cat select:hover { border-color: var(--border); }
-.chip-cat select:focus { outline: none; border-color: var(--accent); }
-.chip-cat.review select {
+.cat-chip-btn.bulk { width: 190px; flex: 0 0 auto; }
+.cat-chip-btn:hover { border-color: var(--border); }
+.cat-chip-btn:focus-visible {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-ring);
+}
+/* The dot is sized by .chip-cat on import rows; the bulk chip and the picker
+   sit outside that wrapper and need their own sizing. */
+.cat-chip-btn .dot,
+.cat-pop-item .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.cat-chip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.cat-chip-caret { margin-left: auto; color: var(--text-tertiary); flex-shrink: 0; }
+.chip-cat.review .cat-chip-btn {
     background: transparent;
     border: 1px dashed var(--orange);
     color: var(--orange);
+}
+
+/* Picker panel: every category at once, filtered as you type. */
+.cat-pop {
+    position: absolute;
+    z-index: 200;
+    width: 520px;
+    max-width: calc(100vw - 24px);
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+}
+.cat-pop-search {
+    width: 100%;
+    font-family: inherit;
+    font-size: var(--text-callout);
+    color: var(--text-primary);
+    background: transparent;
+    border: 0;
+    border-bottom: 1px solid var(--separator);
+    padding: 11px 14px;
+    outline: none;
+}
+.cat-pop-search::placeholder { color: var(--text-tertiary); }
+.cat-pop-body { max-height: 340px; overflow-y: auto; }
+.cat-pop-group {
+    font-size: var(--text-caption);
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    padding: 10px 14px 5px;
+}
+.cat-pop-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 1px 4px;
+    padding: 0 9px 10px;
+}
+.cat-pop-item {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-family: inherit;
+    font-size: var(--text-subhead);
+    font-weight: 500;
+    color: var(--text-primary);
+    background: none;
+    border: 0;
+    border-radius: var(--radius-xs);
+    padding: 7px 10px;
+    cursor: pointer;
+    text-align: left;
+}
+.cat-pop-item .n { overflow: hidden; text-overflow: ellipsis; }
+.cat-pop-item:hover,
+.cat-pop-item.on { background: var(--accent-soft); color: var(--accent); }
+.cat-pop-item .tick { margin-left: auto; color: var(--accent); font-weight: 700; }
+.cat-pop-empty {
+    padding: 20px 14px;
+    font-size: var(--text-subhead);
+    color: var(--text-tertiary);
+    text-align: center;
+}
+.cat-pop-foot {
+    display: flex;
+    gap: 12px;
+    border-top: 1px solid var(--separator);
+    padding: 7px 14px;
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+}
+.cat-pop-foot kbd {
+    font-family: inherit;
+    font-size: 10px;
+    background: var(--bg-tertiary);
+    border: 1px solid var(--border);
+    border-radius: 4px;
+    padding: 1px 5px;
+    margin-right: 2px;
+    color: var(--text-secondary);
+}
+
+@media (max-width: 620px) {
+    .cat-pop-grid { grid-template-columns: repeat(2, 1fr); }
 }
 
 .cell-amount {
