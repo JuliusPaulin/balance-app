@@ -522,6 +522,34 @@ four — small models circle more readily than large ones — and the final turn
 withdraws the tools so a stuck conversation ends in a sentence rather than a
 fifth identical lookup.
 
+**The panel.** "Ask" in the sidebar (or ⌘K) slides a column in from the right.
+A column and not a modal: the assistant answers about the figures on the page,
+so covering them would defeat it. Below 1024px there is no beside and it takes
+the width.
+
+Three things in it are load-bearing rather than decoration:
+
+- **Every answer shows what it read.** `chat()` returns the tool trace and the
+  panel renders it under the reply — "1 lookup · Read your transactions ·
+  categories: Groceries · period: last_month". That is the whole claim of the
+  feature made checkable. A tool that failed is shown as one, because the model
+  was handed the error and may have answered around it.
+- **An answer with a figure and no lookup behind it is called out**, in orange,
+  under the reply. Not every toolless answer — "I can't delete anything" reads
+  nothing and needs no warning — so the flag follows the digits.
+- **Errors land in the transcript, not in a toast.** `api()` throws and the
+  global handler would float the message over a panel still showing the
+  question hanging unanswered, so `sendChat()` catches its own.
+
+`/api/chat` is exempt from the app-wide loading overlay
+(`SELF_TIMED_PATHS` in `app.js`). A local model takes ten or twenty seconds and
+the panel says so itself; blurring out the figures being asked about is the one
+thing that must not happen while it thinks.
+
+Not streaming. The endpoint answers with one JSON body, and adding SSE means
+`ai_chat.chat()` reporting each tool call as it runs — worth doing, and beside
+`api()` rather than through it, since `api()` expects one complete body.
+
 **The cloud backend is a control, not a destination.** `AI_BACKEND=anthropic`
 runs the same loop over the same tools with a frontier model, which is the only
 way to tell a bad answer caused by the model apart from one caused by the

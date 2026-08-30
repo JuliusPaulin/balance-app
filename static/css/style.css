@@ -3361,3 +3361,303 @@ body.fs-active { overflow: hidden; }
     color: var(--red, #d64545);
     font-size: var(--text-callout);
 }
+
+/* ── Ask: the assistant panel ─────────────────────────────────────────
+   A column beside the page, not a modal over it. The whole point of the
+   assistant is to answer about the figures you are looking at, so covering
+   them would defeat it. On a narrow screen there is no beside, and it takes
+   the width. */
+
+.chat-panel {
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    width: 400px;
+    max-width: 100vw;
+    z-index: 900;
+    display: flex;
+    flex-direction: column;
+    background: var(--bg);
+    border-left: 0.5px solid var(--separator);
+    box-shadow: -8px 0 32px rgba(16, 24, 40, 0.08);
+    transform: translateX(100%);
+    visibility: hidden;
+    /* `visibility` as well as the transform: a panel merely slid off the screen
+       still takes Tab focus, so tabbing from a closed one lands the caret
+       somewhere nobody can see. It is switched, never eased — hiding waits for
+       the slide out to finish, showing happens at once, or the panel would be
+       invisible for the whole of its own animation. */
+    transition: transform var(--transition-spring), visibility 0s linear 0.35s;
+}
+.chat-panel.open {
+    transform: translateX(0);
+    visibility: visible;
+    transition: transform var(--transition-spring), visibility 0s;
+}
+
+@media (max-width: 1024px) {
+    /* Pinned to both edges rather than sized with 100vw: that unit counts the
+       scrollbar and any horizontal overflow the page already has, which at
+       narrow widths pushed the panel a few pixels off the screen. */
+    .chat-panel { left: 0; width: auto; border-left: none; }
+}
+
+.chat-head {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 16px 18px;
+    border-bottom: 0.5px solid var(--separator);
+    flex-shrink: 0;
+}
+.chat-head-title {
+    font-size: var(--text-headline);
+    font-weight: 600;
+    letter-spacing: -0.01em;
+}
+/* The model that is answering, said plainly. It runs on this machine and the
+   name is the only way to tell which one you are talking to. */
+.chat-model {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+}
+.chat-head-actions { margin-left: auto; display: flex; gap: 4px; }
+.chat-icon-btn {
+    width: 30px;
+    height: 30px;
+    display: grid;
+    place-items: center;
+    border: none;
+    background: transparent;
+    color: var(--text-secondary);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: background var(--transition), color var(--transition);
+}
+.chat-icon-btn:hover { background: var(--hover-overlay); color: var(--text-primary); }
+.chat-icon-btn svg { width: 17px; height: 17px; }
+
+.chat-log {
+    flex: 1;
+    overflow-y: auto;
+    padding: 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+}
+
+.chat-msg { display: flex; flex-direction: column; gap: 6px; max-width: 100%; }
+.chat-msg-user { align-items: flex-end; }
+
+.chat-bubble {
+    padding: 10px 13px;
+    border-radius: var(--radius);
+    font-size: var(--text-subhead);
+    line-height: 1.5;
+    white-space: pre-wrap;
+    overflow-wrap: anywhere;
+}
+.chat-msg-user .chat-bubble {
+    background: var(--accent);
+    color: var(--on-accent);
+    border-bottom-right-radius: var(--radius-xs);
+    max-width: 85%;
+}
+.chat-msg-assistant .chat-bubble {
+    background: var(--bg-tertiary);
+    color: var(--text-primary);
+    border-bottom-left-radius: var(--radius-xs);
+}
+.chat-bubble strong { font-weight: 600; }
+/* Amounts arrive as preformatted strings with a non-breaking space in them.
+   Keep them on one line and lined up like every other figure in the app. */
+.chat-bubble .amt { font-variant-numeric: tabular-nums; white-space: nowrap; }
+
+.chat-msg-error .chat-bubble {
+    background: color-mix(in srgb, var(--red) 10%, transparent);
+    color: var(--red);
+}
+
+/* ── The working ──────────────────────────────────────────────────────
+   Every answer says which of the app's own screens it read. A number with no
+   provenance is a number you have to take on trust, and this app is about
+   money. */
+.chat-sources { font-size: var(--text-caption); color: var(--text-tertiary); }
+.chat-sources summary {
+    cursor: pointer;
+    list-style: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    padding: 2px 0;
+    user-select: none;
+}
+.chat-sources summary::-webkit-details-marker { display: none; }
+.chat-sources summary:hover { color: var(--text-secondary); }
+.chat-sources summary svg { width: 12px; height: 12px; flex-shrink: 0; }
+.chat-sources[open] summary svg.chev { transform: rotate(90deg); }
+.chat-sources summary svg.chev { transition: transform var(--transition); }
+.chat-source-list {
+    margin: 6px 0 0 4px;
+    padding-left: 12px;
+    border-left: 1.5px solid var(--separator);
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+}
+.chat-source-args {
+    color: var(--text-quaternary);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: 10px;
+}
+.chat-source-failed { color: var(--red); }
+
+/* The one thing worth shouting about: an answer with no lookup behind it. */
+.chat-unsourced {
+    font-size: var(--text-caption);
+    color: var(--orange);
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+}
+
+/* ── Waiting ──────────────────────────────────────────────────────────
+   A local model takes seconds, not milliseconds. Saying nothing for that long
+   reads as broken. */
+.chat-thinking {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--text-subhead);
+    color: var(--text-tertiary);
+    padding: 10px 13px;
+}
+.chat-dots { display: inline-flex; gap: 3px; }
+.chat-dots span {
+    width: 5px;
+    height: 5px;
+    border-radius: 50%;
+    background: currentColor;
+    animation: chatPulse 1.2s ease-in-out infinite;
+}
+.chat-dots span:nth-child(2) { animation-delay: 0.15s; }
+.chat-dots span:nth-child(3) { animation-delay: 0.3s; }
+@keyframes chatPulse {
+    0%, 60%, 100% { opacity: 0.25; transform: translateY(0); }
+    30% { opacity: 1; transform: translateY(-2px); }
+}
+
+/* ── Empty state ──────────────────────────────────────────────────────
+   An empty box teaches nobody what to type. These are the questions it is
+   actually good at. */
+.chat-empty { margin-top: auto; padding: 8px 2px; }
+.chat-empty-title {
+    font-size: var(--text-body);
+    font-weight: 600;
+    margin-bottom: 4px;
+}
+.chat-empty-sub {
+    font-size: var(--text-subhead);
+    color: var(--text-secondary);
+    margin-bottom: 16px;
+    line-height: 1.5;
+}
+.chat-suggestions { display: flex; flex-direction: column; gap: 7px; }
+.chat-suggestion {
+    text-align: left;
+    padding: 10px 13px;
+    border: 0.5px solid var(--separator);
+    border-radius: var(--radius-sm);
+    background: var(--bg);
+    color: var(--text-primary);
+    font-size: var(--text-subhead);
+    font-family: inherit;
+    cursor: pointer;
+    transition: background var(--transition), border-color var(--transition);
+}
+.chat-suggestion:hover {
+    background: var(--accent-softer);
+    border-color: var(--accent-ring);
+}
+
+/* ── Not set up ───────────────────────────────────────────────────────
+   The assistant needs a model on this machine. Saying "unavailable" would be
+   useless; this says which command to run. */
+.chat-setup { padding: 4px 2px; }
+.chat-setup h4 { font-size: var(--text-body); font-weight: 600; margin-bottom: 6px; }
+.chat-setup p {
+    font-size: var(--text-subhead);
+    color: var(--text-secondary);
+    line-height: 1.55;
+    margin-bottom: 12px;
+}
+.chat-setup code {
+    display: block;
+    padding: 9px 11px;
+    background: var(--bg-tertiary);
+    border-radius: var(--radius-sm);
+    font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+    font-size: var(--text-footnote);
+    margin-bottom: 10px;
+    overflow-x: auto;
+    white-space: pre;
+    color: var(--text-primary);
+}
+
+/* ── Composer ─────────────────────────────────────────────────────── */
+.chat-composer {
+    flex-shrink: 0;
+    padding: 12px 14px 14px;
+    border-top: 0.5px solid var(--separator);
+    display: flex;
+    gap: 8px;
+    align-items: flex-end;
+}
+.chat-input {
+    flex: 1;
+    resize: none;
+    border: 0.5px solid var(--separator-opaque);
+    border-radius: var(--radius);
+    padding: 9px 12px;
+    font-family: inherit;
+    font-size: var(--text-subhead);
+    line-height: 1.45;
+    background: var(--bg);
+    color: var(--text-primary);
+    max-height: 132px;
+    transition: border-color var(--transition), box-shadow var(--transition);
+}
+.chat-input:focus {
+    outline: none;
+    border-color: var(--accent);
+    box-shadow: 0 0 0 3px var(--accent-ring);
+}
+.chat-input:disabled { opacity: 0.55; }
+.chat-send {
+    width: 34px;
+    height: 34px;
+    flex-shrink: 0;
+    display: grid;
+    place-items: center;
+    border: none;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--on-accent);
+    cursor: pointer;
+    transition: background var(--transition), opacity var(--transition);
+}
+.chat-send:hover:not(:disabled) { background: var(--accent-hover); }
+.chat-send:disabled { opacity: 0.35; cursor: default; }
+.chat-send svg { width: 16px; height: 16px; }
+
+/* A local model reads the whole conversation back every turn, so a long one
+   gets slower and dearer. The server refuses past its own ceiling; this warns
+   before that happens. */
+.chat-length-note {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    padding: 0 18px 8px;
+    text-align: center;
+}

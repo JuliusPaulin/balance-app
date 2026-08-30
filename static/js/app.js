@@ -49,14 +49,21 @@ function csrfToken() {
         }
         const promise = nativeFetch(input, init);
         // Show the top loading bar while any real request is in flight (skip the
-        // silent keep-alive pings so the bar doesn't flash every 10 minutes).
-        if (!url || !url.pathname.startsWith("/healthz")) {
+        // silent keep-alive pings so the bar doesn't flash every 10 minutes, and
+        // the assistant, which waits on a local model for ten or twenty seconds
+        // and shows that in its own panel — blurring out the figures you are
+        // asking about is the one thing that must not happen).
+        if (!url || !SELF_TIMED_PATHS.some(p => url.pathname.startsWith(p))) {
             beginLoading();
             promise.then(endLoading, endLoading);
         }
         return promise;
     };
 })();
+
+// Requests that carry their own waiting state, and so must not raise the
+// app-wide one.
+const SELF_TIMED_PATHS = ["/healthz", "/api/chat"];
 
 // ── Global loading indicator ────────────────────────────────────────
 // The overlay only appears when a request is actually slow (>400 ms). Fast
@@ -5255,6 +5262,315 @@ async function loadAppState() {
     }
 }
 
+// ── Ask: the assistant panel ─────────────────────────────────────────
+// The loop, the tools and the model all live on the server; this is the panel
+// around them. Two things here are not decoration:
+//
+//   1. Every answer shows which of the app's own screens it read. The whole
+//      claim of this feature is that its figures are the Dashboard's figures,
+//      and a number with nothing behind it is one you have to take on trust.
+//   2. Errors land in the transcript, not in a toast. api() throws and the
+//      global handler would turn that into a message floating over a chat that
+//      still showed your question hanging unanswered.
+
+let chatMessages = [];      // the conversation, as the API wants it
+let chatBusy = false;
+let chatReady = null;       // null = not probed yet; else the status payload
+
+// The six tools, said in English. The point is not the function name — it is
+// which screen of the app the number came off.
+const CHAT_TOOL_NAMES = {
+    search_transactions: "Read your transactions",
+    category_breakdown: "Read the category breakdown",
+    monthly_summary: "Read the monthly summary",
+    list_subscriptions: "Read your subscriptions",
+    annual_report: "Read the annual report",
+    net_worth_summary: "Read your net worth",
+};
+
+const CHAT_SUGGESTIONS = [
+    "What did I spend on groceries last month?",
+    "Did I spend more in July than in June?",
+    "What are my subscriptions costing me?",
+    "How is this year going compared to last year?",
+];
+
+function toggleChat() {
+    document.getElementById("chat-panel").classList.contains("open")
+        ? closeChat() : openChat();
+}
+
+function openChat() {
+    const panel = document.getElementById("chat-panel");
+    panel.classList.add("open");
+    panel.setAttribute("aria-hidden", "false");
+    document.getElementById("chat-open-btn").classList.add("active");
+    // Probe once per session. The model runs on this machine and can simply be
+    // off, so what matters is whether it is answering *now*.
+    if (chatReady === null) loadChatStatus();
+    setTimeout(() => document.getElementById("chat-input").focus(), 220);
+}
+
+function closeChat() {
+    const panel = document.getElementById("chat-panel");
+    panel.classList.remove("open");
+    panel.setAttribute("aria-hidden", "true");
+    document.getElementById("chat-open-btn").classList.remove("active");
+}
+
+async function loadChatStatus() {
+    try {
+        chatReady = await api("/api/chat/status");
+    } catch (e) {
+        // Caught rather than thrown on: the panel says what is wrong itself,
+        // which is more use than a toast over an empty transcript.
+        chatReady = { configured: false, detail: "Could not reach the app's own server." };
+    }
+    const label = document.getElementById("chat-model");
+    label.textContent = chatReady.configured && chatReady.model
+        ? `${chatReady.model} · on this Mac` : "on this Mac";
+    renderChatLog();
+}
+
+function resetChat() {
+    chatMessages = [];
+    renderChatLog();
+    document.getElementById("chat-input").focus();
+}
+
+// ── Rendering ────────────────────────────────────────────────────────
+
+function renderChatLog(pending = false) {
+    const log = document.getElementById("chat-log");
+
+    if (!chatMessages.length && !pending) {
+        log.innerHTML = chatReady && !chatReady.configured
+            ? chatSetupHtml() : chatEmptyHtml();
+        updateChatLengthNote();
+        return;
+    }
+
+    log.innerHTML = chatMessages.map(chatMessageHtml).join("")
+        + (pending ? `<div class="chat-thinking">
+               <span class="chat-dots"><span></span><span></span><span></span></span>
+               Reading your figures…
+           </div>` : "");
+    log.scrollTop = log.scrollHeight;
+    updateChatLengthNote();
+}
+
+function chatEmptyHtml() {
+    return `<div class="chat-empty">
+        <div class="chat-empty-title">Ask about your money</div>
+        <div class="chat-empty-sub">Runs on a model on this Mac. Nothing leaves the
+            machine, and every answer says which screen it read.</div>
+        <div class="chat-suggestions">
+            ${CHAT_SUGGESTIONS.map(q => `
+                <button class="chat-suggestion" onclick="askChat(this.textContent.trim())">${escapeHtml(q)}</button>
+            `).join("")}
+        </div>
+    </div>`;
+}
+
+// "Unavailable" tells someone with Ollama running and a different model pulled
+// exactly nothing. The status endpoint knows which of the two it is, so say it,
+// and give the command.
+function chatSetupHtml() {
+    const s = chatReady || {};
+    const model = s.model || "qwen3.5:4b";
+    let what, how;
+    if (s.reachable === false) {
+        what = "Ollama isn't running on this Mac.";
+        how = "ollama serve";
+    } else if (s.model_installed === false) {
+        what = `Ollama is running, but <strong>${escapeHtml(model)}</strong> isn't installed.`;
+        how = `ollama pull ${model}`;
+        if (s.installed_models && s.installed_models.length) {
+            what += ` You have: ${s.installed_models.map(escapeHtml).join(", ")}.`;
+        }
+    } else {
+        what = escapeHtml(s.detail || "The assistant isn't set up yet.");
+        how = `ollama pull ${model}`;
+    }
+    return `<div class="chat-setup">
+        <h4>Not ready yet</h4>
+        <p>${what}</p>
+        <code>${escapeHtml(how)}</code>
+        <p>The assistant answers from your own database using a model on this
+           machine, so it needs one installed.</p>
+        <button class="btn btn-secondary btn-sm" onclick="chatReady=null;loadChatStatus()">Check again</button>
+    </div>`;
+}
+
+function chatMessageHtml(m) {
+    if (m.role === "user") {
+        return `<div class="chat-msg chat-msg-user">
+            <div class="chat-bubble">${escapeHtml(m.content)}</div>
+        </div>`;
+    }
+    const cls = m.isError ? "chat-msg chat-msg-assistant chat-msg-error"
+                          : "chat-msg chat-msg-assistant";
+    return `<div class="${cls}">
+        <div class="chat-bubble">${chatFormat(m.content)}</div>
+        ${m.isError ? "" : chatSourcesHtml(m)}
+    </div>`;
+}
+
+// The working. A tool that failed is shown as one: the model was handed the
+// error and may have answered around it, and that is worth seeing.
+function chatSourcesHtml(m) {
+    const calls = m.toolCalls || [];
+    if (!calls.length) {
+        // A refusal ("I can't delete things") legitimately reads nothing, and
+        // flagging it would be noise. An unsourced *figure* is the real fault,
+        // so the warning follows the digits.
+        return /\d/.test(m.content || "")
+            ? `<div class="chat-unsourced">
+                   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"
+                        style="width:12px;height:12px"><path d="M12 9v4m0 4h.01M10.3 3.9L1.8 18a2 2 0 001.7 3h17a2 2 0 001.7-3L13.7 3.9a2 2 0 00-3.4 0z"/></svg>
+                   No lookup behind this answer — check it before trusting it
+               </div>`
+            : "";
+    }
+    const rows = calls.map(c => {
+        const name = CHAT_TOOL_NAMES[c.tool] || c.tool;
+        const args = chatArgSummary(c.arguments);
+        return `<div class="${c.ok ? "" : "chat-source-failed"}">
+            ${c.ok ? "" : "couldn't read — "}${escapeHtml(name)}
+            ${args ? `<span class="chat-source-args">${escapeHtml(args)}</span>` : ""}
+        </div>`;
+    }).join("");
+    const label = calls.length === 1 ? "1 lookup" : `${calls.length} lookups`;
+    return `<details class="chat-sources">
+        <summary>
+            <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"/></svg>
+            ${label}
+        </summary>
+        <div class="chat-source-list">${rows}</div>
+    </details>`;
+}
+
+function chatArgSummary(args) {
+    if (!args || typeof args !== "object") return "";
+    return Object.entries(args)
+        .filter(([, v]) => v !== null && v !== undefined && v !== "")
+        .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`)
+        .join(" · ");
+}
+
+// Escape first, then the little the model actually emits: **bold**, and
+// amounts. Everything else is left as typed — `white-space: pre-wrap` keeps the
+// line breaks, so there is no need to build HTML out of them.
+function chatFormat(text) {
+    return escapeHtml(text || "")
+        .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+        .replace(/(-?\d[\d\s .,]*\s?€)/g, '<span class="amt">$1</span>');
+}
+
+function updateChatLengthNote() {
+    // The whole history is resent every turn, so a long conversation is slower
+    // and dearer than a short one. The server refuses at 20 turns; warn first.
+    const note = document.getElementById("chat-length-note");
+    const turns = chatMessages.filter(m => m.role === "user").length;
+    if (turns >= 15) {
+        note.hidden = false;
+        note.textContent = turns >= 19
+            ? "This conversation is full — start a new one."
+            : "Getting long. A new conversation will be quicker.";
+    } else {
+        note.hidden = true;
+    }
+}
+
+// ── Sending ──────────────────────────────────────────────────────────
+
+function askChat(question) {
+    const input = document.getElementById("chat-input");
+    input.value = question;
+    sendChat();
+}
+
+async function sendChat(event) {
+    if (event) event.preventDefault();
+    if (chatBusy) return false;
+
+    const input = document.getElementById("chat-input");
+    const question = input.value.trim();
+    if (!question) return false;
+
+    chatMessages.push({ role: "user", content: question });
+    input.value = "";
+    autoGrowChatInput();
+    setChatBusy(true);
+    renderChatLog(true);
+
+    try {
+        // Only role and content go up; the tool trace is ours to display and
+        // the server rejects anything else in a message.
+        const payload = chatMessages.map(m => ({ role: m.role, content: m.content }));
+        const result = await api("/api/chat", { method: "POST", body: { messages: payload } });
+        chatMessages.push({
+            role: "assistant",
+            content: result.reply || "The model replied with nothing.",
+            toolCalls: result.tool_calls || [],
+        });
+    } catch (e) {
+        if (!(e instanceof ApiError)) throw e;
+        // In the transcript, beneath the question it failed to answer.
+        chatMessages.push({ role: "assistant", content: e.message, isError: true });
+        // A model that is off now was probably on when the panel opened.
+        if (e.status === 503 || e.status === 400) chatReady = null;
+    } finally {
+        setChatBusy(false);
+        renderChatLog();
+        input.focus();
+    }
+    return false;
+}
+
+function setChatBusy(busy) {
+    chatBusy = busy;
+    document.getElementById("chat-input").disabled = busy;
+    document.getElementById("chat-send").disabled = busy
+        || !document.getElementById("chat-input").value.trim();
+}
+
+function autoGrowChatInput() {
+    const input = document.getElementById("chat-input");
+    input.style.height = "auto";
+    input.style.height = Math.min(input.scrollHeight, 132) + "px";
+}
+
+function initChat() {
+    const input = document.getElementById("chat-input");
+
+    input.addEventListener("input", () => {
+        autoGrowChatInput();
+        document.getElementById("chat-send").disabled = chatBusy || !input.value.trim();
+    });
+
+    // Enter sends, Shift+Enter breaks the line — what every chat box does, and
+    // the opposite would surprise everyone.
+    input.addEventListener("keydown", (e) => {
+        if (e.key === "Enter" && !e.shiftKey) {
+            e.preventDefault();
+            sendChat();
+        }
+    });
+
+    document.addEventListener("keydown", (e) => {
+        if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {
+            e.preventDefault();
+            toggleChat();
+        } else if (e.key === "Escape"
+                   && document.getElementById("chat-panel").classList.contains("open")) {
+            closeChat();
+        }
+    });
+
+    renderChatLog();
+}
+
 async function init() {
     initTheme();
     loadAppState();
@@ -5272,6 +5588,7 @@ async function init() {
     }
     injectFullscreenButtons();
     initDashboardFloatPill();
+    initChat();
     handleBankReturn();
 }
 

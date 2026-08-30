@@ -79,6 +79,10 @@
         </button>
     </nav>
     <div style="padding:8px 12px;border-top:0.5px solid var(--separator)">
+        <button class="nav-item" id="chat-open-btn" onclick="toggleChat()" title="Ask about your money (⌘K)">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 11.5a8.38 8.38 0 01-.9 3.8 8.5 8.5 0 01-7.6 4.7 8.38 8.38 0 01-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 01-.9-3.8 8.5 8.5 0 014.7-7.6 8.38 8.38 0 013.8-.9h.5a8.48 8.48 0 018 8v.5z"/></svg>
+            Ask
+        </button>
         <button class="nav-item" id="theme-quick-toggle" onclick="toggleTheme()" title="Switch between light and dark mode">
             <svg id="theme-icon-sun" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" style="display:none"><circle cx="12" cy="12" r="5"/><line x1="12" y1="1" x2="12" y2="3"/><line x1="12" y1="21" x2="12" y2="23"/><line x1="4.22" y1="4.22" x2="5.64" y2="5.64"/><line x1="18.36" y1="18.36" x2="19.78" y2="19.78"/><line x1="1" y1="12" x2="3" y2="12"/><line x1="21" y1="12" x2="23" y2="12"/><line x1="4.22" y1="19.78" x2="5.64" y2="18.36"/><line x1="18.36" y1="5.64" x2="19.78" y2="4.22"/></svg>
             <svg id="theme-icon-moon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg>
@@ -843,6 +847,37 @@
             </div>
         </div>
     </div>
+</div>
+
+<!-- Ask: the assistant panel. A column beside the page rather than a modal
+     over it — it answers about the figures you are looking at. -->
+<div class="chat-panel" id="chat-panel" role="dialog" aria-label="Ask about your money" aria-hidden="true">
+    <header class="chat-head">
+        <div>
+            <div class="chat-head-title">Ask</div>
+            <div class="chat-model" id="chat-model">on this Mac</div>
+        </div>
+        <div class="chat-head-actions">
+            <button class="chat-icon-btn" id="chat-reset" onclick="resetChat()" title="Start a new conversation">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M12 5V2L8 6l4 4V7a5 5 0 11-5 5H5a7 7 0 107-7z"/></svg>
+            </button>
+            <button class="chat-icon-btn" onclick="closeChat()" title="Close">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><path d="M18 6L6 18M6 6l12 12"/></svg>
+            </button>
+        </div>
+    </header>
+
+    <div class="chat-log" id="chat-log"></div>
+    <div class="chat-length-note" id="chat-length-note" hidden></div>
+
+    <form class="chat-composer" id="chat-composer" onsubmit="return sendChat(event)">
+        <textarea class="chat-input" id="chat-input" rows="1"
+                  placeholder="Ask about your spending…"
+                  aria-label="Your question"></textarea>
+        <button class="chat-send" id="chat-send" type="submit" title="Send" disabled>
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 19V5M5 12l7-7 7 7"/></svg>
+        </button>
+    </form>
 </div>
 
 <!-- Toast Container -->
