@@ -6,9 +6,13 @@ check the tools report the same money back — and, above all, that the period
 names resolve to the months a person would have meant.
 """
 
+import os
+import pathlib
 from datetime import date
 
 import pytest
+
+import config
 
 import ai_tools
 from helpers import add_tx, cat_id
@@ -70,9 +74,26 @@ def test_all_time_is_unbounded():
     assert ai_tools.resolve_period("all_time", today=TODAY)["months"] == []
 
 
-def test_an_invented_period_falls_back_rather_than_failing():
-    """A model that makes up a period name should still get an answer."""
-    assert ai_tools.resolve_period("since_easter", today=TODAY)["months"] == ["2026-08"]
+def test_an_invented_period_is_refused_and_says_what_is_valid():
+    """A model that makes up a period name has to be told, not humoured.
+
+    This used to fall back to the current month. That reads as an answer and is
+    not one: asked whether July beat June, the model invented `last_2_months`,
+    was handed August without a word, and gave up on a question the data
+    answers. The error names the list, so the next round can get it right.
+    """
+    with pytest.raises(ValueError) as excinfo:
+        ai_tools.resolve_period("since_easter", today=TODAY)
+    assert "since_easter" in str(excinfo.value)
+    for period in ai_tools.PERIODS:
+        assert period in str(excinfo.value)
+
+
+def test_a_refused_period_reaches_the_model_as_an_error():
+    """`run_tool` turns it into a result the model can act on, not a crash."""
+    result = ai_tools.run_tool("monthly_summary", {"period": "since_easter"})
+    assert "error" in result
+    assert "last_3_months" in result["error"]
 
 
 # ── Formatting ────────────────────────────────────────────────────────────
@@ -211,3 +232,253 @@ def test_bad_arguments_return_an_error_rather_than_raising(seeded):
 def test_run_tool_dispatches_a_real_call(seeded):
     result = ai_tools.run_tool("category_breakdown", {"month": "2026-05"})
     assert result["total_eur"] == "133 €"
+
+
+# ── Reaching the endpoints at all ─────────────────────────────────────────
+# Every tool is a wrapper over one of the app's own GET routes. The wrappers
+# were tested; the wiring underneath them was not, and it was broken: the
+# blueprints go on in `app.py`, so anything importing `ai_tools` on its own —
+# `scripts/ask.py`, the harness the model is judged with — dispatched against a
+# Flask app with no routes and got a 404 for every question. The 404 became
+# `None`, `None` became an empty result, and the assistant reported "0 €".
+
+def test_the_tools_can_reach_the_routes_they_wrap():
+    """The blueprints are on the app object the tools dispatch against."""
+    ai_tools._ensure_routes()
+    paths = {rule.rule for rule in ai_tools.app.url_map.iter_rules()}
+    for path in ("/api/categories", "/api/transactions",
+                 "/api/dashboard/category-breakdown",
+                 "/api/dashboard/monthly-summary", "/api/recurring",
+                 "/api/reports/annual", "/api/networth/summary"):
+        assert path in paths, f"{path} is not registered"
+
+
+def test_a_tool_works_in_a_process_that_never_imports_app():
+    """The actual shape of the bug, which needs its own interpreter to see.
+
+    Inside the suite something has always imported `app`, so the routes were on
+    the app object before any tool ran and the wiring looked sound. `ask.py`
+    imports `ai_chat` and nothing else. This runs that way on purpose.
+    """
+    import subprocess
+    import sys
+
+    source = (
+        "import ai_tools;"
+        "r = ai_tools._call_api('/api/categories');"
+        "assert isinstance(r, list) and r, 'no categories came back';"
+        "print('ok')"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", source],
+        capture_output=True, text=True,
+        cwd=str(pathlib.Path(__file__).resolve().parent.parent),
+        env={**os.environ, "SQLITE_PATH": config.SQLITE_PATH},
+    )
+    assert result.returncode == 0, result.stderr
+    assert "ok" in result.stdout
+
+
+def test_registering_the_blueprints_twice_is_harmless():
+    """`app.py` registers them too; the tools must not care who got there first."""
+    import routes
+    routes.register(ai_tools.app)
+    routes.register(ai_tools.app)
+
+
+def test_a_failed_endpoint_raises_instead_of_reading_as_zero(seeded):
+    """The one failure this module exists to prevent.
+
+    A dispatch that does not return 200 used to come back as `None`, which the
+    tool bodies turned into an empty result and the assistant read aloud as
+    "0 €" — a false figure, stated confidently, about money.
+    """
+    with pytest.raises(ai_tools.ToolDispatchError):
+        ai_tools._call_api("/api/no-such-endpoint")
+
+
+# ── Subscriptions ─────────────────────────────────────────────────────────
+
+@pytest.fixture
+def with_a_subscription(client):
+    """Six monthly charges from one merchant — enough for the detector."""
+    entertainment = cat_id(client, "Entertainment")
+    for month in range(3, 9):
+        add_tx(client, f"2026-{month:02d}-05", "Spotify", entertainment, 11.99)
+    return client
+
+
+def test_subscriptions_carry_amounts_and_a_total(with_a_subscription):
+    """The keys are the endpoint's own.
+
+    This tool read `amount`, `monthly_total` and `next_charge`; the endpoint
+    sends `monthly_cost`, a nested `summary` and `next_date`. Every figure came
+    back `None`, and asked what its subscriptions cost, the assistant said it
+    could not tell.
+    """
+    result = ai_tools.list_subscriptions()
+
+    assert result["monthly_total"] is not None
+    assert result["monthly_total_eur"] is not None
+    assert result["annual_total_eur"] is not None
+    assert result["counted_in_total"] >= 1
+
+    spotify = next(s for s in result["subscriptions"] if s["merchant"] == "Spotify")
+    assert spotify["monthly_cost"] == pytest.approx(11.99, abs=0.5)
+    assert spotify["monthly_cost_eur"] is not None
+    assert spotify["last_amount_eur"] == "12\xa0€"
+    assert spotify["cadence"] == "monthly"
+    assert spotify["counts_toward_total"] is True
+
+
+def test_a_salary_is_detected_but_does_not_count_as_a_subscription(client):
+    """The detector finds any monthly series, wages included.
+
+    Left to weigh `type`, `is_transfer` and `status` itself, a small model will
+    sooner or later announce that the largest subscription is the employer.
+    """
+    job = cat_id(client, "Job", "income")
+    for month in range(3, 9):
+        add_tx(client, f"2026-{month:02d}-13", "Payroll", job, 3200.00, "income")
+
+    result = ai_tools.list_subscriptions()
+
+    # Not merely flagged — kept out of the list entirely. A flag was not enough:
+    # asked for its three biggest subscriptions the model sorted every row by
+    # cost and led with the salary, labelled "(income)" and still wrong.
+    assert all(s["merchant"] != "Payroll" for s in result["subscriptions"])
+    payroll = next(s for s in result["also_recurring"] if s["merchant"] == "Payroll")
+    assert payroll["type"] == "income"
+    assert payroll["counts_toward_total"] is False
+    assert "income" in payroll["not_a_subscription_because"]
+
+
+# ── Totals the model must never work out itself ───────────────────────────
+
+def test_monthly_summary_totals_the_period_itself(seeded):
+    """Asked what it earned last year, the model added twelve figures up and
+    was 705 € out. The sum belongs here, where it is arithmetic and not a guess.
+    """
+    result = ai_tools.monthly_summary(period="last_12_months")
+
+    assert result["total_income"] == pytest.approx(
+        sum(m["income"] for m in result["months"]))
+    assert result["total_expense"] == pytest.approx(
+        sum(m["expense"] for m in result["months"]))
+    assert result["total_net_eur"] is not None
+    assert result["total_income_eur"].endswith("€")
+
+
+def test_annual_report_precomputes_the_year_on_year_change(seeded):
+    """The euro strings used to be attached to keys the endpoint never sent, so
+    the model quoted raw floats and subtracted them itself."""
+    result = ai_tools.annual_report(year=2026)
+
+    assert result["this_year"]["income_eur"].endswith("€")
+    assert result["last_year"]["expense_eur"].endswith("€")
+
+    change = result["change_vs_last_year"]
+    assert change["income"] == pytest.approx(
+        result["this_year"]["income"] - result["last_year"]["income"])
+    assert change["income_eur"].endswith("€")
+    assert change["expense_direction"] in ("up", "down", "flat")
+
+
+def test_annual_report_compares_both_years_over_the_same_months(seeded):
+    """A part-finished year against a full one reports a collapse that is
+    really just the calendar."""
+    result = ai_tools.annual_report(year=2026)
+    assert result["compared_over"]
+    assert result["previous_year"] == result["year"] - 1
+
+
+# ── Net worth ─────────────────────────────────────────────────────────────
+
+def test_net_worth_carries_a_euro_string_for_every_figure(client):
+    """Including the change, whose key this tool used to guess wrong.
+
+    It looked for "change" and "change_amount"; the endpoint sends
+    "change_vs_prev". The figure went through as a bare float, which rule 2
+    tells the model it may not quote.
+    """
+    res = client.post("/api/accounts", json={"name": "Savings", "type": "asset"})
+    account_id = res.get_json()["id"]
+    client.post(f"/api/accounts/{account_id}/balances",
+                json={"as_of": "2026-07-01", "balance": 1000.0})
+    client.post(f"/api/accounts/{account_id}/balances",
+                json={"as_of": "2026-08-01", "balance": 1500.0})
+
+    result = ai_tools.net_worth_summary()
+
+    assert result["net_worth_eur"] == "1\xa0500\xa0€"
+    assert result["assets_eur"] == "1\xa0500\xa0€"
+    for key in ("net_worth", "assets", "liabilities", "change_since_last_month"):
+        raw, formatted = result[key], result[f"{key}_eur"]
+        assert (formatted is None) == (raw is None), f"{key} lost its euro string"
+
+    savings = next(a for a in result["accounts"] if a["name"] == "Savings")
+    assert savings["balance_eur"] == "1\xa0500\xa0€"
+    # Ids and sort orders are not things to say out loud.
+    assert "id" not in savings
+
+
+def test_two_named_months_can_be_asked_for_outright(seeded):
+    """The fix for a question no period could express.
+
+    "Did I spend more in July than in June?" has no window that answers it —
+    every period ends today. Given `last_2_months` to make it comfortable, the
+    model asked for that, was handed July and August, and reported a figure for
+    June anyway. So the months are named instead.
+    """
+    result = ai_tools.monthly_summary(months=["2026-05"])
+    assert [m["month"] for m in result["months"]] == ["2026-05"]
+    assert result["period"] == "2026-05"
+
+
+def test_last_2_months_is_not_a_period(seeded):
+    """It was added, it caused an invented figure, and it is not coming back."""
+    assert "last_2_months" not in ai_tools.PERIODS
+    assert "error" in ai_tools.run_tool("monthly_summary", {"period": "last_2_months"})
+
+
+def test_search_hands_back_the_net_it_would_otherwise_be_asked_to_subtract(seeded):
+    result = ai_tools.search_transactions(month="2026-05")
+    assert result["sum_net"] == pytest.approx(
+        result["sum_income"] - result["sum_expense"])
+    assert result["sum_net_eur"] == "3\xa0067\xa0€"
+
+
+def test_a_breakdown_states_the_direction_it_would_otherwise_be_guessed(client):
+    """Given a month and its usual month, the model inverted about half of them.
+
+    It filed Medical at 74 € against a usual 9 € under "saving money". Quoting a
+    figure is a small model's strength; comparing two is not, so the comparison
+    is made here.
+    """
+    groceries = cat_id(client, "Groceries")
+    # Six months of history, then a month well above it.
+    for month in range(2, 8):
+        add_tx(client, f"2026-{month:02d}-10", "K-Market", groceries, 100.0)
+    add_tx(client, "2026-08-10", "K-Market", groceries, 400.0)
+
+    result = ai_tools.category_breakdown(month="2026-08")
+    row = next(c for c in result["categories"] if c["category"] == "Groceries")
+
+    assert row["usual_month"] == pytest.approx(100.0)
+    assert row["direction"] == "above"
+    assert row["vs_usual"] == pytest.approx(300.0)
+    assert row["vs_usual_eur"] == "300\xa0€"
+    assert row["reads_as"] == "above usual"
+
+
+def test_ordinary_movement_reads_as_usual(client):
+    """A wide band on purpose — at 10% everything is news and nothing is."""
+    groceries = cat_id(client, "Groceries")
+    for month in range(2, 8):
+        add_tx(client, f"2026-{month:02d}-10", "K-Market", groceries, 100.0)
+    add_tx(client, "2026-08-10", "K-Market", groceries, 108.0)
+
+    row = next(c for c in ai_tools.category_breakdown(month="2026-08")["categories"]
+               if c["category"] == "Groceries")
+    assert row["direction"] == "above"
+    assert row["reads_as"] == "as usual"

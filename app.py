@@ -22,8 +22,7 @@ SERVER_PORT = config.PORT
 # FLASK_DEBUG=1.
 DEBUG = config.DEBUG
 
-for blueprint in routes.ALL:
-    app.register_blueprint(blueprint)
+routes.register(app)
 
 
 if __name__ == "__main__":

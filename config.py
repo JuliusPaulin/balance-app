@@ -152,7 +152,7 @@ AI_BACKEND = os.environ.get("AI_BACKEND", "local").strip().lower()
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").strip()
 """Where the local Ollama server listens."""
 
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b").strip()
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:4b").strip()
 """The local model to ask. Must be pulled: ``ollama pull <model>``.
 
 Defaulted to a ~9B at 4-bit, which is about 6 GB resident — the comfortable

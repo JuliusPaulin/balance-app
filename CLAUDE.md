@@ -419,13 +419,36 @@ did that contradicts that.
 Set-up is two commands and the app finds it:
 
 ```
-ollama pull qwen3.5:9b          # ~6 GB resident; the comfortable size on 16 GB
+ollama pull qwen3.5:4b          # 3.4 GB; the default, and enough on an 8 GB Mac
 python3 scripts/ask.py "what did I spend on groceries last month?"
 ```
 
 `GET /api/chat/status` live-probes Ollama and reports what is actually
 installed, because "not configured" is a useless thing to tell someone whose
 server is running and who simply typed the model name differently.
+
+**Why 4b and not 9b.** Both were put through the same eleven questions against
+the real database. They scored the same — 4b read the seasons better, 9b was
+tidier about quoting — while 4b is half the size (3.4 GB against 6.6 GB) and
+about twice as fast, which is the difference between needing 16 GB and running
+on 8 GB. There was no accuracy to trade away, so it is the default. Set
+`OLLAMA_MODEL=qwen3.5:9b` to go back.
+
+**2b is the floor, and it is below it.** Under the same questions it answered
+about half, and the two it got wrong it got wrong confidently: asked for the
+largest purchase in three months it reported June's entire expense total,
+3 523 €, as a single charge for car charging — the real figure was 21 €. Asked
+what it spent last month it passed `period=last_month` and `month=2026-08`
+together and answered for the wrong month, which is the calendar arithmetic the
+tools exist to take away from it. It also tried to call a `delete_transaction`
+tool that does not exist. Nothing was written, because the dispatcher only
+knows six functions and refuses everything else — but the model reaching for it
+is the argument for keeping the assistant read-only, not a reason to relax it.
+
+Note that a `month` argument still overrides a `period` when both are passed, on
+the grounds that a named month is the more specific instruction. That rule was
+written for a user naming a month; 2b was the first model confused enough to
+name a contradictory one, and 4b and 9b never do. It is left as it is.
 
 **The assistant does not query the database and does not do arithmetic.** It
 picks one of six read-only tools in `ai_tools.py`, each of which dispatches one
@@ -439,6 +462,54 @@ obvious alternative fails in an app about money:
 | No SQL from the model | A plausible query with the join or the sign wrong reports a false number, confidently. Picking one of six functions is a task a small local model can also do. |
 | No arithmetic from the model | Every amount comes back twice — a raw float and a preformatted `_eur` string. The model quotes the string; a rounding it never performs is one it cannot get wrong. |
 | No calendar arithmetic from the model | "Last month" and "since summer" are where small models actually fail. Tools take a `period` name from a fixed list and `resolve_period()` turns it into explicit months, in Python, where it is tested. |
+
+**A tool has to hand back every total it will be asked for**, or the model works
+it out anyway. Asked what it earned last year, it added up twelve monthly income
+figures itself and answered 36 135 € against a real 36 840 €: confident, and
+705 € out. Rule two only holds while there is a string to quote, so
+`monthly_summary` carries the period's own totals, `annual_report` carries the
+year-on-year change with its direction already decided, and
+`search_transactions` carries the sum of everything it matched.
+
+**The same goes for every comparison.** Quoting a figure is a small model's
+strength; comparing two is not. Given a month beside its usual month it read
+both correctly and then filed Medical at 74 € against a usual 9 € under "saving
+money" — about half the list came back inverted. So `category_breakdown` states
+`direction` and `vs_usual` outright, and `reads_as` says whether the gap is
+worth mentioning at all, using the Dashboard's own quiet band so the panel and
+the bars never disagree.
+
+**And a flag is not a boundary.** `list_subscriptions` marked the salary
+`counts_toward_total: false`; asked for the three biggest subscriptions the
+model sorted every row by cost and led with it, labelled "(income)" and still
+wrong. Income, transfers and stopped series now sit in a separate
+`also_recurring` list, each saying why. Two lists cannot be sorted across.
+
+**Nothing may fail quietly into a number.** Two things guard that. A dispatch
+that does not return 200 raises `ToolDispatchError` rather than returning
+`None` — the tool bodies' `or {}` used to turn that into an empty result, which
+the assistant read aloud as "0 €". And an invented period name is refused with
+the valid list rather than resolved to the current month: asked whether July
+beat June, the model made up `last_2_months`, was handed August without a word,
+and gave up on a question the data answers.
+
+**Making the model comfortable is not the same as making it right.** It kept
+asking for a `last_2_months` period, so that period was added — and the answers
+got worse. "The last two months" is July and August; it was asking in order to
+compare June with July. Given a window that sounded right and did not contain
+June, it reported June at 3 598 € against a real 3 523 €. The period came out
+again. `monthly_summary` takes an explicit `months` list instead, because the
+question it could not answer was never a missing period: every period is a
+window ending today, and "June against July" is not one. A tool that cannot say
+the thing has to be taught to say it, not given a near-miss.
+
+**The tools read the app's routes, so they have to be on the app.** `core` holds
+the bare Flask object and `routes.register(app)` attaches the blueprints;
+`app.py` calls it on start-up and `ai_tools._call_api` calls it before it
+dispatches. Without that second call every tool 404s in any process that does
+not import `app.py` — which is `scripts/ask.py`, the harness the model is judged
+with. The suite never saw it, because its `client` fixture imports `app`; the
+regression test runs in a subprocess for that reason.
 
 Read-only on purpose — the app has no undo for a hand-edited row.
 
