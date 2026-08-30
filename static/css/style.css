@@ -1073,10 +1073,11 @@ tbody tr:last-child td {
 }
 
 /* ── Horizon Filter — segmented control ──────────────────────────── */
-/* Four of these live in the app: the dashboard horizon, both Trends ranges and
-   the Net Worth range. They share the styling so the selected one is marked the
-   same way everywhere. */
+/* Five of these live in the app: the dashboard horizon, the Monthly Overview
+   scope, both Trends ranges and the Net Worth range. They share the styling so
+   the selected one is marked the same way everywhere. */
 .horizon-btn,
+.monthly-scope-btn,
 .trends-period-btn,
 .trends-toptx-btn,
 .nw-period-btn {
@@ -1087,6 +1088,7 @@ tbody tr:last-child td {
 }
 
 .horizon-btn.active,
+.monthly-scope-btn.active,
 .trends-period-btn.active,
 .trends-toptx-btn.active,
 .nw-period-btn.active {

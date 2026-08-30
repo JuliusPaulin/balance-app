@@ -127,7 +127,13 @@
         <div class="summary-row" id="summary-cards"></div>
         <div class="dashboard-grid">
             <div class="card full-width">
-                <div class="card-title">Monthly Overview</div>
+                <div class="flex items-center" style="justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+                    <div class="card-title" style="margin:0;white-space:nowrap">Monthly Overview</div>
+                    <div class="btn-group">
+                        <button class="btn btn-secondary btn-sm monthly-scope-btn active" data-scope="latest" onclick="setMonthlyScope('latest')">Latest month</button>
+                        <button class="btn btn-secondary btn-sm monthly-scope-btn" data-scope="period" onclick="setMonthlyScope('period')">Period</button>
+                    </div>
+                </div>
                 <div class="chart-container" style="height:350px"><canvas id="chart-monthly"></canvas></div>
             </div>
             <div class="card full-width">

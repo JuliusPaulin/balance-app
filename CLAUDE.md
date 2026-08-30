@@ -261,6 +261,18 @@ Card order: Monthly Overview → Expenses by Category → Income by Category →
 Expense Trends → Spending Heatmap → Monthly Summary.
 
 - Monthly expense vs income bar chart
+  - **Latest month / Period toggle.** The card opens on the latest month with
+    data, on its own, and ignores the period controls at the top of the page
+    while it does — two years of bars is not the first thing you want to read.
+    Switch it to **Period** and it follows those controls like every other card.
+    `monthlyChartRows()` is the one place that decides, and both render paths
+    (`loadDashboard()` and `applyPeriodFilter()`) go through it, so the chart
+    and its buttons cannot disagree. Nothing else on the page changed: the
+    summary cards, breakdowns and table still follow the period picker.
+  - A single month is two bars, pinned to `barThickness: 72`. `maxBarThickness`
+    alone is not enough there — with one category Chart.js measures the slot
+    from the gap between neighbours, has none, and settles on a sliver on the
+    first paint after load.
   - No grid lines or y-axis labels; clean look
   - Y-axis max = data max × 1.15 (15% headroom for labels)
   - White value label rendered inside each bar near top (hidden if bar too short)
@@ -361,7 +373,8 @@ Re-run anytime with `python3 scripts/generate_merchant_rules.py` — clears and 
 - `fmt(amount)` — global currency formatter (fi-FI locale, EUR, **0 decimal places**)
 
 **Every range selector is styled by one rule.** `.horizon-btn`,
-`.trends-period-btn`, `.trends-toptx-btn` and `.nw-period-btn` share the
+`.monthly-scope-btn`, `.trends-period-btn`, `.trends-toptx-btn` and
+`.nw-period-btn` share the
 `.active` styling, so the chosen range is marked the same way on every page. A
 new selector that does not join that list toggles a class nothing paints, and
 no button ever looks selected.

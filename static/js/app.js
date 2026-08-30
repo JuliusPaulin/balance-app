@@ -2398,7 +2398,7 @@ async function applyPeriodFilter() {
     if (!cachedMonthly.length) { loadDashboard(); return; }
     const filtered = filterData(cachedMonthly);
     renderSummaryCards(filtered);
-    renderMonthlyChart(filtered);
+    renderMonthlyChart(monthlyChartRows());
     if (cachedTopExpenses) drawTrendsFromData(cachedTopExpenses);
     renderSummaryTable(cachedMonthly);
     // Category bars need fresh API call for correct aggregation
@@ -2425,6 +2425,27 @@ function filterData(monthly) {
 
 function filterByHorizon(monthly) { return filterData(monthly); }
 
+// ── Monthly Overview scope ───────────────────────────────────────────
+// The card opens on the latest month alone. The period controls at the top
+// choose what the rest of the page covers, and two years of bars is not the
+// first thing you want to read on the Dashboard. Switch it to Period and the
+// card follows those controls like everything else.
+let monthlyChartScope = "latest";   // "latest" | "period"
+
+function setMonthlyScope(scope) {
+    monthlyChartScope = scope;
+    renderMonthlyChart(monthlyChartRows());
+}
+
+// In "latest" mode this ignores the period controls on purpose: it is the
+// latest month there is data for, not the latest month the period covers.
+function monthlyChartRows() {
+    if (monthlyChartScope === "period") return filterData(cachedMonthly);
+    const months = [...new Set(cachedMonthly.map(r => r.month))].sort();
+    const latest = months[months.length - 1];
+    return cachedMonthly.filter(r => r.month === latest);
+}
+
 async function loadDashboard() {
     const [monthly, topExpenses] = await Promise.all([
         api("/api/dashboard/monthly-summary"),
@@ -2440,7 +2461,7 @@ async function loadDashboard() {
     await loadMonthsWithNotes();
 
     renderSummaryCards(filtered);
-    renderMonthlyChart(filtered);
+    renderMonthlyChart(monthlyChartRows());
     renderCategoryBars(catBreakdown);
     renderTrendsChart(topExpenses);
     renderSummaryTable(monthly);
@@ -2511,6 +2532,8 @@ function renderSummaryCards(monthly) {
 function renderMonthlyChart(monthly) {
     const ctx = document.getElementById("chart-monthly");
     if (charts.monthly) charts.monthly.destroy();
+    document.querySelectorAll(".monthly-scope-btn").forEach(b =>
+        b.classList.toggle("active", b.dataset.scope === monthlyChartScope));
     const theme = chartTheme();
     const onAccent = cssVar("--on-accent");
 
@@ -2521,6 +2544,14 @@ function renderMonthlyChart(monthly) {
     const yMax        = Math.max(...incomeData, ...expenseData) * 1.15;
 
     const fontSize   = months.length > 18 ? 9 : months.length > 12 ? 10 : 11;
+    // Without a cap, one month's two bars stretch to half the card each. The cap
+    // alone is not enough there: with a single category Chart.js measures the
+    // slot from the gap between neighbours, has none to measure, and on the
+    // first paint after load settles on a sliver. An explicit thickness skips
+    // that measurement, so the bar is the width we asked for either way.
+    const barSizing = months.length === 1
+        ? { barThickness: 72 }
+        : { maxBarThickness: 72 };
     const diffPlugin = {
         id: "monthlyDiffLabels",
         afterDatasetsDraw(chart) {
@@ -2592,8 +2623,8 @@ function renderMonthlyChart(monthly) {
         data: {
             labels: months.map(monthLabel),
             datasets: [
-                { label: "Income",   data: incomeData,  backgroundColor: rgbaVar("--accent", 0.85), borderRadius: 6, borderSkipped: false },
-                { label: "Expenses", data: expenseData, backgroundColor: rgbaVar("--red", 0.85), borderRadius: 6, borderSkipped: false },
+                { label: "Income",   data: incomeData,  backgroundColor: rgbaVar("--accent", 0.85), borderRadius: 6, borderSkipped: false, ...barSizing },
+                { label: "Expenses", data: expenseData, backgroundColor: rgbaVar("--red", 0.85), borderRadius: 6, borderSkipped: false, ...barSizing },
             ],
         },
         options: {
