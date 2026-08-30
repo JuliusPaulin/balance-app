@@ -31,7 +31,11 @@
 - `investment_import.py` — Nordnet CSV / Nordea xlsx portfolio parsers (→ holdings + Net Worth)
 - `ai_tools.py` — the six read-only tools the chat assistant may call, each a
   wrapper over an endpoint the app already serves
-- `ai_chat.py` — the agent loop: system prompt, request, tool-call cycle
+- `ai_chat.py` — the agent loop: system prompt and the tool-call cycle
+- `ai_backends.py` — where the model runs. Ollama (local, the default) and
+  Anthropic (the control), behind one interface
+- `scripts/ask.py` — ask the assistant from the terminal; prints which tools it
+  called, which is how a prompt problem is told apart from a model problem
 
 **The `routes/` package.** `app.py` held every route until it reached 3,000
 lines; the routes now sit one area per module, and `routes/__init__.py` lists
@@ -90,7 +94,7 @@ through `db`: `db.IntegrityError`, `db.DatabaseError`, `db.Json(...)`,
 
 ## Tests
 
-`python3 -m pytest tests/` — 203 tests, all green.
+`python3 -m pytest tests/` — 221 tests, all green.
 
 `conftest.py` points `SQLITE_PATH` at a throwaway file **at import time**, before
 pytest collects any test module. This matters: test modules `import config` /
@@ -406,9 +410,22 @@ too, for a different reason (they are movements, not consumption).
 
 ### AI Chat Assistant
 
-A chat panel that answers questions about your own figures. Optional in exactly
-the way Open Banking is: without `ANTHROPIC_API_KEY` the assistant reports
-itself unconfigured and the UI hides the panel.
+A chat panel that answers questions about your own figures, **running on a
+local model by default** — Ollama on this machine, nothing leaving the disk.
+The app has always been one SQLite file on your own Mac, and a panel that
+posted a transaction history to somebody's API would be the first thing it ever
+did that contradicts that.
+
+Set-up is two commands and the app finds it:
+
+```
+ollama pull qwen3.5:9b          # ~6 GB resident; the comfortable size on 16 GB
+python3 scripts/ask.py "what did I spend on groceries last month?"
+```
+
+`GET /api/chat/status` live-probes Ollama and reports what is actually
+installed, because "not configured" is a useless thing to tell someone whose
+server is running and who simply typed the model name differently.
 
 **The assistant does not query the database and does not do arithmetic.** It
 picks one of six read-only tools in `ai_tools.py`, each of which dispatches one
@@ -425,12 +442,25 @@ obvious alternative fails in an app about money:
 
 Read-only on purpose — the app has no undo for a hand-edited row.
 
-The loop in `ai_chat.py` is hand-written rather than the SDK's tool runner, and
-`TOOL_SCHEMAS` is provider-neutral JSON Schema, because the intended backend is
-a **local** model (`docs/LOCAL_AI_RESEARCH.md`); the loop is the only piece that
-changes when that swap happens. `MAX_TOOL_ROUNDS` caps the cycle, and the final
-turn withdraws the tools so a stuck conversation ends in a sentence rather than
-a seventh identical lookup.
+The loop in `ai_chat.py` is hand-written and knows nothing about which model
+answered: it asks a backend for a turn, runs the tools that turn requested, and
+hands the results back. `ai_backends.py` holds the two implementations and all
+the wire-format translation, so a third (llama.cpp embedded in the app, once
+this is proven) is a change in one file. `MAX_TOOL_ROUNDS` caps the cycle at
+four — small models circle more readily than large ones — and the final turn
+withdraws the tools so a stuck conversation ends in a sentence rather than a
+fifth identical lookup.
+
+**The cloud backend is a control, not a destination.** `AI_BACKEND=anthropic`
+runs the same loop over the same tools with a frontier model, which is the only
+way to tell a bad answer caused by the model apart from one caused by the
+prompt or the tools.
+
+Local-model specifics that are load-bearing: `temperature` 0.1 (this is
+routing, and creativity here shows up as invented category names); `think` off
+by default with a one-time retry for models that reject the field; and
+`<think>` tags stripped from any reply, because a model narrating itself is not
+an answer to show anyone.
 
 ### Month Notes
 - Per-month text notes stored in `month_notes`

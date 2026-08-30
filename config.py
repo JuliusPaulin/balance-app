@@ -20,8 +20,8 @@ FLASK_DEBUG
     "1" enables Flask debug mode; anything else (default "0") disables it.
 ENABLE_BANKING_*
     Optional Open Banking import credentials — see the block at the bottom.
-ANTHROPIC_API_KEY, AI_MODEL, AI_EFFORT
-    Optional AI chat assistant settings — see the block at the bottom.
+AI_BACKEND, OLLAMA_*, ANTHROPIC_API_KEY
+    AI chat assistant settings — local model by default. See the bottom block.
 """
 
 import os
@@ -136,29 +136,68 @@ def enable_banking_configured():
     return bool(ENABLE_BANKING_APP_ID and ENABLE_BANKING_PRIVATE_KEY)
 
 
-# ── AI chat assistant (optional) ─────────────────────────────────────────
-# The chat panel talks to a model through ai_chat.py. Optional in exactly the
-# way Enable Banking is: with nothing configured, ai_configured() is False, the
-# route reports 400 and the UI hides the panel. Nothing else in the app changes.
+# ── AI chat assistant ────────────────────────────────────────────────────
+# The chat panel runs against a LOCAL model by default: Ollama on this machine,
+# nothing leaving the disk. That is the point of the feature — the app has
+# always been one SQLite file on your own Mac, and a panel that posted a
+# transaction history to somebody's API would be the first thing it ever did
+# that contradicts that. See docs/LOCAL_AI_RESEARCH.md.
 #
-# The cloud API is the first backend, not the intended one — see
-# docs/LOCAL_AI_RESEARCH.md. The tool layer is deliberately provider-neutral so
-# a local model can be dropped in behind the same schemas.
+# The cloud backend is kept as a control, not a destination: same loop, same
+# tools, different model, so a bad answer can be blamed on the right thing.
+
+AI_BACKEND = os.environ.get("AI_BACKEND", "local").strip().lower()
+"""Which backend answers: "local" (Ollama, the default) or "anthropic"."""
+
+OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").strip()
+"""Where the local Ollama server listens."""
+
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b").strip()
+"""The local model to ask. Must be pulled: ``ollama pull <model>``.
+
+Defaulted to a ~9B at 4-bit, which is about 6 GB resident — the comfortable
+size on a 16 GB Mac once the app and its webview are already running. On 8 GB,
+set this to a 4B."""
+
+OLLAMA_NUM_CTX = int(os.environ.get("OLLAMA_NUM_CTX", 8192))
+"""Context window for the local model.
+
+8k is ample here and deliberately not more: the prompt, the tool schemas and one
+tool result come to roughly 2k, and every extra token of window is memory taken
+from a machine that is also running the app."""
+
+OLLAMA_TEMPERATURE = float(os.environ.get("OLLAMA_TEMPERATURE", "0.1"))
+"""Low on purpose. This is a routing task — picking one of six tools and
+quoting a figure back. Creativity here shows up as invented category names."""
+
+OLLAMA_THINK = os.environ.get("OLLAMA_THINK", "0") == "1"
+"""Whether to let a thinking model reason before answering.
+
+Off by default: the deliberation costs seconds in a side panel and buys little
+when the task is choosing between six tools. Models with no thinking mode
+ignore this — the backend notices the rejection and stops sending it."""
+
+OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", 180))
+"""Seconds to wait for a local reply. The first call after a cold start pays
+for loading several gigabytes off disk, which is slow and not a failure."""
 
 ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
-"""API key for the chat assistant. Empty = the chat feature is off."""
+"""API key for the cloud backend. Only consulted when AI_BACKEND=anthropic."""
 
 AI_MODEL = os.environ.get("AI_MODEL", "claude-opus-5")
-"""Model the assistant runs on."""
+"""Model for the cloud backend."""
 
 AI_EFFORT = os.environ.get("AI_EFFORT", "medium")
-"""Thinking effort: low | medium | high | xhigh | max.
-
-Defaulted below the API's own default on purpose. The assistant's job is
-choosing between six tools and phrasing one result — a routing task, in a side
-panel where latency is felt. Raise it if answers start feeling shallow."""
+"""Thinking effort for the cloud backend: low | medium | high | xhigh | max."""
 
 
 def ai_configured():
-    """True when the chat assistant has what it needs to answer."""
+    """True when the assistant has a backend it could use.
+
+    Deliberately cheap and offline: it says whether the app is *set up* for
+    chat, not whether the server is up right now. Whether Ollama is actually
+    running is a live question, and /api/chat/status is where it gets asked.
+    """
+    if AI_BACKEND == "local":
+        return bool(OLLAMA_HOST and OLLAMA_MODEL)
     return bool(ANTHROPIC_API_KEY)

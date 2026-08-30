@@ -7,7 +7,8 @@ this module only checks the request and reports what came back.
 from flask import Blueprint, request, jsonify
 
 import config
-from ai_chat import chat as run_chat
+from ai_backends import BackendUnavailable
+from ai_chat import chat as run_chat, status as backend_status
 
 bp = Blueprint("chat", __name__)
 
@@ -19,12 +20,20 @@ MAX_MESSAGE_CHARS = 4000
 
 @bp.route("/api/chat/status")
 def chat_status():
-    """Whether the assistant is available — the UI hides the panel when not.
+    """Whether the assistant can answer right now, and if not, what is missing.
 
     Mirrors /api/import/bank/status: the feature announces its own absence
-    rather than failing when someone tries to use it.
+    rather than failing when someone tries to use it. For the local backend
+    that means actually asking Ollama what it has — "not configured" is a
+    useless thing to tell someone whose server is running and who simply typed
+    the model name differently.
     """
-    return jsonify({"configured": config.ai_configured(), "model": config.AI_MODEL})
+    state = backend_status()
+    return jsonify({
+        "configured": config.ai_configured() and state["reachable"]
+                      and state["model_installed"],
+        **state,
+    })
 
 
 @bp.route("/api/chat", methods=["POST"])
@@ -57,6 +66,10 @@ def chat():
 
     try:
         result = run_chat(cleaned)
+    except BackendUnavailable as exc:
+        # The model is the one moving part that is not a file on this disk, so
+        # it is the one part that can simply be off. Say which.
+        return jsonify({"error": str(exc), "code": "backend_unavailable"}), 503
     except Exception as exc:
         # The model is the one part of this app that is not on the user's own
         # disk, so it is the one part that can be down. Say which it was.
