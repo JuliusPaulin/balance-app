@@ -210,6 +210,37 @@ function confirmDialog({ title, body = "", confirmLabel = "Confirm", danger = fa
     });
 }
 
+// ── Escape closes the top modal ─────────────────────────────────────
+// Every modal closes on a click outside it, and confirmDialog() has always
+// taken Escape too. None of the others did, so a drilldown opened by clicking
+// a bar could only be dismissed by aiming at the backdrop behind it — and in a
+// pywebview window there is no browser chrome to fall back on.
+//
+// The last overlay in the DOM is the one on top, and the one Escape means. The
+// modals built per open are removed; an overlay declared in index.html is
+// reused rather than rebuilt, so it names its own closer in `data-close` —
+// which is also how a surface that is not a `.modal-overlay` at all (the guide)
+// joins in.
+function closeTopModal() {
+    const open = [...document.querySelectorAll(".modal-overlay, [data-close]")]
+        .filter(o => getComputedStyle(o).display !== "none");
+    const top = open[open.length - 1];
+    if (!top) return false;
+    const closer = window[top.dataset.close];
+    if (typeof closer === "function") closer();
+    else top.remove();
+    return true;
+}
+
+document.addEventListener("keydown", e => {
+    if (e.key !== "Escape" || e.defaultPrevented) return;
+    // Whatever is above the modal gets the key first: confirmDialog() and the
+    // import category picker mark it handled, and these two say so by class.
+    if (document.body.classList.contains("fs-active")) return;
+    if (document.body.classList.contains("nav-open")) return;
+    if (closeTopModal()) e.preventDefault();
+});
+
 // ── Navigation ──────────────────────────────────────────────────────
 // Scope to page tabs only — sidebar action buttons (theme toggle, Sync, Quit)
 // are also .nav-item but have no data-page, so they must not hijack the

@@ -590,6 +590,18 @@ through it. The browser's `confirm()` inside a pywebview window is a system
 alert box — another app's typeface, no way to mark the destructive answer, and
 paragraphs faked with `\n\n`.
 
+**Escape closes the top modal.** Only `confirmDialog()` used to take the key, so
+a drilldown opened by clicking a bar could be dismissed only by aiming at the
+backdrop — and a pywebview window has no browser chrome to fall back on.
+`closeTopModal()` in `core.js` takes the last open overlay in the DOM, which is
+the one on top. Modals built per open are removed; an overlay declared in
+`index.html` is reused rather than rebuilt, so it names its own closer in
+**`data-close`** (`#invest-overlay`, and the guide, which is not a
+`.modal-overlay` at all). One press closes one thing: the handler stands down
+when the key was already handled (`defaultPrevented` — `confirmDialog()` and the
+import category picker) or when something sits above the modal (`fs-active`,
+`nav-open`).
+
 **A filter that cannot be applied has to say so.** `readDateFilter()` marks a
 date box `.input-invalid` when it holds text the parser cannot read: the filter
 is dropped from the query rather than refused, so without the mark the list

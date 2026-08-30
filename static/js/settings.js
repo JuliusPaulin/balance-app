@@ -105,12 +105,19 @@ function _renderGuide() {
     nextBtn.textContent = _guideStep === total - 1 ? "Done" : "Next";
 }
 
+// Hiding the guide also marks it seen, so it does not reopen on next launch.
+// One function, because the backdrop click, the Done button and Escape all mean
+// the same thing.
+function closeGuide() {
+    document.getElementById("guide-overlay").style.display = "none";
+    localStorage.setItem("guide_seen", "1");
+}
+
 function guideStep(dir) {
     const total = GUIDE_SLIDES.length;
     _guideStep += dir;
     if (_guideStep >= total) {
-        document.getElementById("guide-overlay").style.display = "none";
-        localStorage.setItem("guide_seen", "1");
+        closeGuide();
         return;
     }
     if (_guideStep < 0) _guideStep = 0;
