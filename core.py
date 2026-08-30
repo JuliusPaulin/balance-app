@@ -213,3 +213,22 @@ recurring_cache = {}   # (uid, lookback, min_occ) -> (version, result)
 def bump_data_version():
     global data_version
     data_version += 1
+
+
+def cached_recurring(conn, user_id, lookback_months=18, min_occurrences=3):
+    """Detected recurring series, from the cache when the data has not moved.
+
+    Two pages ask for the same detection — the Subscriptions table and the
+    Dashboard's cash-flow forecast — so they go through here and share one
+    result rather than each walking the history.
+    """
+    from recurring import detect_recurring
+
+    key = (user_id, lookback_months, min_occurrences)
+    cached = recurring_cache.get(key)
+    if cached and cached[0] == data_version:
+        return cached[1]
+    result = detect_recurring(conn, user_id, lookback_months=lookback_months,
+                              min_occurrences=min_occurrences)
+    recurring_cache[key] = (data_version, result)
+    return result

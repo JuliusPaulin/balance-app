@@ -2446,6 +2446,7 @@ async function loadDashboard() {
     renderSummaryTable(monthly);
 
     await loadIncomeBreakdown(catBreakdown);
+    await loadForecast();
     await loadHeatmap();
 }
 
@@ -2619,6 +2620,203 @@ function renderMonthlyChart(monthly) {
             },
         },
     });
+}
+
+// ── Cash Flow Forecast ────────────────────────────────────────────────
+// Its own horizon on purpose. The controls at the top of the page choose which
+// HISTORY the cards below show; this card is about the months ahead, and a
+// range that means "the last two years" means nothing to it. See forecast.py
+// for how the two halves — recurring charges and a typical month's variable
+// spend — are worked out.
+let forecastMonths = 3;
+let forecastData = null;
+
+function setForecastHorizon(months) {
+    forecastMonths = months;
+    loadForecast();
+}
+
+async function loadForecast() {
+    document.querySelectorAll(".forecast-period-btn").forEach(b =>
+        b.classList.toggle("active", Number(b.dataset.months) === forecastMonths));
+    forecastData = await api(`/api/dashboard/forecast?months=${forecastMonths}`);
+    renderForecast(forecastData);
+}
+
+// "Rest of Aug" for the part-finished current month, "Sep 26" for the rest.
+function forecastMonthLabel(m) {
+    return m.is_partial ? `Rest of ${monthLabel(m.month).split(" ")[0]}` : monthLabel(m.month);
+}
+
+function forecastMonthLabelFull(m) {
+    return m.is_partial ? `Rest of ${monthLabelFull(m.month)}` : monthLabelFull(m.month);
+}
+
+function signed(amount) {
+    return `${amount >= 0 ? "+" : "−"}${fmt(Math.abs(amount))}`;
+}
+
+function renderForecast(data) {
+    const { summary, basis } = data;
+    const avgColor = summary.average_net >= 0 ? "var(--green)" : "var(--red)";
+    let headline = `<span>Typical month <strong style="color:${avgColor}">${signed(summary.average_net)}</strong></span>`;
+    if (summary.negative_months > 0) {
+        const s = summary.negative_months === 1 ? "month" : "months";
+        headline += ` <span style="margin-left:14px;color:var(--red)">${summary.negative_months} ${s} short</span>`;
+    }
+    document.getElementById("forecast-headline").innerHTML = headline;
+
+    const basisEl = document.getElementById("forecast-basis");
+    if (!basis.has_history) {
+        basisEl.textContent = basis.recurring_series
+            ? "No completed month to measure everyday spending against yet, so this shows the recurring charges alone."
+            : "Nothing to forecast from yet — import a few months and this fills in.";
+    } else {
+        basisEl.textContent =
+            `${basis.recurring_series} recurring charges rolled forward, plus a typical month's `
+            + `everyday spending (${fmt(basis.variable_expense_monthly)} out, `
+            + `${fmt(basis.variable_income_monthly)} in — the median of `
+            + `${basis.history_months.length} completed months). The period above does not change this.`;
+    }
+
+    renderForecastChart(data.months);
+    renderForecastTable(data.months);
+}
+
+function renderForecastChart(months) {
+    const ctx = document.getElementById("chart-forecast");
+    if (charts.forecast) charts.forecast.destroy();
+    // The everyday half is the same red as the recurring half, held back so the
+    // two read as one column. It needs more of itself on the dark background to
+    // stay apart from it.
+    const everydayAlpha = resolvedTheme() === "dark" ? 0.45 : 0.32;
+
+    charts.forecast = new Chart(ctx, {
+        type: "bar",
+        data: {
+            labels: months.map(forecastMonthLabel),
+            datasets: [
+                { label: "Income", data: months.map(m => m.income_total),
+                  backgroundColor: rgbaVar("--accent", 0.85), stack: "in",
+                  borderRadius: 6, borderSkipped: false },
+                { label: "Recurring", data: months.map(m => m.recurring_expense),
+                  backgroundColor: rgbaVar("--red", 0.85), stack: "out" },
+                { label: "Everyday", data: months.map(m => m.variable_expense),
+                  backgroundColor: rgbaVar("--red", everydayAlpha), stack: "out",
+                  borderRadius: 6, borderSkipped: false },
+            ],
+        },
+        options: {
+            ...chartOptions(),
+            scales: {
+                x: { ...chartOptions().scales.x, stacked: true },
+                y: { ...chartOptions().scales.y, stacked: true, beginAtZero: true },
+            },
+            plugins: {
+                ...chartOptions().plugins,
+                tooltip: {
+                    ...chartOptions().plugins.tooltip,
+                    callbacks: {
+                        afterBody(items) {
+                            const m = months[items[0]?.dataIndex];
+                            return m ? `\nNet: ${signed(m.net)}` : "";
+                        },
+                    },
+                },
+            },
+        },
+    });
+}
+
+function renderForecastTable(months) {
+    const rows = months.map((m, i) => {
+        const netColor = m.net >= 0 ? "var(--green)" : "var(--red)";
+        const cumColor = m.cumulative >= 0 ? "var(--green)" : "var(--red)";
+        const due = m.charges.length
+            ? `${m.charges.length} due`
+            : `<span style="color:var(--text-tertiary)">—</span>`;
+        return `<tr onclick="openForecastMonthModal(${i})" style="cursor:pointer">
+            <td style="font-size:13px;white-space:nowrap">${forecastMonthLabel(m)}</td>
+            <td class="amount" style="font-size:13px;text-align:right">${fmt(m.income_total)}</td>
+            <td class="amount" style="font-size:13px;text-align:right">${fmt(m.recurring_expense)}</td>
+            <td class="amount" style="font-size:13px;text-align:right">${fmt(m.variable_expense)}</td>
+            <td class="amount" style="font-size:13px;text-align:right;font-weight:600;color:${netColor}">${signed(m.net)}</td>
+            <td class="amount" style="font-size:13px;text-align:right;color:${cumColor}">${signed(m.cumulative)}</td>
+            <td style="font-size:12px;text-align:right;color:var(--text-tertiary);white-space:nowrap">${due}</td>
+        </tr>`;
+    }).join("");
+
+    document.getElementById("forecast-table").innerHTML = `
+        <div class="table-container" style="margin-top:18px">
+            <table>
+                <thead><tr>
+                    <th>Month</th>
+                    <th style="text-align:right">Income</th>
+                    <th style="text-align:right">Recurring</th>
+                    <th style="text-align:right">Everyday</th>
+                    <th style="text-align:right">Net</th>
+                    <th style="text-align:right">Running</th>
+                    <th style="text-align:right">Charges</th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+            </table>
+        </div>`;
+}
+
+// What a forecast month is actually made of: the dated charges it expects, and
+// the everyday spending that has no date because it is an average, not an event.
+function openForecastMonthModal(index) {
+    const m = forecastData?.months?.[index];
+    if (!m) return;
+
+    const charges = m.charges.map(c => {
+        const income = c.type === "income";
+        const colour = income ? "var(--green)" : "var(--text-primary)";
+        return `<tr>
+            <td style="font-size:13px;white-space:nowrap">${fmtDate(c.date)}</td>
+            <td style="font-size:13px">${escapeHtml(c.store || "—")}${c.is_manual ? ` <span style="color:var(--text-tertiary);font-size:11px">added by hand</span>` : ""}</td>
+            <td style="font-size:13px">${c.category ? `<span class="category-tag">${escapeHtml(c.category)}</span>` : ""}</td>
+            <td class="amount" style="font-size:13px;text-align:right;white-space:nowrap;color:${colour}">${income ? "+" : "−"}${fmt2(c.amount)}</td>
+        </tr>`;
+    }).join("");
+
+    const empty = `<tr><td colspan="4" style="font-size:13px;color:var(--text-tertiary);padding:12px 0">No recurring charge falls in this month.</td></tr>`;
+    const partial = m.is_partial
+        ? `<p style="font-size:12px;color:var(--text-tertiary);margin-top:12px">${m.days_remaining} of ${m.days_in_month} days left, so everyday spending is counted at that share of a typical month.</p>`
+        : "";
+
+    document.body.insertAdjacentHTML("beforeend", `<div class="modal-overlay" onclick="if(event.target===this)this.remove()">
+        <div class="modal" style="max-width:640px">
+            <div class="modal-title">${forecastMonthLabelFull(m)} — expected</div>
+            <div style="max-height:420px;overflow-y:auto;margin:0 -4px">
+                <table style="width:100%">
+                    <thead><tr>
+                        <th style="font-size:12px">Date</th><th style="font-size:12px">Store</th>
+                        <th style="font-size:12px">Category</th><th style="font-size:12px;text-align:right">Amount</th>
+                    </tr></thead>
+                    <tbody>${charges || empty}</tbody>
+                    <tfoot>
+                        <tr style="border-top:1px solid var(--border)">
+                            <td colspan="3" style="font-size:13px;padding-top:8px">Everyday spending (average)</td>
+                            <td class="amount" style="font-size:13px;padding-top:8px;text-align:right">−${fmt(m.variable_expense)}</td>
+                        </tr>
+                        ${m.variable_income ? `<tr>
+                            <td colspan="3" style="font-size:13px">Other income (average)</td>
+                            <td class="amount" style="font-size:13px;text-align:right;color:var(--green)">+${fmt(m.variable_income)}</td>
+                        </tr>` : ""}
+                        <tr>
+                            <td colspan="3" style="font-size:13px;font-weight:600;padding-top:8px">Net</td>
+                            <td class="amount" style="font-size:13px;font-weight:600;padding-top:8px;text-align:right;color:${m.net >= 0 ? "var(--green)" : "var(--red)"}">${signed(m.net)}</td>
+                        </tr>
+                    </tfoot>
+                </table>
+            </div>
+            ${partial}
+            <div class="modal-actions">
+                <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Close</button>
+            </div>
+        </div>
+    </div>`);
 }
 
 // Expenses and Income share one renderer: same bars, same period, same

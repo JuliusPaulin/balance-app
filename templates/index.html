@@ -130,6 +130,26 @@
                 <div class="card-title">Monthly Overview</div>
                 <div class="chart-container" style="height:350px"><canvas id="chart-monthly"></canvas></div>
             </div>
+
+            <!-- Cash Flow Forecast. Its own horizon buttons on purpose: the
+                 period controls at the top of the page choose which HISTORY to
+                 show, and must not reach into a forecast of the future. -->
+            <div class="card full-width" id="forecast-card">
+                <div class="flex items-center" style="justify-content:space-between;margin-bottom:4px;flex-wrap:wrap;gap:8px">
+                    <div class="card-title" style="margin:0;white-space:nowrap">Cash Flow Forecast</div>
+                    <div class="flex items-center" style="gap:12px;flex-wrap:wrap">
+                        <span id="forecast-headline" style="font-size:13px;color:var(--text-secondary)"></span>
+                        <div class="btn-group">
+                            <button class="btn btn-secondary btn-sm forecast-period-btn" data-months="3" onclick="setForecastHorizon(3)">3M</button>
+                            <button class="btn btn-secondary btn-sm forecast-period-btn" data-months="6" onclick="setForecastHorizon(6)">6M</button>
+                            <button class="btn btn-secondary btn-sm forecast-period-btn" data-months="12" onclick="setForecastHorizon(12)">12M</button>
+                        </div>
+                    </div>
+                </div>
+                <p id="forecast-basis" style="font-size:12px;color:var(--text-tertiary);margin-bottom:14px"></p>
+                <div class="chart-container" style="height:300px"><canvas id="chart-forecast"></canvas></div>
+                <div id="forecast-table"></div>
+            </div>
             <div class="card full-width">
                 <div class="card-title">Expenses by Category</div>
                 <div id="category-bars"></div>
