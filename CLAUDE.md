@@ -86,7 +86,7 @@ through `db`: `db.IntegrityError`, `db.DatabaseError`, `db.Json(...)`,
 
 ## Tests
 
-`python3 -m pytest tests/` — 153 tests, all green.
+`python3 -m pytest tests/` — 223 tests, all green.
 
 `conftest.py` points `SQLITE_PATH` at a throwaway file **at import time**, before
 pytest collects any test module. This matters: test modules `import config` /
@@ -100,7 +100,21 @@ deleting the one user row and re-seeding.
 The route tests drive the real app over HTTP through the `client` fixture, and
 `tests/helpers.py` holds the two things they all need: `cat_id()` looks a
 seeded category up by **name and type** (creating a second "Groceries" would
-test a category the app never uses), and `add_tx()` posts a transaction.
+test a category the app never uses), and `add_tx()` posts a transaction. It also
+builds the two broker exports — `nordnet_csv_bytes()` writes a real one (UTF-16,
+TAB, decimal comma) and `nordea_xlsx_bytes()` an xlsx with the export timestamp
+in row 0 — because the parser tests and the import route tests need the same
+files.
+
+**The broker parsers are tested against the shape of the real exports**
+(`test_investment_import.py`), because nobody here owns that format: a renamed
+column or a switched decimal separator raises nothing, it just parses to the
+wrong number and lands in the net-worth total as fact. `test_holdings.py` then
+covers the route from an upload to that total — that a snapshot is
+`(account_id, as_of)` and re-importing the same day lands on it rather than
+doubling the portfolio, and that the account's `account_balances` row always
+equals the sum of its holdings. A holdings write that doesn't move the balance
+shows the right drill-down under the wrong total.
 
 ---
 
