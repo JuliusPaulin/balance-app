@@ -53,6 +53,35 @@ circle: everything imports `core`; `csv_import` takes the rule rebuilder from
 Blueprint endpoint names are now prefixed (`categories.get_categories`), which
 costs nothing here because the app has never used `url_for`.
 
+**The `static/js/` files.** `app.js` held the whole frontend until it reached
+5,300 lines — the same size problem `app.py` had, one layer up. It is now one
+area per file, loaded in order by `index.html`.
+
+| File | Covers |
+|------|--------|
+| `core.js` | the plumbing every area shares: `api()`, the CSRF fetch wrapper, the loading overlay, `toast()`, `confirmDialog()`, navigation, theme, chart theming, the category palette, `fmt()`, card fullscreen |
+| `categories.js` | the Categories tab |
+| `merchant-rules.js` | the store-name patterns |
+| `transactions.js` | the list, the filter rail, the facet counts |
+| `import.js` | CSV + bank import, the review ledger, the category picker, bulk select, split, import history |
+| `period.js` | the horizon buttons, the month picker, the floating pill |
+| `dashboard.js` | the Dashboard cards, the breakdowns and their baselines, the summary table, the heatmap |
+| `reports.js` | the annual report |
+| `net-worth.js` | accounts, balances, holdings, the investment import |
+| `trends.js` | the Trends page and its drilldowns |
+| `subscriptions.js` | recurring charges |
+| `settings.js` | quit, retrain the rules, the guide |
+| `main.js` | app state and start-up — loaded last, `init()` is the final line |
+
+**They are plain scripts sharing one global scope, not ES modules, and that is
+deliberate:** `index.html` wires ~95 inline `onclick=` handlers straight to these
+function names, so every one of them has to stay global. **Load order in
+`index.html` is part of the contract** — `core.js` first, `main.js` last, and the
+handful of listeners registered at load time (the CSRF wrapper, the nav buttons,
+the drop zone, two outside-click closers) run in the order the tags appear.
+Nothing else executes at load, which is why the split could move whole sections
+without touching a line inside them.
+
 ---
 
 ## One user, one file, no server
@@ -405,7 +434,7 @@ Expense Trends → Spending Heatmap → Monthly Summary.
       teaches the eye to skip the column carrying the news. A flat category
       that **jumps** loses the flag and reports the jump — that is the loudest
       thing on the card.
-    - Two bands in `app.js`, both wide on purpose: `QUIET_BAND` (25%) is
+    - Two bands in `dashboard.js`, both wide on purpose: `QUIET_BAND` (25%) is
       ordinary movement and reads "as usual"; only past `OUTLIER_BAND` (50%)
       does the **bar itself** turn red. At 10% most of a real card went red
       and the colour stopped meaning anything. Past 4× the median a

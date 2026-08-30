@@ -28,7 +28,7 @@
     <div class="mobile-topbar-logo">Balance<span>.</span></div>
 </header>
 
-<!-- Global loading overlay — shown while any request is in flight (see app.js) -->
+<!-- Global loading overlay — shown while any request is in flight (see core.js) -->
 <div class="loading-overlay" aria-hidden="true">
     <div class="spinner-ring"></div>
     <div class="loading-overlay-label">Loading…</div>
@@ -98,7 +98,7 @@
     <div class="page active" id="page-dashboard">
         <!-- Once the header scrolls away the controls below are MOVED into this
              pill (never copied), so there is only ever one of each. See
-             initDashboardFloatPill() in app.js. -->
+             initDashboardFloatPill() in period.js. -->
         <div class="float-dock" id="dash-float-dock">
             <div class="float-pill" id="dash-float-pill"></div>
         </div>
@@ -848,6 +848,24 @@
 <!-- Toast Container -->
 <div class="toast-container" id="toast-container"></div>
 
-<script src="/static/js/app.js"></script>
+<!-- The frontend is one global scope split across ordered files: core.js first
+     (it defines api(), fmt(), the toast and the confirm dialog), main.js last
+     (it calls init()). Order matters — the few listeners registered at load
+     time run in the order these tags appear. The ~95 inline handlers above
+     call these functions by name, which is why these are plain scripts and
+     not modules. -->
+<script src="/static/js/core.js"></script>
+<script src="/static/js/categories.js"></script>
+<script src="/static/js/merchant-rules.js"></script>
+<script src="/static/js/transactions.js"></script>
+<script src="/static/js/import.js"></script>
+<script src="/static/js/period.js"></script>
+<script src="/static/js/dashboard.js"></script>
+<script src="/static/js/reports.js"></script>
+<script src="/static/js/net-worth.js"></script>
+<script src="/static/js/trends.js"></script>
+<script src="/static/js/subscriptions.js"></script>
+<script src="/static/js/settings.js"></script>
+<script src="/static/js/main.js"></script>
 </body>
 </html>

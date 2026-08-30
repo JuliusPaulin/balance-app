@@ -1780,7 +1780,7 @@ tbody tr:last-child td {
 
 /* ── Dashboard: floating period pill ─────────────────────────────
    The page header scrolls away for good; past it the horizon buttons and
-   the period picker re-form here. app.js MOVES the controls in and out, so
+   the period picker re-form here. period.js MOVES the controls in and out, so
    there is only ever one of each in the DOM. */
 .header-controls {
     display: flex;
