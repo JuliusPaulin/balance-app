@@ -126,11 +126,14 @@ shows the right drill-down under the wrong total.
 | `categories` | id, name, type, is_default |
 | `merchant_rules` | id, pattern, category_id (FK), match_type (exact/contains/smart) |
 | `import_staging` | id, date, store, suggested_category, amount, type, confirmed, final_category_id, import_batch_id |
-| `import_batches` | id, filename, imported_at, status (pending/completed) |
+| `import_batches` | id, filename, imported_at, status (pending/completed/undone) |
+| `import_formats` | id, signature (SHA-1 of the header names + delimiter), delimiter, date_col, amount_col, store_col (nullable), amount_sign (neg_expense/pos_expense); UNIQUE(user_id, signature) |
 | `month_notes` | id, month (YYYY-MM), note |
-| `accounts` | id, name, type (asset/liability), sort_order, is_archived |
+| `accounts` | id, name, type (asset/liability), sort_order, is_archived, external_id (the broker key an import matches on), group_name |
+| `holdings` | id, account_id (FK, cascade), as_of, name, isin, units, value_eur, return_pct, return_eur, currency; UNIQUE(account_id, as_of, name). No `user_id` — it is reachable only through `accounts`, which has one |
 | `account_balances` | id, account_id (FK, cascade), as_of (YYYY-MM-DD), balance; UNIQUE(account_id, as_of) |
 | `recurring_dismissed` | id, signature (UNIQUE, = normalized merchant + cadence), dismissed_at |
+| `manual_subscriptions` | id, store, amount, cadence (monthly/quarterly/yearly), category, type |
 | `bank_sessions` | id, user_id (FK, cascade), session_id, aspsp_name, aspsp_country, valid_until, accounts (JSONB), created_at; UNIQUE(user_id) |
 
 ---
@@ -187,6 +190,21 @@ so nothing opens, nothing closes, and the table never moves.
 - Fallback: if no rule matches, check most frequent historical category for that store
 - CRUD via UI and API (`/api/merchant-rules`)
 - **567 rules auto-generated** from historical data via `scripts/generate_merchant_rules.py`
+- **A rule says what it would do before you save it.** `/api/merchant-rules/preview`
+  runs the candidate pattern over the whole history and returns the match count,
+  how many distinct stores it hits, and the first rows — a `contains` rule on a
+  four-letter pattern can quietly own half the table, and the modal shows that
+  while you type.
+- `POST /api/merchant-rules/<id>/apply` re-categorises the history a saved rule
+  matches. It **skips rows of the other type**: a rule pointing at an expense
+  category must not reassign income, which would move a salary under "Groceries".
+- `/api/merchant-rules/stats` gives each rule a hit count and its last match —
+  the basis for spotting rules that no longer fire.
+- `POST /api/merchant-rules/train` rebuilds every rule from history, running the
+  same algorithm as the script below (`_rebuild_merchant_rules()` in
+  `routes/merchant_rules.py` is the shared implementation, and confirming an
+  import auto-retrains through it). It **clears the user's rules first**, so a
+  hand-written rule does not survive a training run.
 
 ### CSV Import
 Supports three CSV formats:
@@ -227,6 +245,34 @@ Supports three CSV formats:
 - **Cancel discards the batch** (`DELETE /api/import/batch/<id>`). A *confirmed*
   batch is the record of what was imported and is refused (409); only a pending
   one can be discarded.
+
+### CSV format learning (unknown layouts)
+
+A CSV whose columns the alias table cannot place used to be a **400 and a dead
+end** — the app knew the file was a bank export and still refused it. Now the
+user maps the columns once and the app remembers the layout.
+
+- `POST /api/import/upload` returns **200 with `{needs_mapping: true, signature,
+  delimiter, headers, sample_rows, guess}`** instead of an error, and creates no
+  batch. There is nothing to clean up if the user walks away.
+- The UI opens a mapping step: the first five rows under their header names,
+  a dropdown per field (date and amount required, merchant optional), an
+  **amount-sign** toggle (`neg_expense` — the default — or `pos_expense`, for
+  banks that write expenses positive), and "Remember this format", on by default.
+- `POST /api/import/upload-mapped` re-posts the file with the chosen indices and
+  stages the rows, returning **the same shape as `/api/import/upload`** so the
+  review table takes it unchanged.
+- **The signature is recomputed server-side**, never taken from the client:
+  `format_signature()` is SHA-1 over the lowercased, trimmed header names joined
+  with `|`, plus the delimiter. The same export always fingerprints the same, so
+  the next file of that layout auto-maps and the user never sees the step again.
+- A saved mapping is only consulted **when auto-detection fails**, so teaching
+  the app one layout can never change how a recognized one imports.
+
+`GET /api/import/formats` and `DELETE /api/import/formats/<id>` are the reader
+and the forget button for saved mappings — both implemented, **neither called by
+the UI**, so a bad mapping currently cannot be removed from inside the app. That
+is the same gap `import_batches` had before the Recent imports card.
 
 ### Import history
 
@@ -414,6 +460,50 @@ part of what you pay each month — so the header reads "737 €/mo · 5 active"
 not 855 € across 10. Transfers and investments are excluded from those totals
 too, for a different reason (they are movements, not consumption).
 
+**Detection misses things**, so a series can be added by hand: `POST
+/api/subscriptions` writes to `manual_subscriptions` (store, amount, cadence of
+monthly/quarterly/yearly, optional category, expense or income) and the next
+`/api/recurring` folds it in beside the detected ones; `DELETE
+/api/subscriptions/<id>` removes it. A hand-added row is a claim about the
+future rather than a reading of the past, which is why it lives in its own
+table and not as a fake transaction.
+
+### Net Worth & investment holdings
+
+Accounts are kept by hand (`/api/accounts` + `/api/accounts/<id>/balances`), and
+`networth.py` carries the last balance of each forward — the rules that keeps
+true are in the entry-points table above. Two things sit on top of it:
+
+- **Holdings** are the per-product rows behind an investment account, snapshotted
+  by date. `GET /api/networth/holdings?account_id[&as_of]` is the drill-down
+  (latest snapshot by default, largest position first).
+- **`DELETE /api/networth/holdings/<id>`** is the "I sold this" action. The
+  account's total for that date was written as the sum of its holdings, so it is
+  **recomputed and written back** — otherwise the drill-down and the total
+  disagree. Only a balance row that already exists is updated: deleting from an
+  old snapshot must not invent a data point in the net-worth history. Earlier
+  snapshots keep the holding, because they are what was held at the time.
+
+**Investment import** (`investment_import.py`) parses Nordnet CSV and Nordea
+`Omistukset.xlsx` exports into broker → account → holding.
+`POST /api/networth/import-investments/preview` parses and **writes nothing**,
+returning the hierarchy plus a dedupe hint per account (`external_id`, then IBAN
+for cash accounts, then name) — a *suggestion* for the review screen, never an
+automatic merge. `POST .../confirm` writes what the user reviewed.
+
+- **A snapshot is `(account_id, as_of)`.** Re-importing the same day lands on the
+  same snapshot rather than doubling the portfolio, and several files for one
+  account (stocks and funds are separate exports) **union** their holdings
+  instead of overwriting.
+- The account total goes into `account_balances` as the sum of its holdings,
+  which is what the history reads. Cash accounts carry the figure directly and
+  hold nothing.
+- `as_of` must be `YYYY-MM-DD` or the import is refused — the date keys
+  everything, and a bad one makes a snapshot nothing can find again.
+- The parsers are held to the real export shapes in `tests/test_investment_import.py`;
+  a missing "Arvo EUR" column or an unrecognized Holdings layout is **refused**
+  rather than imported as a portfolio of zeroes.
+
 ### Month Notes
 - Per-month text notes stored in `month_notes`
 - Accessible via `/api/notes/<YYYY-MM>`
@@ -488,6 +578,11 @@ PUT/DELETE /api/categories/<id>
 
 GET/POST   /api/merchant-rules
 PUT/DELETE /api/merchant-rules/<id>
+GET        /api/merchant-rules/preview   ?pattern, match_type, limit
+                                         what a candidate rule would match
+POST       /api/merchant-rules/<id>/apply  re-categorise the history it matches
+GET        /api/merchant-rules/stats     per-rule hit count + last match
+POST       /api/merchant-rules/train     rebuild every rule from history
 
 GET/POST   /api/transactions          ?month, months, category_ids, type, q,
 PUT/DELETE /api/transactions/<id>      date_from, date_to, amount_min, amount_max,
@@ -506,10 +601,16 @@ GET        /api/dashboard/category-breakdown   ?month, months, year, type
 GET        /api/dashboard/heatmap          ?year
 
 GET        /api/reports/annual
+GET        /api/trends/category    ?category_ids, months → one category (or
+                                    several) over a range; `category.type` comes
+                                    back resolved, and the page reads it
 
 GET        /api/recurring               ?lookback_months, min_occurrences
 POST       /api/recurring/dismiss               (body: {signature})  hide a series
 DELETE     /api/recurring/dismiss/<signature>                       un-hide a series
+POST       /api/subscriptions          (body: {store, amount, cadence,
+                                        category?, type?}) add one by hand
+DELETE     /api/subscriptions/<id>                        remove a hand-added one
 
 GET/POST   /api/accounts
 PUT/DELETE /api/accounts/<id>                       (DELETE cascades balances)
@@ -521,8 +622,19 @@ GET        /api/networth/history        ?months
 GET        /api/networth/summary
 GET        /api/networth/holdings       ?account_id[&as_of]
 DELETE     /api/networth/holdings/<id>              recomputes that snapshot's total
+POST       /api/networth/import-investments/preview   (multipart: files[])
+                                         parse broker exports, no DB writes
+POST       /api/networth/import-investments/confirm   (body: {accounts: [...]})
+                                         write the reviewed snapshot
 
-POST       /api/import/upload
+POST       /api/import/upload                      unknown layout → 200
+                                                   {needs_mapping: true, ...}
+POST       /api/import/upload-mapped               (multipart: file +
+                                        date_col, amount_col, store_col?,
+                                        amount_sign, remember) import by hand-
+                                        mapped columns
+GET        /api/import/formats                     saved column mappings
+DELETE     /api/import/formats/<id>                forget one
 GET        /api/import/staging/<batch_id>
 POST       /api/import/confirm
 DELETE     /api/import/staging/<item_id>
@@ -539,5 +651,16 @@ POST       /api/import/bank/disconnect             drops the user's bank session
 GET/PUT    /api/notes/<YYYY-MM>
 GET        /api/notes
 
+GET        /api/me                     CSRF token + app version
+GET        /api/backups                what is in the backups folder
+POST       /api/backups                (body: {reason}) make one now
 POST       /api/quit
+
+GET        /healthz                    liveness, no DB
+GET        /healthz/db                 runs SELECT 1; 503 if that fails
 ```
+
+`/healthz` and `/healthz/db` are the last of the hosted deploy — Render's
+liveness check and the ping that kept a free-tier Supabase project awake.
+Nothing calls them in a desktop app; they cost nothing and have simply not been
+taken out.
