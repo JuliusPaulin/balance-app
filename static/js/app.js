@@ -83,15 +83,69 @@ function endLoading() {
 }
 
 // ── API Helper ──────────────────────────────────────────────────────
+// Nearly every call the app makes runs through here, so this is the one place
+// that decides what a failed request looks like. It throws, and that is the
+// point: it used to hand the error body back as if it were data, so the caller
+// read on, closed the modal over what the user had typed, and toasted
+// "Transaction added" for a row the server had refused. Throwing stops the
+// caller at the failed line, and the listener below says what went wrong.
+class ApiError extends Error {
+    constructor(message, status, code) {
+        super(message);
+        this.name   = "ApiError";
+        this.status = status;
+        this.code   = code;   // the server's short machine code, when it sent one
+    }
+}
+
+// What to say when the server refuses without prose of its own — these are the
+// failures that happen before the route, so no route writes a message for them.
+const API_STATUS_MESSAGES = {
+    403: "That request was refused — reload the app and try again.",
+    429: "Too many requests just now — wait a moment and try again.",
+    500: "The app hit an error. Nothing was saved.",
+};
+
+async function apiError(res) {
+    // A Flask error page is HTML, so reading the body has to be allowed to fail.
+    let body = null;
+    try { body = await res.json(); } catch (e) { /* not JSON — go on the status */ }
+    const detail = body && typeof body.error === "string" ? body.error : null;
+    return new ApiError(
+        detail || API_STATUS_MESSAGES[res.status] || `The server said ${res.status}.`,
+        res.status,
+        detail,
+    );
+}
+
 async function api(url, options = {}) {
     if (options.body && typeof options.body === "object" && !(options.body instanceof FormData)) {
         options.headers = { "Content-Type": "application/json", ...options.headers };
         options.body = JSON.stringify(options.body);
     }
-    const res = await fetch(url, options);
+    let res;
+    try {
+        res = await fetch(url, options);
+    } catch (e) {
+        // fetch rejects only when the request never reached the server at all.
+        throw new ApiError("Could not reach the server.", 0, "unreachable");
+    }
+    if (!res.ok) throw await apiError(res);
     if (res.status === 204) return null;
     return res.json();
 }
+
+// api() throws instead of making all its call sites check, so this is where the
+// failures land. Only ApiError is claimed here: a plain bug in a handler must
+// still reach the console as a bug, not as a message about the server. A caller
+// that wants to handle its own catches first and never gets here — see
+// loadBankStatus(), which keeps its card hidden and stays quiet.
+window.addEventListener("unhandledrejection", (ev) => {
+    if (!(ev.reason instanceof ApiError)) return;
+    console.error("Request failed:", ev.reason.status, ev.reason.message);
+    ev.preventDefault();
+    toast(ev.reason.message);
+});
 
 // ── Toast ───────────────────────────────────────────────────────────
 function toast(message) {
@@ -101,6 +155,49 @@ function toast(message) {
     el.textContent = message;
     container.appendChild(el);
     setTimeout(() => el.remove(), 3000);
+}
+
+// ── Confirm dialog ──────────────────────────────────────────────────
+// The app asked its "are you sure?" questions through the browser's own
+// confirm(), which inside a pywebview window is a system alert box: another
+// app's typeface, no way to mark the destructive answer as destructive, and
+// paragraphs faked with "\n\n". This asks the same question in the app's own
+// modal, and resolves true or false so a caller reads as it always did:
+//     if (!await confirmDialog({ title: "Delete this?", danger: true })) return;
+function confirmDialog({ title, body = "", confirmLabel = "Confirm", danger = false }) {
+    return new Promise(resolve => {
+        const overlay = document.createElement("div");
+        overlay.className = "modal-overlay";
+        const paragraphs = String(body).split(/\n{2,}/).map(t => t.trim()).filter(Boolean)
+            .map(t => `<p class="confirm-text">${escapeHtml(t).replace(/\n/g, "<br>")}</p>`)
+            .join("");
+        overlay.innerHTML = `
+            <div class="modal confirm-modal" role="alertdialog" aria-modal="true">
+                <div class="modal-title">${escapeHtml(title)}</div>
+                ${paragraphs}
+                <div class="modal-actions">
+                    <button class="btn btn-secondary" data-confirm="no">Cancel</button>
+                    <button class="btn ${danger ? "btn-danger" : "btn-primary"}" data-confirm="yes">${escapeHtml(confirmLabel)}</button>
+                </div>
+            </div>`;
+
+        const close = answer => {
+            document.removeEventListener("keydown", onKey, true);
+            overlay.remove();
+            resolve(answer);
+        };
+        // Escape cancels, the way it did in the box this replaces. Captured, so
+        // an input underneath the overlay cannot swallow the key first.
+        const onKey = e => { if (e.key === "Escape") { e.preventDefault(); close(false); } };
+        overlay.addEventListener("click", e => {
+            if (e.target === overlay) return close(false);
+            const btn = e.target.closest("[data-confirm]");
+            if (btn) close(btn.dataset.confirm === "yes");
+        });
+        document.addEventListener("keydown", onKey, true);
+        document.body.appendChild(overlay);
+        overlay.querySelector('[data-confirm="yes"]').focus({ preventScroll: true });
+    });
 }
 
 // ── Navigation ──────────────────────────────────────────────────────
@@ -638,7 +735,11 @@ function toggleDeadRulesFilter() {
 async function applyRuleToHistory(ruleId) {
     const rule = merchantRules.find(r => r.id === ruleId);
     if (!rule) return;
-    if (!confirm(`Re-apply "${rule.pattern}" → ${rule.category_name} to all historical transactions?`)) return;
+    if (!await confirmDialog({
+        title: "Re-apply this rule?",
+        body: `Every transaction in your history matching "${rule.pattern}" moves to ${rule.category_name}.`,
+        confirmLabel: "Re-apply",
+    })) return;
     const res = await api(`/api/merchant-rules/${ruleId}/apply`, { method: "POST" });
     toast(res.updated > 0 ? `${res.updated} transaction${res.updated !== 1 ? "s" : ""} re-categorized` : "No changes — already categorized");
     await loadCategories();
@@ -760,7 +861,12 @@ async function saveMerchantRule(id) {
 }
 
 async function deleteMerchantRule(id) {
-    if (!confirm("Delete this merchant rule?")) return;
+    if (!await confirmDialog({
+        title: "Delete this rule?",
+        body: "Transactions it already categorised keep their category.",
+        confirmLabel: "Delete",
+        danger: true,
+    })) return;
     await api(`/api/merchant-rules/${id}`, { method: "DELETE" });
     merchantRules = merchantRules.filter(r => r.id !== id);
     renderMerchantRules();
@@ -1018,7 +1124,11 @@ async function saveTransaction(id) {
 }
 
 async function deleteTransaction(id) {
-    if (!confirm("Delete this transaction?")) return;
+    if (!await confirmDialog({
+        title: "Delete this transaction?",
+        confirmLabel: "Delete",
+        danger: true,
+    })) return;
     await api(`/api/transactions/${id}`, { method: "DELETE" });
     await loadTransactions();
     toast("Transaction deleted");
@@ -1181,7 +1291,12 @@ function connectBank() {
 }
 
 async function disconnectBank() {
-    if (!confirm("Disconnect your bank? You'll need to reconnect to import again.")) return;
+    if (!await confirmDialog({
+        title: "Disconnect your bank?",
+        body: "You'll have to connect again before the next bank import. Transactions you already imported stay.",
+        confirmLabel: "Disconnect",
+        danger: true,
+    })) return;
     await api("/api/import/bank/disconnect", { method: "POST" });
     toast("Bank disconnected");
     loadBankStatus();
@@ -1999,14 +2114,24 @@ async function resumeImport(batchId) {
 }
 
 async function discardBatch(batchId) {
-    if (!confirm("Discard this unfinished import? The staged rows are thrown away.")) return;
+    if (!await confirmDialog({
+        title: "Discard this unfinished import?",
+        body: "The rows still waiting for review are thrown away. Nothing was added to your transactions.",
+        confirmLabel: "Discard",
+        danger: true,
+    })) return;
     await api(`/api/import/batch/${batchId}`, { method: "DELETE" });
     toast("Unfinished import discarded");
     loadImportHistory();
 }
 
 async function undoImport(batchId, count) {
-    if (!confirm(`Remove the ${count} transaction${count === 1 ? "" : "s"} this import added? This cannot be undone.`)) return;
+    if (!await confirmDialog({
+        title: `Remove ${count} transaction${count === 1 ? "" : "s"}?`,
+        body: "This import added them. Removing them cannot be undone.",
+        confirmLabel: "Remove",
+        danger: true,
+    })) return;
     const res = await api(`/api/import/batch/${batchId}/undo`, { method: "POST" });
     toast(`${res.removed} transaction${res.removed === 1 ? "" : "s"} removed`);
     loadImportHistory();
@@ -3353,11 +3478,15 @@ async function toggleHoldings(accountId) {
 async function deleteHolding(holdingId, asOf, btn) {
     const cells = btn.closest("tr").querySelectorAll("td");
     const name = cells[0].textContent.trim();
-    if (!confirm(`Remove "${name}" from the ${fmtDate(asOf)} snapshot?\n\n` +
-                 `The account total for that date drops by ${cells[2].textContent.trim()}, ` +
-                 `and every month reading from that snapshot changes with it.\n\n` +
-                 `Sold it? Import a newer statement instead — the new snapshot won't list it, ` +
-                 `and your history stays true to what you held.`)) return;
+    if (!await confirmDialog({
+        title: `Remove "${name}" from the ${fmtDate(asOf)} snapshot?`,
+        body: `The account total for that date drops by ${cells[2].textContent.trim()}, ` +
+              `and every month reading from that snapshot changes with it.\n\n` +
+              `Sold it? Import a newer statement instead — the new snapshot won't list it, ` +
+              `and your history stays true to what you held.`,
+        confirmLabel: "Remove",
+        danger: true,
+    })) return;
     await api(`/api/networth/holdings/${holdingId}`, { method: "DELETE" });
     await loadNetWorth();
 }
@@ -3376,9 +3505,12 @@ async function closeNetWorthAccount(id) {
     const asOf = fiToIso(document.getElementById("nw-asof").value);
     if (!asOf) { toast("Set the date first (day.month.year)"); return; }
     const name = nwAccountName(id);
-    if (!confirm(`Close "${name}" as of ${isoToFi(asOf)}?\n\n` +
-                 `Its balance goes to 0 from that date. Months before it keep the old value, ` +
-                 `so your history stays intact. You can reopen it later.`)) return;
+    if (!await confirmDialog({
+        title: `Close "${name}" as of ${isoToFi(asOf)}?`,
+        body: `Its balance goes to 0 from that date. Months before it keep the old value, ` +
+              `so your history stays intact. You can reopen it later.`,
+        confirmLabel: "Close account",
+    })) return;
     await api(`/api/accounts/${id}/close`, { method: "POST", body: { as_of: asOf } });
     toast(`Closed ${name}`);
     await loadNetWorth();
@@ -3402,9 +3534,13 @@ async function addNetWorthAccount() {
 
 async function deleteNetWorthAccount(id) {
     const name = nwAccountName(id);
-    if (!confirm(`Delete "${name}" and every balance ever recorded for it?\n\n` +
-                 `This rewrites your net-worth history as if you never held it. ` +
-                 `If you sold it, close it instead (⊘) — that keeps the past.`)) return;
+    if (!await confirmDialog({
+        title: `Delete "${name}" and every balance recorded for it?`,
+        body: `This rewrites your net-worth history as if you never held it. ` +
+              `If you sold it, close it instead (⊘) — that keeps the past.`,
+        confirmLabel: "Delete",
+        danger: true,
+    })) return;
     await api(`/api/accounts/${id}`, { method: "DELETE" });
     await loadNetWorth();
 }
@@ -3421,8 +3557,17 @@ async function saveNetWorthBalances() {
         const input = row.querySelector(".nw-balance-input");
         if (!input) continue;              // closed account, no input
         if (input.value === "") { kept++; continue; }
-        await api(`/api/accounts/${row.dataset.accountId}/balances`,
-            { method: "POST", body: { as_of: asOf, balance: parseFloat(input.value) } });
+        try {
+            await api(`/api/accounts/${row.dataset.accountId}/balances`,
+                { method: "POST", body: { as_of: asOf, balance: parseFloat(input.value) } });
+        } catch (e) {
+            // One account at a time, so a refusal halfway leaves the earlier
+            // ones saved. Say so — a silent stop looks like nothing happened.
+            if (!(e instanceof ApiError)) throw e;
+            toast(saved ? `Saved ${saved}, then stopped: ${e.message}` : e.message);
+            await loadNetWorth();
+            return;
+        }
         saved++;
     }
     if (!saved) { toast("Enter at least one new balance"); return; }
@@ -4656,7 +4801,7 @@ async function trainMerchantRules() {
     const html = `<div class="modal-overlay" onclick="if(event.target===this)this.remove()">
         <div class="modal">
             <div class="modal-title">Rebuild rules from history?</div>
-            <p style="font-size:var(--text-subhead);color:var(--text-secondary);margin:0 0 16px">
+            <p class="confirm-text" style="margin-bottom:16px">
                 This will analyse all your transactions and rebuild the merchant rules from scratch.
                 Any rules you added manually will be removed.
             </p>
@@ -4787,8 +4932,15 @@ async function init() {
     renderPaletteOptions();
     applyChartDefaults();
     startKeepAlive();
-    await loadCategories();
-    await loadDashboard();
+    // A first load that fails must not take the rest of the shell with it: the
+    // toast says what happened and the app is still there to try again from.
+    try {
+        await loadCategories();
+        await loadDashboard();
+    } catch (e) {
+        if (!(e instanceof ApiError)) throw e;
+        toast(e.message);
+    }
     injectFullscreenButtons();
     initDashboardFloatPill();
     handleBankReturn();

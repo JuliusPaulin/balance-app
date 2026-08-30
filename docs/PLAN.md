@@ -23,11 +23,11 @@
 - [x] Category CRUD API
 
 ### Phase 2 — CSV Import & Review
-- [ ] CSV parser supporting multiple formats (flexible column mapping)
-- [ ] Import staging: parse CSV -> staging table with suggested categories
-- [ ] Review UI: show staged imports, suggest categories, require manual confirmation
-- [ ] Category suggestion engine (fuzzy match store name to past categorizations)
-- [ ] Bulk confirm / edit / reject staged imports
+- [x] CSV parser supporting multiple formats (flexible column mapping)
+- [x] Import staging: parse CSV -> staging table with suggested categories
+- [x] Review UI: show staged imports, suggest categories, require manual confirmation
+- [x] Category suggestion engine (fuzzy match store name to past categorizations)
+- [x] Bulk confirm / edit / reject staged imports
 
 ### Phase 3 — Manual Entry
 - [x] Add expense/income form (date, store, category, amount)

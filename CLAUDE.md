@@ -86,7 +86,7 @@ through `db`: `db.IntegrityError`, `db.DatabaseError`, `db.Json(...)`,
 
 ## Tests
 
-`python3 -m pytest tests/` — 74 tests, all green.
+`python3 -m pytest tests/` — 140 tests, all green.
 
 `conftest.py` points `SQLITE_PATH` at a throwaway file **at import time**, before
 pytest collects any test module. This matters: test modules `import config` /
@@ -96,6 +96,11 @@ the real database. There is an assert guarding it.
 
 Every table has `user_id` with `ON DELETE CASCADE`, so each test resets by
 deleting the one user row and re-seeding.
+
+The route tests drive the real app over HTTP through the `client` fixture, and
+`tests/helpers.py` holds the two things they all need: `cat_id()` looks a
+seeded category up by **name and type** (creating a second "Groceries" would
+test a category the app never uses), and `add_tx()` posts a transaction.
 
 ---
 
@@ -347,7 +352,10 @@ Re-run anytime with `python3 scripts/generate_merchant_rules.py` — clears and 
 - Dark: the same roles re-pointed, accent `#00e599`. Both themes are defined in
   full — never give a colour its only value inside the dark block.
 - The accent has been green since the redesign. `rgba(0, 122, 255, …)` anywhere
-  in the CSS is a leftover from the old blue and is a bug, not a choice.
+  in the CSS is a leftover from the old blue and is a bug, not a choice. There
+  are none left: a tinted surface takes `--accent-soft`, `--accent-softer` or
+  `--accent-ring`, all three defined in both themes. Writing the accent's own
+  rgba into a rule is what let five blue tints sit under green text for a year.
 - 8px spacing grid, rounded corners, subtle shadows
 - Sidebar navigation, smooth transitions
 - `fmt(amount)` — global currency formatter (fi-FI locale, EUR, **0 decimal places**)
@@ -357,6 +365,22 @@ Re-run anytime with `python3 scripts/generate_merchant_rules.py` — clears and 
 `.active` styling, so the chosen range is marked the same way on every page. A
 new selector that does not join that list toggles a class nothing paints, and
 no button ever looks selected.
+
+**A failed request has to say so.** `api()` throws an `ApiError` on any
+non-2xx, carrying the server's own `error` string. That is what stops a caller
+mid-flight: it used to hand the error body back as data, so `saveTransaction()`
+closed the modal over what the user had typed and toasted "Transaction added"
+for a row the server had refused. One `unhandledrejection` listener turns the
+throw into a toast, so a call site only needs its own `catch` when it wants
+something other than a message — `loadBankStatus()` catches to keep its card
+hidden. The import, bank and investment paths use raw `fetch` and check
+`res.ok` themselves; leave them be.
+
+**The app asks its own questions.** `confirmDialog({title, body, confirmLabel,
+danger})` returns a promise of true or false, and every "are you sure?" goes
+through it. The browser's `confirm()` inside a pywebview window is a system
+alert box — another app's typeface, no way to mark the destructive answer, and
+paragraphs faked with `\n\n`.
 
 **A filter that cannot be applied has to say so.** `readDateFilter()` marks a
 date box `.input-invalid` when it holds text the parser cannot read: the filter

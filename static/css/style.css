@@ -657,6 +657,16 @@ tbody tr:last-child td {
     margin-top: 20px;
 }
 
+/* Confirm dialog — the app's own "are you sure?", in place of the system box. */
+.confirm-modal { max-width: 420px; }
+.confirm-modal .modal-title { margin-bottom: 10px; }
+.confirm-text {
+    font-size: var(--text-subhead);
+    color: var(--text-secondary);
+    line-height: 1.5;
+}
+.confirm-text + .confirm-text { margin-top: 10px; }
+
 /* CSV column-mapping modal */
 .map-preview { width: 100%; border-collapse: collapse; font-size: 12px; white-space: nowrap; }
 .map-preview th, .map-preview td {
@@ -1228,7 +1238,7 @@ tbody tr:last-child td {
 .search-text-input:focus {
     background: var(--bg);
     border-color: var(--accent);
-    box-shadow: 0 0 0 3px rgba(0, 122, 255, 0.12);
+    box-shadow: 0 0 0 3px var(--accent-ring);
 }
 
 .search-clear {
@@ -1388,7 +1398,7 @@ tbody tr:last-child td {
 }
 
 .period-selector-btn.active-period {
-    background: rgba(0, 122, 255, 0.1) !important;
+    background: var(--accent-soft) !important;
     color: var(--accent) !important;
 }
 
@@ -1420,7 +1430,7 @@ tbody tr:last-child td {
 }
 
 .period-clear-row:hover {
-    background: rgba(0,122,255,0.05);
+    background: var(--accent-softer);
 }
 
 .period-year-row {
@@ -1496,7 +1506,7 @@ tbody tr:last-child td {
 
 .period-month-row.selected {
     color: var(--accent);
-    background: rgba(0,122,255,0.04);
+    background: var(--accent-softer);
 }
 
 .period-month-row:last-child {
@@ -1618,7 +1628,7 @@ tbody tr:last-child td {
 }
 
 .match-type-badge.exact {
-    background: rgba(0, 122, 255, 0.1);
+    background: var(--accent-soft);
     color: var(--accent);
 }
 
