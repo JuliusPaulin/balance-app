@@ -228,7 +228,10 @@ def bank_fetch():
         batch_id = cursor.fetchone()["id"]
 
         for txn in txns:
-            suggested = suggest_category(txn["store"], conn, uid)
+            # Same rule as the CSV path: the suggestion is scoped to the type
+            # the bank said the row is (DBIT/CRDT), so a type-blind merchant
+            # rule cannot flip a credit into spending. See suggest_category.
+            suggested = suggest_category(txn["store"], conn, uid, txn["type"])
             conn.execute(
                 "INSERT INTO import_staging "
                 "(user_id, date, store, suggested_category, amount, type, import_batch_id) "

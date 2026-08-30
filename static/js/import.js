@@ -289,9 +289,27 @@ function fiToIso(s) {
 // imports are written "-25,00", so a comma is what a Finnish hand types. The
 // old type="number" input threw one away before any of our code saw it.
 // Returns null when the value cannot stand as an amount.
+//
+// It also takes the thousands separator the app itself prints. fmt() formats in
+// fi-FI, which groups with a non-breaking space — so "2 500,55" is what the
+// screen says and what a copy-paste or a retype gives back, and Number() reads
+// that as NaN. Refusing the app's own output was a small trap with no upside.
+// Same set the server's parse_amount() strips, so both ends read one string the
+// same way.
 function parseAmountInput(raw) {
-    const s = String(raw ?? "").trim().replace(",", ".");
+    let s = String(raw ?? "")
+        .replace(/[\s\u00a0\u2007\u202f€]/g, "");   // spaces (incl. NBSP/narrow), currency
     if (s === "") return null;
+    // Both separators present is unambiguous: the right-most one is the decimal
+    // mark, so "1.234,56" and "1,234.56" both read as 1234.56. A lone dot is
+    // left alone — "1.234" is far more likely someone's 1.234 than their 1234.
+    if (s.includes(",") && s.includes(".")) {
+        s = s.lastIndexOf(",") > s.lastIndexOf(".")
+            ? s.replace(/\./g, "").replace(",", ".")
+            : s.replace(/,/g, "");
+    } else {
+        s = s.replace(",", ".");
+    }
     const n = Number(s);
     return Number.isFinite(n) && n > 0 ? Math.round(n * 100) / 100 : null;
 }
@@ -320,15 +338,45 @@ function effDate(item)   { return item._editedDate   ?? item.date; }
 function effStore(item)  { return item._editedStore  ?? item.store ?? ""; }
 function effAmount(item) { return item._editedAmount ?? item.amount; }
 
+// The type the row was read as — the sign on the statement, or the type of a
+// category the user has since picked by hand. Nothing else gets to move it.
+function stagedType(item) {
+    return item._selectedType || item.type || "expense";
+}
+
+// The category a row will import under.
+//
+// `suggested_category` arrives as a bare NAME, and two names exist on both
+// sides of the ledger: "Other" — which is what an unrecognised store is
+// suggested — and "Investments". Matching that name against `categories`
+// without the type took whichever came first, and /api/categories sorts
+// `c.type, c.name`, so the expense one always won. effType() then read the type
+// back off that category, so an income row suggested "Other" imported as an
+// expense, and an expense row whose store carried a rule pointing at an income
+// category imported as income. That is the "some transactions go to income that
+// are expenses and vice versa" bug, and it never touched the amount or the
+// sign — only which side of the ledger the row landed on.
+//
+// Now the name is resolved within the row's own type. A suggestion that has no
+// category on this side resolves to nothing and the row says "needs review",
+// which is the truth: it is a category we cannot honestly apply, not a reason
+// to overturn what the statement said. (The server no longer suggests across
+// types either — see suggest_category — so this is the second of two locks.)
 function effCatId(item) {
     if (item._selectedCatId) return item._selectedCatId;
     if (item._isSplit && item._splitCategoryId) return item._splitCategoryId;
-    return categories.find(c => c.name === item.suggested_category)?.id ?? null;
+    const type = stagedType(item);
+    return categories.find(c => c.name === item.suggested_category
+                             && c.type === type)?.id ?? null;
 }
 
+// Picking a category by hand still adopts its type — that is how you correct a
+// row the bank signed wrong, and it is the only way to do it from this table.
+// A *suggested* category no longer can.
 function effType(item) {
-    const cat = catById(effCatId(item));
-    return cat ? cat.type : (item._selectedType || item.type || "expense");
+    const picked = item._selectedCatId
+        || (item._isSplit ? item._splitCategoryId : null);
+    return (picked && catById(picked)?.type) || stagedType(item);
 }
 
 // One category = one color, everywhere. A color stored on the category wins;

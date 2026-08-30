@@ -132,7 +132,7 @@ async function saveCategory(id) {
     } else {
         await api("/api/categories", { method: "POST", body: { name, type } });
     }
-    document.querySelector(".modal-overlay").remove();
+    closeTopOverlay();
     await loadCategories();
     toast(id ? "Category updated" : "Category added");
 }
@@ -163,7 +163,7 @@ async function deleteCategory(id, name) {
 async function confirmDeleteCategory(id) {
     const reassignTo = document.getElementById("modal-reassign").value;
     await api(`/api/categories/${id}?reassign_to=${reassignTo}`, { method: "DELETE" });
-    document.querySelector(".modal-overlay").remove();
+    closeTopOverlay();
     await loadCategories();
     toast("Category deleted");
 }

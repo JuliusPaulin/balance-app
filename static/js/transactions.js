@@ -416,14 +416,25 @@ async function loadTransactions() {
     updateTxSortIcons();
 }
 
+// ── Add / Edit Transaction ──────────────────────────────────────────
+// This modal was the last place in the app still asking with native controls:
+// two <select>s and a type="number" amount box. The import review beside it
+// picks a category from a searchable, colour-dotted panel and reads "16,05" the
+// way the app prints it, and there is no reason the one row you type by hand
+// should be harder to enter than the four hundred you import. Same picker, same
+// amount parser, same Expense/Income segment.
+//
+// The type and the category are one decision, so they are held together rather
+// than in two boxes that can disagree: picking a category adopts its type (as
+// the import rows do), and flipping the type keeps the category only if the
+// other side has one by that name — "Other" and "Investments" exist on both.
+let txModal = { type: "expense", categoryId: null };
+
 function openTransactionModal(t = null) {
     const isEdit = t !== null;
-    const expenseCats = categories.filter(c => c.type === "expense");
-    const incomeCats = categories.filter(c => c.type === "income");
-
-    const catOptions = (type) => {
-        const list = type === "income" ? incomeCats : expenseCats;
-        return list.map(c => `<option value="${c.id}" ${t && t.category_id === c.id ? "selected" : ""}>${escapeHtml(c.name)}</option>`).join("");
+    txModal = {
+        type: t ? t.type : "expense",
+        categoryId: t ? t.category_id : null,
     };
 
     const html = `<div class="modal-overlay" onclick="if(event.target===this)this.remove()">
@@ -436,26 +447,27 @@ function openTransactionModal(t = null) {
                 </div>
                 <div class="form-group">
                     <label class="form-label">Type</label>
-                    <select class="form-select" id="modal-t-type" onchange="updateCategoryOptions()">
-                        <option value="expense" ${!t || t.type === "expense" ? "selected" : ""}>Expense</option>
-                        <option value="income" ${t && t.type === "income" ? "selected" : ""}>Income</option>
-                    </select>
+                    <div class="seg" id="modal-t-type" role="group" aria-label="Type">
+                        <button type="button" class="seg-btn" data-type="expense" onclick="setTxModalType('expense')">Expense</button>
+                        <button type="button" class="seg-btn seg-income" data-type="income" onclick="setTxModalType('income')">Income</button>
+                    </div>
                 </div>
             </div>
             <div class="form-group">
                 <label class="form-label">Store / Description</label>
-                <input class="form-input" id="modal-t-store" value="${t ? t.store : ""}" placeholder="e.g. K-Market">
+                <input class="form-input" id="modal-t-store" value="${escapeHtml(t ? t.store || "" : "")}" placeholder="e.g. K-Market">
             </div>
             <div class="form-row">
                 <div class="form-group">
                     <label class="form-label">Category</label>
-                    <select class="form-select" id="modal-t-category">
-                        ${catOptions(t ? t.type : "expense")}
-                    </select>
+                    <button type="button" class="cat-chip-btn" id="modal-t-category"
+                            onclick="openTxModalCatPicker(this)"></button>
                 </div>
                 <div class="form-group">
                     <label class="form-label">Amount (€)</label>
-                    <input class="form-input" type="number" step="0.01" min="0" id="modal-t-amount" value="${t ? t.amount : ""}" placeholder="0.00">
+                    <input class="form-input" type="text" inputmode="decimal" id="modal-t-amount"
+                           value="${t ? String(t.amount).replace(".", ",") : ""}"
+                           placeholder="0,00" title="Amount — comma or dot, e.g. 12,50">
                 </div>
             </div>
             <div class="modal-actions">
@@ -465,13 +477,40 @@ function openTransactionModal(t = null) {
         </div>
     </div>`;
     document.body.insertAdjacentHTML("beforeend", html);
+    renderTxModalCat();
 }
 
-function updateCategoryOptions() {
-    const type = document.getElementById("modal-t-type").value;
-    const select = document.getElementById("modal-t-category");
-    const list = categories.filter(c => c.type === type);
-    select.innerHTML = list.map(c => `<option value="${c.id}">${escapeHtml(c.name)}</option>`).join("");
+// Redraw the two controls that share one decision.
+function renderTxModalCat() {
+    const seg = document.getElementById("modal-t-type");
+    if (seg) seg.querySelectorAll(".seg-btn").forEach(b =>
+        b.classList.toggle("active", b.dataset.type === txModal.type));
+
+    const btn = document.getElementById("modal-t-category");
+    if (!btn) return;
+    btn.innerHTML = catChipInner(txModal.categoryId, "Pick category");
+    btn.classList.toggle("needs-cat", txModal.categoryId == null);
+}
+
+function setTxModalType(type) {
+    if (txModal.type === type) return;
+    // Keep the category across the flip when the other side has one by the same
+    // name ("Other", "Investments"); otherwise there is nothing honest to carry
+    // over and the chip says so rather than keeping a category of the wrong type.
+    const current = catById(txModal.categoryId);
+    txModal.type = type;
+    txModal.categoryId = current
+        ? (categories.find(c => c.name === current.name && c.type === type)?.id ?? null)
+        : null;
+    renderTxModalCat();
+}
+
+function openTxModalCatPicker(btn) {
+    openCatPicker(btn, txModal.categoryId, cat => {
+        txModal.categoryId = cat.id;
+        txModal.type = cat.type;
+        renderTxModalCat();
+    });
 }
 
 async function openEditTransaction(id) {
@@ -481,25 +520,31 @@ async function openEditTransaction(id) {
 }
 
 async function saveTransaction(id) {
-    const data = {
-        date: fiToIso(document.getElementById("modal-t-date").value),
-        store: document.getElementById("modal-t-store").value,
-        category_id: parseInt(document.getElementById("modal-t-category").value),
-        amount: parseFloat(document.getElementById("modal-t-amount").value),
-        type: document.getElementById("modal-t-type").value,
-    };
+    // Each box says what is wrong with it rather than one message covering
+    // three: the amount now takes a comma, so "12,50" failing needs to name
+    // itself and not be read back as a missing date.
+    const date = fiToIso(document.getElementById("modal-t-date").value);
+    if (!date) { toast("Use day.month.year, e.g. 31.7.2026"); return; }
 
-    if (!data.date || !data.amount) {
-        toast("Please fill in date and amount");
-        return;
-    }
+    const amount = parseAmountInput(document.getElementById("modal-t-amount").value);
+    if (amount === null) { toast("Amount must be more than 0 — e.g. 12,50"); return; }
+
+    if (txModal.categoryId == null) { toast("Pick a category"); return; }
+
+    const data = {
+        date,
+        store: document.getElementById("modal-t-store").value,
+        category_id: txModal.categoryId,
+        amount,
+        type: txModal.type,
+    };
 
     if (id) {
         await api(`/api/transactions/${id}`, { method: "PUT", body: data });
     } else {
         await api("/api/transactions", { method: "POST", body: data });
     }
-    document.querySelector(".modal-overlay").remove();
+    closeTopOverlay();
     await loadTransactions();
     toast(id ? "Transaction updated" : "Transaction added");
 }

@@ -228,7 +228,7 @@ async function saveMerchantRule(id) {
         await api("/api/merchant-rules", { method: "POST", body: { pattern, category_id, match_type } });
         toast("Rule added");
     }
-    document.querySelector(".modal-overlay").remove();
+    closeTopOverlay();
     merchantRules = await api("/api/merchant-rules");
     renderMerchantRules();
 }

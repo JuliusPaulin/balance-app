@@ -39,7 +39,7 @@ async function saveNote(month) {
     await api(`/api/notes/${month}`, { method: "PUT", body: { note } });
     if (note.trim()) monthsWithNotes.add(month);
     else monthsWithNotes.delete(month);
-    document.querySelector(".modal-overlay").remove();
+    closeTopOverlay();
     renderSummaryTable(cachedMonthly);
     toast("Note saved");
 }

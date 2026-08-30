@@ -2091,7 +2091,10 @@ tbody tr:last-child td {
 /* Picker panel: every category at once, filtered as you type. */
 .cat-pop {
     position: absolute;
-    z-index: 200;
+    /* Above .modal-overlay (1000): the picker opens from the import review, which
+       is page content, and from the transaction modal, which is not. At 200 it
+       opened behind the modal's own backdrop. */
+    z-index: 1100;
     width: 520px;
     max-width: calc(100vw - 24px);
     background: var(--bg);
@@ -2121,11 +2124,23 @@ tbody tr:last-child td {
     color: var(--text-tertiary);
     padding: 10px 14px 5px;
 }
+/* Read down a column, not across a row. A grid filled left-to-right puts
+   "Car charging, Car maintenance, Car parking" across the top and breaks the
+   alphabet at every row end, so the eye has to scan the whole block to find a
+   name it already knows the position of. CSS multi-column fills column 1 top
+   to bottom before starting column 2, which is the order the list is sorted
+   in — and it is also the DOM order, so ↑/↓ still steps the way it looks. */
 .cat-pop-grid {
-    display: grid;
-    grid-template-columns: repeat(3, 1fr);
-    gap: 1px 4px;
+    columns: 3;
+    column-gap: 4px;
     padding: 0 9px 10px;
+}
+.cat-pop-grid .cat-pop-item {
+    /* Multi-column may slice a box across the column break; these rows are one
+       line each and must stay whole. */
+    break-inside: avoid;
+    -webkit-column-break-inside: avoid;
+    width: 100%;
 }
 .cat-pop-item {
     display: flex;
@@ -2172,7 +2187,7 @@ tbody tr:last-child td {
 }
 
 @media (max-width: 620px) {
-    .cat-pop-grid { grid-template-columns: repeat(2, 1fr); }
+    .cat-pop-grid { columns: 2; }
 }
 
 .cell-amount {
@@ -2670,8 +2685,13 @@ body.fs-active { overflow: hidden; }
     color: var(--red);
 }
 
-/* ── Theme segmented control (Settings → Appearance) ──────────────── */
-.theme-seg {
+/* ── Segmented control ────────────────────────────────────────────────
+   One rule for every two-or-three-way pick: the theme switch in Settings and
+   the Expense/Income toggle in the transaction modal. A second copy of this
+   under another name is how two controls that do the same job start looking
+   like different controls. */
+.theme-seg,
+.seg {
     display: inline-flex;
     gap: 3px;
     padding: 3px;
@@ -2679,7 +2699,8 @@ body.fs-active { overflow: hidden; }
     border: 0.5px solid var(--separator);
     border-radius: var(--radius-sm);
 }
-.theme-seg-btn {
+.theme-seg-btn,
+.seg-btn {
     background: none;
     border: none;
     cursor: pointer;
@@ -2691,12 +2712,38 @@ body.fs-active { overflow: hidden; }
     border-radius: 6px;
     transition: background 0.15s, color 0.15s;
 }
-.theme-seg-btn:hover {
+.theme-seg-btn:hover,
+.seg-btn:hover {
     color: var(--text-primary);
 }
-.theme-seg-btn.active {
+.theme-seg-btn.active,
+.seg-btn.active {
     background: var(--accent);
     color: var(--on-accent);
+}
+
+/* In a form the segment fills its group, so it lines up with the input beside
+   it rather than floating at its content width. */
+.form-group > .seg { display: flex; width: 100%; }
+.form-group > .seg .seg-btn { flex: 1; padding: 7px 10px; }
+/* Income reads green wherever else the app prints it; the toggle says the same. */
+.seg-btn.active.seg-income { background: var(--green); }
+
+/* The category chip standing in for the old <select>: same control the import
+   review uses, so one modal is not the last place with a native dropdown. */
+.form-group > .cat-chip-btn {
+    background: var(--bg-tertiary);
+    border: 0.5px solid var(--separator);
+    font-size: var(--text-callout);
+    font-weight: 500;
+    color: var(--text-primary);
+    border-radius: var(--radius-sm);
+    padding: 10px 12px;
+}
+.form-group > .cat-chip-btn.needs-cat {
+    border: 1px dashed var(--orange);
+    color: var(--orange);
+    background: transparent;
 }
 
 /* ── Category palette picker (Settings → Appearance) ──────────────── */

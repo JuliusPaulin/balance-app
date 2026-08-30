@@ -2,6 +2,7 @@
 import sys
 import threading
 import webview
+import config
 from app import app, SERVER_PORT
 from database import init_db, seed_local_user, backup_db
 
@@ -20,12 +21,18 @@ if __name__ == "__main__":
     server = threading.Thread(target=start_server, daemon=True)
     server.start()
 
+    # Fill the screen on launch. The 1200x800 box was a starting size nobody
+    # kept: the Transactions rail beside its table, and the dashboard's cards,
+    # both want the width. width/height stay as the size to fall back to when
+    # the window is un-maximized. See config.START_MAXIMIZED / START_FULLSCREEN.
     window = webview.create_window(
         "Balance.",
         f"http://127.0.0.1:{SERVER_PORT}",
         width=1200,
         height=800,
         min_size=(900, 600),
+        maximized=config.START_MAXIMIZED,
+        fullscreen=config.START_FULLSCREEN,
     )
 
     def on_closed():

@@ -210,6 +210,31 @@ function confirmDialog({ title, body = "", confirmLabel = "Confirm", danger = fa
     });
 }
 
+// ── Closing the modal a save just finished with ─────────────────────
+// A modal built per open used to close itself with
+// `document.querySelector(".modal-overlay").remove()`, which takes the FIRST
+// overlay in the document — not the open one. `#invest-overlay` is declared in
+// index.html and so sits ahead of everything appended to the body, and it is a
+// `.modal-overlay` whether or not it is showing. So every one of those saves
+// deleted the hidden investment-import overlay and left the modal the user was
+// looking at on screen, with a toast saying the save had landed: the "it does
+// not close, you have to click outside" bug. (Clicking outside then worked
+// because the backdrop handler is bound to the element itself.) It also took
+// the investment overlay out of the DOM for good, so Import investments did
+// nothing until the app was reloaded.
+//
+// The last VISIBLE overlay is the one on top and the one a save means, the
+// same rule closeTopModal() uses for Escape.
+function closeTopOverlay() {
+    const open = [...document.querySelectorAll(".modal-overlay")]
+        .filter(o => getComputedStyle(o).display !== "none");
+    const top = open[open.length - 1];
+    if (!top) return;
+    const closer = window[top.dataset.close];
+    if (typeof closer === "function") closer();
+    else top.remove();
+}
+
 // ── Escape closes the top modal ─────────────────────────────────────
 // Every modal closes on a click outside it, and confirmDialog() has always
 // taken Escape too. None of the others did, so a drilldown opened by clicking

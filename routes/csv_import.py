@@ -100,20 +100,42 @@ def parse_amount(amount_str):
 _HISTORY_CONFIDENCE = 0.70
 
 
-def suggest_category(store_name, conn, user_id):
+def suggest_category(store_name, conn, user_id, txn_type=None):
+    """Name of the category to suggest for ``store_name``, or None.
+
+    ``txn_type`` is the expense/income the row was read as, from the sign on the
+    statement. When given, only categories of that type can be suggested.
+
+    That restriction is the point, not a detail. A suggestion is a bare category
+    *name*, and two names exist on both sides — "Other" (the default for a store
+    nothing is known about) and "Investments". A merchant rule or a store's
+    history is type-blind, so an income row could come back suggested "Other"
+    and the review table, resolving that name against a list where the expense
+    side sorts first, would adopt the expense "Other" — and with it the expense
+    type, silently overturning the sign read off the statement. A refund from a
+    grocer landed as spending; a card payment to a store whose rule points at an
+    income category landed as earnings.
+
+    ``POST /api/merchant-rules/<id>/apply`` has always refused to re-categorise
+    rows of the other type for the same reason. This is that rule, applied where
+    the category is first proposed.
+    """
     if not store_name:
         return None
 
     store_lower = store_name.strip().lower()
+
+    type_clause = "AND c.type = %s" if txn_type else ""
+    type_args = (txn_type,) if txn_type else ()
 
     # Check merchant rules first: exact → contains → smart. Scoped to the user.
     rules = conn.execute("""
         SELECT mr.match_type, mr.pattern, c.name as category_name
         FROM merchant_rules mr
         JOIN categories c ON mr.category_id = c.id
-        WHERE mr.user_id = %s
+        WHERE mr.user_id = %s {type_clause}
         ORDER BY CASE mr.match_type WHEN 'exact' THEN 1 WHEN 'contains' THEN 2 ELSE 3 END
-    """, (user_id,)).fetchall()
+    """.format(type_clause=type_clause), (user_id,) + type_args).fetchall()
 
     smart_candidates = []
     for rule in rules:
@@ -146,10 +168,10 @@ def suggest_category(store_name, conn, user_id):
     rows = conn.execute("""
         SELECT c.name, COUNT(*) AS n FROM transactions t
         JOIN categories c ON t.category_id = c.id
-        WHERE t.user_id = %s AND LOWER(t.store) = LOWER(%s)
+        WHERE t.user_id = %s AND LOWER(t.store) = LOWER(%s) {type_clause}
         GROUP BY c.id, c.name
         ORDER BY n DESC
-    """, (user_id, store_name.strip())).fetchall()
+    """.format(type_clause=type_clause), (user_id, store_name.strip()) + type_args).fetchall()
     if not rows:
         return None
     total = sum(r["n"] for r in rows)
@@ -342,7 +364,9 @@ def _stage_rows(conn, uid, batch_id, reader, col_map, amount_sign="neg_expense")
                 store = override
 
         csv_category = row[col_map["category"]].strip() if "category" in col_map and col_map["category"] is not None and col_map["category"] < len(row) else ""
-        suggested = suggest_category(store, conn, uid) or csv_category or None
+        # Scoped to the type the sign said this row is: a suggestion must never
+        # be what overturns it. See suggest_category.
+        suggested = suggest_category(store, conn, uid, txn_type) or csv_category or None
 
         conn.execute("""
             INSERT INTO import_staging (user_id, date, store, suggested_category, amount, type, import_batch_id)

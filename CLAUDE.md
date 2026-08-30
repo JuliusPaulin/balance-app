@@ -115,7 +115,7 @@ through `db`: `db.IntegrityError`, `db.DatabaseError`, `db.Json(...)`,
 
 ## Tests
 
-`python3 -m pytest tests/` — 223 tests, all green.
+`python3 -m pytest tests/` — 227 tests, all green.
 
 `conftest.py` points `SQLITE_PATH` at a throwaway file **at import time**, before
 pytest collects any test module. This matters: test modules `import config` /
@@ -265,7 +265,9 @@ Supports three CSV formats:
   `type="number"` swallowed a comma before any of our code saw it, and a comma
   is what a Finnish hand types into an app that prints "16,05" and imports
   CSVs written "-25,00". `parseAmountInput()` takes either separator and says
-  so when it cannot, the way the date box always has.
+  so when it cannot, the way the date box always has. It also strips the
+  non-breaking space `fmt()` groups thousands with, so "2 500,55" — the app's own
+  output, copied or retyped — reads back rather than being refused.
 - **÷2 Split costs** halves the **expense** rows — your share of a statement
   you split with someone. It used to halve the salary too, and compound on a
   second click with nothing on screen to say the first had landed. It is a
@@ -574,6 +576,30 @@ Re-run anytime with `python3 scripts/generate_merchant_rules.py` — clears and 
 new selector that does not join that list toggles a class nothing paints, and
 no button ever looks selected.
 
+**One segmented control.** `.seg` / `.seg-btn` styles every two-or-three-way
+pick — the theme switch in Settings and the Expense/Income toggle in the
+transaction modal — and `.theme-seg` / `.theme-seg-btn` are the same rule under
+their original name. A second copy under a third name is how two controls doing
+the same job start looking like different controls.
+
+**The category picker reads down its columns.** `.cat-pop-grid` is CSS
+multi-column, not a 3-across grid: a grid filled left-to-right put "Car
+charging, Car maintenance, Car parking" across the top and broke the alphabet at
+every row end, so finding a name you already knew the position of meant scanning
+the whole block. Multi-column fills column 1 top to bottom before starting
+column 2 — the order the list is sorted in, and the DOM order, so ↑/↓ still
+steps the way it looks. The panel sits at `z-index: 1100`, above
+`.modal-overlay`, because it opens from the import review (page content) *and*
+from the transaction modal (not).
+
+**The one row you type by hand is entered the way the four hundred you import
+are.** The Add/Edit Transaction modal was the last place still asking with
+native `<select>`s and a `type="number"` amount. It uses the same category
+picker, the same `parseAmountInput()`, and the same Expense/Income segment as
+the import review. Type and category are one decision and are held as one
+(`txModal`): picking a category adopts its type, and flipping the type keeps the
+category only when the other side has one by that name.
+
 **A failed request has to say so.** `api()` throws an `ApiError` on any
 non-2xx, carrying the server's own `error` string. That is what stops a caller
 mid-flight: it used to hand the error body back as data, so `saveTransaction()`
@@ -589,6 +615,18 @@ danger})` returns a promise of true or false, and every "are you sure?" goes
 through it. The browser's `confirm()` inside a pywebview window is a system
 alert box — another app's typeface, no way to mark the destructive answer, and
 paragraphs faked with `\n\n`.
+
+**A modal closes the modal that is open.** The per-open modals used to close
+themselves with `document.querySelector(".modal-overlay").remove()`, which takes
+the FIRST overlay in the document — and `#invest-overlay` is declared in
+`index.html`, so it sits ahead of anything appended to the body and is a
+`.modal-overlay` whether or not it is showing. Every such save deleted that
+hidden overlay and left the modal the user was looking at on screen, under a
+toast saying the save had landed: the "it does not close, you have to click
+outside" bug. It also took the investment-import overlay out of the DOM for
+good. `closeTopOverlay()` in `core.js` takes the last **visible** overlay, the
+same rule `closeTopModal()` uses for Escape, and calls its `data-close` closer
+when it has one.
 
 **Escape closes the top modal.** Only `confirmDialog()` used to take the key, so
 a drilldown opened by clicking a bar could be dismissed only by aiming at the
