@@ -181,3 +181,80 @@ def test_annual_report_of_a_year_with_nothing_in_it(client, login, make_user):
     assert got["compare_months"] == []
     assert got["prev_totals"] == {}
     assert got["categories"] == []
+
+
+# ── The baseline beside each category ───────────────────────────────
+# The breakdown says what a category cost this month; the baseline says what
+# it usually costs. The rules worth pinning down: the judged month stays out
+# of its own baseline, an empty month counts as zero rather than dropping out,
+# and a period longer than one month gets no baseline at all.
+def _seed_baseline(client, amounts, category="Groceries"):
+    """One expense per month, oldest first, ending 2026-07."""
+    cid = cat_id(client, category)
+    for offset, amount in enumerate(amounts):
+        month = 1 + offset
+        add_tx(client, f"2026-{month:02d}-10", "Lidl", cid, amount)
+    return cid
+
+
+def test_baseline_is_the_median_of_the_six_months_before(client, login, make_user):
+    make_user()
+    # Jan–Jun all 100, then July spends 200.
+    _seed_baseline(client, [100.0] * 6 + [200.0])
+    got, _ = _breakdown(client, "?month=2026-07")
+    item = next(i for i in got["items"] if i["name"] == "Groceries")
+    assert item["total"] == 200.0
+    assert item["median"] == 100.0      # July is not in its own baseline
+    assert item["fixed"] is False
+
+
+def test_baseline_counts_an_empty_month_as_zero(client, login, make_user):
+    """A thing you buy twice a year is unusual every time. Dropping the months
+    with no spending would take its median from the months it did happen and
+    report it as routine."""
+    make_user()
+    groceries = cat_id(client, "Groceries")
+    for month in range(1, 7):                       # six months of history
+        add_tx(client, f"2026-{month:02d}-10", "Lidl", groceries, 100.0)
+    electronics = cat_id(client, "Electronics")
+    add_tx(client, "2026-02-05", "Verkkokauppa", electronics, 600.0)
+    add_tx(client, "2026-07-05", "Verkkokauppa", electronics, 600.0)
+
+    got, _ = _breakdown(client, "?month=2026-07")
+    item = next(i for i in got["items"] if i["name"] == "Electronics")
+    assert item["median"] == 0.0        # five empty months out of six
+
+
+def test_a_category_that_never_moves_is_marked_fixed(client, login, make_user):
+    make_user()
+    _seed_baseline(client, [100.0] * 7)
+    got, _ = _breakdown(client, "?month=2026-07")
+    item = next(i for i in got["items"] if i["name"] == "Groceries")
+    assert item["fixed"] is True
+
+
+def test_no_baseline_without_enough_history(client, login, make_user):
+    """Two months in, there is no honest normal to compare against."""
+    make_user()
+    _seed_baseline(client, [100.0, 300.0])
+    got, _ = _breakdown(client, "?month=2026-02")
+    item = next(i for i in got["items"] if i["name"] == "Groceries")
+    assert item["median"] is None
+
+
+def test_a_single_month_asked_for_as_a_list_still_gets_its_baseline(client, login, make_user):
+    """The dashboard's "Latest month" scope sends ?months=<one month>."""
+    make_user()
+    _seed_baseline(client, [100.0] * 6 + [200.0])
+    got, _ = _breakdown(client, "?months=2026-07")
+    item = next(i for i in got["items"] if i["name"] == "Groceries")
+    assert item["median"] == 100.0
+
+
+def test_several_months_get_no_baseline(client, login, make_user):
+    """A sum over a period has no monthly normal to stand beside."""
+    make_user()
+    _seed_baseline(client, [100.0] * 6 + [200.0])
+    got, _ = _breakdown(client, "?months=2026-06,2026-07")
+    item = next(i for i in got["items"] if i["name"] == "Groceries")
+    assert "median" not in item

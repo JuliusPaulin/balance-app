@@ -7,19 +7,121 @@ from core import current_user_id, bump_data_version
 bp = Blueprint("transactions", __name__)
 
 
+def _filter_clauses(args, uid, omit=()):
+    """The WHERE behind the transaction list, as (conditions, params).
+
+    `omit` drops whole facets by name — "type", "category", "period",
+    "amount", "q". The facet counts are what need this: the number beside
+    "Groceries" has to answer *"what would I get if I clicked this"*, so every
+    other filter applies while the category filter itself does not. Counting
+    with its own selection applied would just report the list you already have.
+
+    "period" covers `month`, `months` and the date range together, because the
+    rail shows them as one section and each of them undoes the others.
+    """
+    # The driving table (transactions) is always scoped to the requesting user.
+    conditions, params = ["t.user_id = %s"], [uid]
+
+    t_type    = args.get("type")
+    month     = args.get("month")          # YYYY-MM
+    q         = (args.get("q") or "").strip()
+    date_from = args.get("date_from")      # YYYY-MM-DD
+    date_to   = args.get("date_to")        # YYYY-MM-DD
+    cat_ids   = args.get("category_ids")   # comma-separated
+    amt_min   = args.get("amount_min", type=float)
+    amt_max   = args.get("amount_max", type=float)
+    months_filter = args.get("months")
+
+    if t_type and "type" not in omit:
+        conditions.append("t.type = %s"); params.append(t_type)
+    if q and "q" not in omit:
+        # Postgres LIKE is case-sensitive (SQLite's was not) — use ILIKE to
+        # preserve the original case-insensitive search behaviour.
+        conditions.append("(t.store ILIKE %s OR c.name ILIKE %s)")
+        params += [f"%{q}%", f"%{q}%"]
+    if cat_ids and "category" not in omit:
+        ids = [x.strip() for x in cat_ids.split(",") if x.strip()]
+        if ids:
+            conditions.append(f"t.category_id IN ({','.join(['%s']*len(ids))})"); params += ids
+    if "period" not in omit:
+        if month:
+            conditions.append("substr(t.date, 1, 7) = %s"); params.append(month)
+        if date_from:
+            conditions.append("t.date >= %s"); params.append(date_from)
+        if date_to:
+            conditions.append("t.date <= %s"); params.append(date_to)
+        if months_filter:
+            ml = [m.strip() for m in months_filter.split(",") if m.strip()]
+            if ml:
+                conditions.append(f"substr(t.date, 1, 7) IN ({','.join(['%s']*len(ml))})"); params += ml
+    if "amount" not in omit:
+        if amt_min is not None:
+            conditions.append("t.amount >= %s"); params.append(amt_min)
+        if amt_max is not None:
+            conditions.append("t.amount <= %s"); params.append(amt_max)
+
+    return conditions, params
+
+
+def _base_from(conditions):
+    return ("FROM transactions t JOIN categories c ON t.category_id = c.id"
+            " WHERE " + " AND ".join(conditions))
+
+
+@bp.route("/api/transactions/facets")
+def transaction_facets():
+    """How many rows each filter value would give, under the filters already on.
+
+    This is what makes the rail worth having. A category list that reads
+    "Groceries 421" is a second look at the spending as well as a control, and
+    a value that would return nothing can say so instead of being a dead click.
+    """
+    uid = current_user_id()
+
+    with db_conn() as conn:
+        def counted(omit, select, group, order):
+            conditions, params = _filter_clauses(request.args, uid, omit=omit)
+            return conn.execute(
+                f"SELECT {select} {_base_from(conditions)} GROUP BY {group} ORDER BY {order}",
+                params,
+            ).fetchall()
+
+        cats = counted(
+            omit=("category",),
+            select="c.id as id, c.name as name, c.type as type, COUNT(*) as n, "
+                   "COALESCE(SUM(t.amount), 0) as total",
+            group="c.id, c.name, c.type",
+            # Most-used first. The rail is meant to be scanned, and putting it
+            # in alphabetical order buries the five categories you live in
+            # under the twenty-nine you touch twice a year.
+            order="n DESC, c.name ASC",
+        )
+        types = counted(
+            omit=("type",),
+            select="t.type as type, COUNT(*) as n, COALESCE(SUM(t.amount), 0) as total",
+            group="t.type",
+            order="n DESC",
+        )
+        months = counted(
+            omit=("period",),
+            select="substr(t.date, 1, 7) as month, COUNT(*) as n, "
+                   "COALESCE(SUM(CASE WHEN t.type = 'expense' THEN t.amount END), 0) as sum_expense",
+            group="substr(t.date, 1, 7)",
+            order="month DESC",
+        )
+
+    return jsonify({
+        "categories": [dict(r) for r in cats],
+        "types":      [dict(r) for r in types],
+        "months":     [dict(r) for r in months],
+    })
+
+
 @bp.route("/api/transactions")
 def get_transactions():
     uid       = current_user_id()
     page      = request.args.get("page", 1, type=int)
     per_page  = request.args.get("per_page", 50, type=int)
-    t_type    = request.args.get("type")
-    month     = request.args.get("month")        # YYYY-MM
-    q         = request.args.get("q", "").strip()
-    date_from = request.args.get("date_from")    # YYYY-MM-DD
-    date_to   = request.args.get("date_to")      # YYYY-MM-DD
-    cat_ids   = request.args.get("category_ids") # comma-separated
-    amt_min   = request.args.get("amount_min", type=float)
-    amt_max   = request.args.get("amount_max", type=float)
     sort_col  = request.args.get("sort", "date")
     sort_dir  = request.args.get("dir", "desc")
 
@@ -36,37 +138,8 @@ def get_transactions():
     dir_sql = "ASC" if sort_dir == "asc" else "DESC"
     order = f"{SORT_COLS.get(sort_col, 'CAST(t.date AS date)')} {dir_sql}, t.id {dir_sql}"
 
-    # The driving table (transactions) is always scoped to the requesting user.
-    conditions, params = ["t.user_id = %s"], [uid]
-
-    if t_type:
-        conditions.append("t.type = %s"); params.append(t_type)
-    if month:
-        conditions.append("substr(t.date, 1, 7) = %s"); params.append(month)
-    if q:
-        # Postgres LIKE is case-sensitive (SQLite's was not) — use ILIKE to
-        # preserve the original case-insensitive search behaviour.
-        conditions.append("(t.store ILIKE %s OR c.name ILIKE %s)")
-        params += [f"%{q}%", f"%{q}%"]
-    if date_from:
-        conditions.append("t.date >= %s"); params.append(date_from)
-    if date_to:
-        conditions.append("t.date <= %s"); params.append(date_to)
-    if cat_ids:
-        ids = [x.strip() for x in cat_ids.split(",") if x.strip()]
-        conditions.append(f"t.category_id IN ({','.join(['%s']*len(ids))})"); params += ids
-    months_filter = request.args.get("months")
-    if months_filter:
-        ml = [m.strip() for m in months_filter.split(",") if m.strip()]
-        if ml:
-            conditions.append(f"substr(t.date, 1, 7) IN ({','.join(['%s']*len(ml))})"); params += ml
-    if amt_min is not None:
-        conditions.append("t.amount >= %s"); params.append(amt_min)
-    if amt_max is not None:
-        conditions.append("t.amount <= %s"); params.append(amt_max)
-
-    where = " WHERE " + " AND ".join(conditions)
-    base  = "FROM transactions t JOIN categories c ON t.category_id = c.id" + where
+    conditions, params = _filter_clauses(request.args, uid)
+    base = _base_from(conditions)
 
     with db_conn() as conn:
         # One aggregate pass gives the count AND the filtered money totals, so

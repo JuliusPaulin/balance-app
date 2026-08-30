@@ -1,0 +1,451 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Balance. — design philosophy, before &amp; after</title>
+<style>
+/* Tokens lifted verbatim from static/css/style.css so the panels below
+   look like the real app, not like a mockup of it. */
+:root {
+  color-scheme: light;
+  --bg:#ffffff; --bg-secondary:#f6f7f9; --bg-tertiary:#f0f2f5;
+  --text-primary:#0d1320; --text-secondary:#5e6678; --text-tertiary:#9aa1b1; --text-quaternary:#b6bcc9;
+  --accent:#00a06b; --green:#00a06b; --red:#e0445b; --orange:#FF9500;
+  --accent-soft:rgba(0,160,107,0.08); --accent-softer:rgba(0,160,107,0.04); --accent-ring:rgba(0,160,107,0.18);
+  --row-stripe:#f6f7f9;
+  --separator:#e6e9ee; --border:#e6e9ee;
+  --shadow-card:0 1px 2px rgba(16,24,40,0.04), 0 6px 18px rgba(16,24,40,0.05);
+  --radius-sm:8px; --radius:12px; --radius-lg:16px; --radius-xl:20px;
+  --font:-apple-system, BlinkMacSystemFont,'SF Pro Display','SF Pro Text','Helvetica Neue',Arial,sans-serif;
+  --bad:#e0445b; --good:#00a06b;
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --bg:#121722; --bg-secondary:#0b0e14; --bg-tertiary:#171d2a;
+  --text-primary:#e7ebf2; --text-secondary:#8a93a6; --text-tertiary:#5d6677; --text-quaternary:#454d5e;
+  --accent:#00e599; --green:#00e599; --red:#ff5c72;
+  --accent-soft:rgba(0,229,153,0.10); --accent-softer:rgba(0,229,153,0.05); --accent-ring:rgba(0,229,153,0.22);
+  --row-stripe:#0f141e;
+  --separator:#212938; --border:#212938;
+  --shadow-card:0 1px 2px rgba(0,0,0,0.4), 0 6px 18px rgba(0,0,0,0.3);
+  --bad:#ff5c72; --good:#00e599;
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font);background:var(--bg-secondary);color:var(--text-primary);
+  -webkit-font-smoothing:antialiased;padding:56px 24px 96px}
+.wrap{max-width:1120px;margin:0 auto}
+
+/* ── page chrome ─────────────────────────────────────────────── */
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+h1{font-size:34px;font-weight:700;letter-spacing:-.022em;margin:10px 0 0}
+.lede{margin-top:14px;font-size:16px;line-height:1.65;color:var(--text-secondary);max-width:680px}
+.lede b{color:var(--text-primary);font-weight:600}
+.themebtn{position:fixed;top:18px;right:20px;z-index:50;background:var(--bg);border:1px solid var(--border);
+  color:var(--text-secondary);font:600 12px/1 var(--font);padding:9px 14px;border-radius:999px;cursor:pointer;
+  box-shadow:var(--shadow-card)}
+.themebtn:hover{color:var(--text-primary)}
+
+/* ── principle block ─────────────────────────────────────────── */
+.principle{margin-top:64px;padding-top:36px;border-top:1px solid var(--border)}
+.pnum{font:700 12px/1 var(--font);letter-spacing:.08em;color:var(--text-quaternary)}
+.pname{font-size:24px;font-weight:660;letter-spacing:-.018em;margin:10px 0 0}
+.pdiag{margin-top:10px;font-size:14.5px;line-height:1.6;color:var(--text-secondary);max-width:720px}
+.pdiag b{color:var(--text-primary);font-weight:600}
+
+.compare{display:grid;grid-template-columns:1fr 1fr;gap:18px;margin-top:26px;align-items:start}
+@media (max-width:900px){.compare{grid-template-columns:1fr}}
+.pane{min-width:0}
+.plabel{display:flex;align-items:center;gap:7px;font:700 11px/1 var(--font);letter-spacing:.08em;
+  text-transform:uppercase;margin-bottom:10px}
+.plabel.now{color:var(--text-tertiary)}
+.plabel.next{color:var(--accent)}
+.dot{width:6px;height:6px;border-radius:50%;background:currentColor}
+
+/* the fake app surface */
+.surface{background:var(--bg-secondary);border:1px solid var(--border);border-radius:var(--radius-lg);
+  padding:16px;overflow:hidden}
+.surface.tight{padding:14px}
+.card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow-card);padding:16px}
+.card + .card{margin-top:10px}
+.ctitle{font-size:13px;font-weight:640;letter-spacing:-.005em;color:var(--text-primary);margin-bottom:12px}
+
+/* small controls */
+.btns{display:inline-flex;background:var(--bg-tertiary);border-radius:var(--radius-sm);padding:2px;gap:2px}
+.b{font:600 11px/1 var(--font);color:var(--text-secondary);background:transparent;border:0;
+  padding:6px 9px;border-radius:6px;cursor:default;white-space:nowrap}
+.b.on{background:var(--bg);color:var(--text-primary);box-shadow:var(--shadow-card)}
+:root[data-theme="dark"] .b.on{background:var(--bg-tertiary);color:var(--text-primary)}
+.pick{display:inline-flex;align-items:center;gap:6px;font:600 11px/1 var(--font);color:var(--text-secondary);
+  background:var(--bg);border:1px solid var(--border);padding:7px 10px;border-radius:var(--radius-sm)}
+.hdrow{display:flex;align-items:center;justify-content:space-between;gap:8px;flex-wrap:wrap;margin-bottom:12px}
+
+/* summary cards — the current five-equal-things pattern */
+.sumrow{display:grid;grid-template-columns:repeat(5,1fr);gap:8px}
+.sc{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow-card);padding:12px 10px;min-width:0}
+.sc .lab{font-size:10px;font-weight:600;color:var(--text-tertiary);letter-spacing:.01em;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.sc .val{font-size:16px;font-weight:680;letter-spacing:-.02em;margin-top:6px;
+  font-variant-numeric:tabular-nums;white-space:nowrap}
+.inc{color:var(--green)} .exp{color:var(--red)} .neu{color:var(--text-primary)}
+
+/* the hero / verdict pattern */
+.hero{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow-card);padding:20px}
+.verdict{font-size:17px;line-height:1.5;font-weight:560;letter-spacing:-.012em;color:var(--text-primary)}
+.verdict b{font-weight:700}
+.verdict .up{color:var(--bad)} .verdict .dn{color:var(--good)}
+.heronum{font-size:44px;font-weight:700;letter-spacing:-.03em;font-variant-numeric:tabular-nums;
+  line-height:1.05;margin:14px 0 0}
+.herosub{margin-top:8px;font-size:12.5px;color:var(--text-secondary);line-height:1.5}
+.miniline{margin-top:16px;padding-top:14px;border-top:1px solid var(--separator);
+  display:grid;grid-template-columns:repeat(3,1fr);gap:12px}
+.mini .l{font-size:10.5px;font-weight:600;color:var(--text-tertiary)}
+.mini .v{font-size:15px;font-weight:660;letter-spacing:-.015em;margin-top:4px;font-variant-numeric:tabular-nums}
+.mini .d{font-size:10.5px;margin-top:3px;font-weight:600;font-variant-numeric:tabular-nums}
+.d.up{color:var(--bad)} .d.dn{color:var(--good)} .d.flat{color:var(--text-tertiary)}
+
+/* baseline bars */
+.brow{display:flex;align-items:center;gap:10px;padding:9px 0}
+.brow + .brow{border-top:1px solid var(--separator)}
+.bname{font-size:12.5px;font-weight:560;width:96px;flex:none;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.btrack{flex:1;height:8px;border-radius:99px;background:var(--bg-tertiary);position:relative;min-width:40px}
+.bfill{position:absolute;inset:0 auto 0 0;border-radius:99px;background:var(--accent)}
+.bfill.warn{background:var(--bad)}
+.bval{font-size:12.5px;font-weight:660;font-variant-numeric:tabular-nums;width:60px;text-align:right;flex:none}
+.bdelta{font-size:11px;font-weight:640;font-variant-numeric:tabular-nums;width:74px;text-align:right;flex:none}
+/* the baseline tick — where "normal" sits on the same track */
+.btick{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--text-quaternary);border-radius:2px}
+.btick::after{content:"";position:absolute;inset:0}
+
+/* quiet / collapsed states */
+.quiet{display:flex;align-items:center;gap:10px;padding:13px 15px;border-radius:var(--radius);
+  border:1px dashed var(--border);color:var(--text-tertiary);font-size:12.5px;background:transparent}
+.chev{margin-left:auto;color:var(--text-quaternary);font-size:11px;font-weight:700}
+.flagcard{background:var(--bg);border:1px solid var(--border);border-left:3px solid var(--bad);
+  border-radius:var(--radius);box-shadow:var(--shadow-card);padding:14px 16px}
+.flagcard.good{border-left-color:var(--good)}
+.ftitle{font-size:13px;font-weight:660;letter-spacing:-.005em}
+.fbody{margin-top:5px;font-size:12.5px;line-height:1.55;color:var(--text-secondary)}
+.fbody b{color:var(--text-primary);font-weight:640}
+
+/* stacked-cards illustration */
+.stack{display:flex;flex-direction:column;gap:8px}
+.ghost{border:1px solid var(--border);border-radius:var(--radius);background:var(--bg);
+  box-shadow:var(--shadow-card);padding:11px 14px;display:flex;align-items:center;gap:10px}
+.ghost .gt{font-size:12px;font-weight:600;color:var(--text-secondary)}
+.ghost .gh{margin-left:auto;font-size:10.5px;color:var(--text-quaternary);font-weight:600}
+.ghost.tall{height:74px;align-items:flex-start}
+.ghost .bars{margin-left:auto;display:flex;align-items:flex-end;gap:3px;height:26px}
+.ghost .bars i{width:6px;background:var(--accent-ring);border-radius:2px;display:block}
+.depth{font:700 10px/1 var(--font);letter-spacing:.09em;text-transform:uppercase;color:var(--text-quaternary);
+  margin:14px 0 8px;display:flex;align-items:center;gap:8px}
+.depth::after{content:"";flex:1;height:1px;background:var(--border)}
+.depth:first-child{margin-top:0}
+
+/* colour-meaning swatches */
+.legend{display:flex;gap:8px;flex-wrap:wrap;margin-top:12px}
+.chip{display:inline-flex;align-items:center;gap:6px;font-size:11.5px;font-weight:600;
+  color:var(--text-secondary);background:var(--bg-tertiary);padding:5px 9px;border-radius:99px}
+.chip i{width:9px;height:9px;border-radius:3px;display:block}
+
+.cost{margin-top:16px;font-size:12.5px;line-height:1.6;color:var(--text-tertiary);
+  padding-left:12px;border-left:2px solid var(--border);max-width:760px}
+.cost b{color:var(--text-secondary);font-weight:640}
+
+footer{margin-top:72px;padding-top:28px;border-top:1px solid var(--border);
+  font-size:13px;line-height:1.7;color:var(--text-tertiary)}
+footer b{color:var(--text-secondary)}
+</style>
+</head>
+<body>
+<button class="themebtn" onclick="var r=document.documentElement;r.setAttribute('data-theme',r.getAttribute('data-theme')==='dark'?'light':'dark')">Toggle theme</button>
+
+<div class="wrap">
+  <div class="eyebrow">Balance. — round 3</div>
+  <h1>Six changes of mind, not of paint</h1>
+  <p class="lede">The last two rounds asked what the app should <i>look</i> like. This one asks what it should <b>be for</b>. Balance today is an instrument panel: it lays out everything it knows, at equal weight, and leaves the reading to you. Every panel below is the same data — <b>May: 2 340 € out, 4 100 € in</b> — under a different idea of what the app owes its reader. Left is what ships today. Right is the proposal.</p>
+
+  <!-- ═══ 1 ═══════════════════════════════════════════════════ -->
+  <section class="principle">
+    <div class="pnum">01</div>
+    <h2 class="pname">Lead with the verdict, not the ledger</h2>
+    <p class="pdiag">Five summary cards at the same size say five things of equal importance, which means the page says nothing first. The app already computes enough to have <b>an opinion</b> — it knows the month, the average, the direction. Let it open with a sentence, then the number that sentence is about, then the rest at a smaller size.</p>
+
+    <div class="compare">
+      <div class="pane">
+        <div class="plabel now"><span class="dot"></span>Today</div>
+        <div class="surface">
+          <div class="sumrow">
+            <div class="sc"><div class="lab">Total Income</div><div class="val inc">+4 100 €</div></div>
+            <div class="sc"><div class="lab">Total Expenses</div><div class="val exp">2 340 €</div></div>
+            <div class="sc"><div class="lab">Net</div><div class="val neu">+1 760 €</div></div>
+            <div class="sc"><div class="lab">Savings Rate</div><div class="val neu">42.9%</div></div>
+            <div class="sc"><div class="lab">Avg. Monthly</div><div class="val exp">2 610 €</div></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pane">
+        <div class="plabel next"><span class="dot"></span>Proposed</div>
+        <div class="surface">
+          <div class="hero">
+            <div class="verdict">A <b>quiet month</b>. You spent <b>270 € <span class="dn">less</span></b> than your usual, and kept 43&nbsp;% of what you earned.</div>
+            <div class="heronum">1 760 €</div>
+            <div class="herosub">kept in May · your best month since January</div>
+            <div class="miniline">
+              <div class="mini"><div class="l">In</div><div class="v inc">4 100 €</div><div class="d flat">= usual</div></div>
+              <div class="mini"><div class="l">Out</div><div class="v">2 340 €</div><div class="d dn">−10% vs avg</div></div>
+              <div class="mini"><div class="l">Saved</div><div class="v">42.9%</div><div class="d dn">+6 pts</div></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cost"><b>What it costs:</b> one new renderer for the hero block and a sentence-builder over numbers <code>renderSummaryCards()</code> already has. No new endpoint.</p>
+  </section>
+
+  <!-- ═══ 2 ═══════════════════════════════════════════════════ -->
+  <section class="principle">
+    <div class="pnum">02</div>
+    <h2 class="pname">Every number carries its own baseline</h2>
+    <p class="pdiag">"Groceries 612 €" is not information — it's a fact waiting for a comparison. Is that a lot? The app is the only thing in the room that knows, and it doesn't say. Put <b>normal</b> on the same track as <b>actual</b>, as a tick mark, and the bar stops being a length and starts being a judgement.</p>
+
+    <div class="compare">
+      <div class="pane">
+        <div class="plabel now"><span class="dot"></span>Today</div>
+        <div class="surface">
+          <div class="card">
+            <div class="hdrow"><div class="ctitle" style="margin:0">Expenses by Category</div>
+              <div class="btns"><span class="b on">Latest month</span><span class="b">Period</span></div></div>
+            <div class="brow"><span class="bname">Groceries</span><span class="btrack"><i class="bfill" style="width:100%"></i></span><span class="bval">612 €</span></div>
+            <div class="brow"><span class="bname">Rent</span><span class="btrack"><i class="bfill" style="width:92%"></i></span><span class="bval">560 €</span></div>
+            <div class="brow"><span class="bname">Restaurant</span><span class="btrack"><i class="bfill" style="width:53%"></i></span><span class="bval">324 €</span></div>
+            <div class="brow"><span class="bname">Telecom</span><span class="btrack"><i class="bfill" style="width:15%"></i></span><span class="bval">89 €</span></div>
+            <div class="brow"><span class="bname">Gas</span><span class="btrack"><i class="bfill" style="width:12%"></i></span><span class="bval">71 €</span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pane">
+        <div class="plabel next"><span class="dot"></span>Proposed</div>
+        <div class="surface">
+          <div class="card">
+            <div class="hdrow"><div class="ctitle" style="margin:0">Expenses by Category</div>
+              <div class="btns"><span class="b on">vs normal</span><span class="b">Totals</span></div></div>
+            <div class="brow"><span class="bname">Restaurant</span><span class="btrack"><i class="bfill warn" style="width:88%"></i><i class="btick" style="left:47%"></i></span><span class="bval">324 €</span><span class="bdelta d up">+87%</span></div>
+            <div class="brow"><span class="bname">Groceries</span><span class="btrack"><i class="bfill" style="width:64%"></i><i class="btick" style="left:70%"></i></span><span class="bval">612 €</span><span class="bdelta d dn">−9%</span></div>
+            <div class="brow"><span class="bname">Gas</span><span class="btrack"><i class="bfill" style="width:34%"></i><i class="btick" style="left:52%"></i></span><span class="bval">71 €</span><span class="bdelta d dn">−34%</span></div>
+            <div class="brow"><span class="bname">Rent</span><span class="btrack"><i class="bfill" style="width:60%"></i><i class="btick" style="left:60%"></i></span><span class="bval">560 €</span><span class="bdelta d flat">fixed</span></div>
+            <div class="brow"><span class="bname">Telecom</span><span class="btrack"><i class="bfill" style="width:20%"></i><i class="btick" style="left:20%"></i></span><span class="bval">89 €</span><span class="bdelta d flat">fixed</span></div>
+            <div style="margin-top:12px;font-size:11.5px;color:var(--text-tertiary);line-height:1.5">
+              Bar = this month. Tick = your 6-month median. Sorted by <b style="color:var(--text-secondary)">how far off normal</b>, not by size — so the one thing that moved is the first thing you read.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cost"><b>What it costs:</b> the median per category over the horizon — one extra column on <code>/api/dashboard/category-breakdown</code>. Categories whose spread is near zero get labelled <b>fixed</b> and stop shouting; rent moving 0 % is not news.</p>
+  </section>
+
+  <!-- ═══ 3 ═══════════════════════════════════════════════════ -->
+  <section class="principle">
+    <div class="pnum">03</div>
+    <h2 class="pname">One time control, in one place</h2>
+    <p class="pdiag">The Dashboard has <b>six</b> separate ways to choose a span of time: the horizon buttons, the period picker, a scope toggle on each of the two breakdown cards, the trend category picker, and the heatmap's year dropdown. Each carries its own scoping rules — and CLAUDE.md already records the bug where two of them disagreed on screen. Six controls is not flexibility; it's six chances for the page to contradict itself.</p>
+
+    <div class="compare">
+      <div class="pane">
+        <div class="plabel now"><span class="dot"></span>Today — six controls</div>
+        <div class="surface tight">
+          <div class="hdrow" style="margin-bottom:10px">
+            <div class="btns"><span class="b">6M</span><span class="b on">YTD</span><span class="b">1Y</span><span class="b">2Y</span><span class="b">All</span></div>
+            <span class="pick">Pick period ▾</span>
+          </div>
+          <div class="stack">
+            <div class="ghost"><span class="gt">Expenses by Category</span><span class="gh">Latest / Period ▾</span></div>
+            <div class="ghost"><span class="gt">Income by Category</span><span class="gh">Latest / Period ▾</span></div>
+            <div class="ghost"><span class="gt">Expense Trends</span><span class="gh">Top 5 categories ▾</span></div>
+            <div class="ghost"><span class="gt">Spending Heatmap</span><span class="gh">2026 ▾</span></div>
+          </div>
+          <div style="margin-top:12px;font-size:11.5px;color:var(--text-tertiary);line-height:1.5">
+            Four of these answer <i>"which months?"</i> in four different vocabularies. Nothing on screen says which one wins.</div>
+        </div>
+      </div>
+
+      <div class="pane">
+        <div class="plabel next"><span class="dot"></span>Proposed — one</div>
+        <div class="surface tight">
+          <div class="hdrow" style="margin-bottom:10px">
+            <span class="pick" style="background:var(--accent-soft);border-color:var(--accent-ring);color:var(--text-primary)">
+              <b style="font-weight:700">May 2026</b> · single month ▾</span>
+            <span style="font-size:11px;color:var(--text-tertiary);font-weight:600">← ⇧ → to step</span>
+          </div>
+          <div class="stack">
+            <div class="ghost"><span class="gt">Expenses by Category</span><span class="gh">May 2026</span></div>
+            <div class="ghost"><span class="gt">Income by Category</span><span class="gh">May 2026</span></div>
+            <div class="ghost"><span class="gt">Expense Trends</span><span class="gh">May 2026 <span style="color:var(--text-tertiary)">+ 12M context</span></span></div>
+            <div class="ghost"><span class="gt">Spending Heatmap</span><span class="gh">2026</span></div>
+          </div>
+          <div style="margin-top:12px;font-size:11.5px;color:var(--text-tertiary);line-height:1.5">
+            One picker that holds <i>either</i> a month <i>or</i> a range. Every card states the period it drew, so the answer is never off-screen. Cards that need history for context say so, instead of owning a second control.</div>
+        </div>
+      </div>
+    </div>
+    <p class="cost"><b>What it costs:</b> mostly deletion. <code>breakdownPeriodMonths()</code> already exists as the single answer to "which months" — this makes it the <i>only</i> answer and puts it in the header. The per-card toggles come out; each card gains a read-only period caption.</p>
+  </section>
+
+  <!-- ═══ 4 ═══════════════════════════════════════════════════ -->
+  <section class="principle">
+    <div class="pnum">04</div>
+    <h2 class="pname">The page should get shorter when nothing happened</h2>
+    <p class="pdiag">Every card renders at full height whether or not it has anything to report. A month where nothing moved looks exactly as busy as a month where you overspent by 40 %. <b>A card with no news should shrink to one line</b> — and earn its full size back the moment it has something to say.</p>
+
+    <div class="compare">
+      <div class="pane">
+        <div class="plabel now"><span class="dot"></span>Today — always full height</div>
+        <div class="surface tight">
+          <div class="stack">
+            <div class="ghost tall"><span class="gt">Subscriptions</span><span class="bars"><i style="height:40%"></i><i style="height:60%"></i><i style="height:35%"></i><i style="height:70%"></i><i style="height:50%"></i><i style="height:45%"></i></span></div>
+            <div class="ghost tall"><span class="gt">Expense Trends</span><span class="bars"><i style="height:55%"></i><i style="height:30%"></i><i style="height:80%"></i><i style="height:45%"></i><i style="height:65%"></i><i style="height:40%"></i></span></div>
+            <div class="ghost tall"><span class="gt">Spending Heatmap</span><span class="bars"><i style="height:25%"></i><i style="height:70%"></i><i style="height:40%"></i><i style="height:55%"></i><i style="height:35%"></i><i style="height:60%"></i></span></div>
+            <div class="ghost tall"><span class="gt">Income by Category</span><span class="bars"><i style="height:90%"></i><i style="height:20%"></i><i style="height:15%"></i></span></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pane">
+        <div class="plabel next"><span class="dot"></span>Proposed — news first, silence collapsed</div>
+        <div class="surface tight">
+          <div class="stack">
+            <div class="flagcard">
+              <div class="ftitle">Restaurant is running hot</div>
+              <div class="fbody"><b>324 €</b> against a usual <b>173 €</b> — 11 visits, up from 6. Two of them were over 60 €.</div>
+            </div>
+            <div class="flagcard">
+              <div class="ftitle">Spotify went up</div>
+              <div class="fbody">Charged <b>11,99 €</b> on 3 May, was <b>10,99 €</b>. That's <b>+12 €</b> a year.</div>
+            </div>
+            <div class="flagcard good">
+              <div class="ftitle">HBO Max has stopped charging</div>
+              <div class="fbody">Nothing since <b>2 February</b>, three cycles missed. <b>9,99 €/mo</b> is out of your monthly total.</div>
+            </div>
+            <div class="quiet">Income — as expected, 4 100 € from Job <span class="chev">▾</span></div>
+            <div class="quiet">Subscriptions — 5 active, 737 €/mo, nothing changed <span class="chev">▾</span></div>
+            <div class="quiet">Heatmap, trends and the full breakdown <span class="chev">▾</span></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cost"><b>What it costs:</b> a rule per card for "do I have news?" — a threshold on the deviation from 02, plus the <code>price_changed</code> and <code>stopped</code> flags <code>recurring.py</code> already emits. Collapsed cards keep their data loaded, so opening one is instant and nothing new is fetched.</p>
+  </section>
+
+  <!-- ═══ 5 ═══════════════════════════════════════════════════ -->
+  <section class="principle">
+    <div class="pnum">05</div>
+    <h2 class="pname">Colour is a judgement, not a category</h2>
+    <p class="pdiag">Green and red currently mean <i>income</i> and <i>expense</i> — a fact you already know from the label. That spends the loudest signal the interface has on the least surprising thing in it, and leaves nothing to mark the one number that actually deserves attention. The Trends page already got this right (<i>"a rising salary painted red reads as a warning about earning more"</i>). The Dashboard hasn't caught up.</p>
+
+    <div class="compare">
+      <div class="pane">
+        <div class="plabel now"><span class="dot"></span>Today — colour = kind</div>
+        <div class="surface">
+          <div class="card">
+            <div class="ctitle">May</div>
+            <div class="brow"><span class="bname">Income</span><span class="btrack"><i class="bfill" style="width:100%"></i></span><span class="bval inc">+4 100 €</span></div>
+            <div class="brow"><span class="bname">Expenses</span><span class="btrack"><i class="bfill warn" style="width:57%"></i></span><span class="bval exp">2 340 €</span></div>
+            <div class="brow"><span class="bname">Restaurant</span><span class="btrack"><i class="bfill warn" style="width:8%"></i></span><span class="bval exp">324 €</span></div>
+            <div class="brow"><span class="bname">Rent</span><span class="btrack"><i class="bfill warn" style="width:14%"></i></span><span class="bval exp">560 €</span></div>
+            <div class="legend">
+              <span class="chip"><i style="background:var(--green)"></i>income</span>
+              <span class="chip"><i style="background:var(--red)"></i>expense</span>
+            </div>
+            <div style="margin-top:10px;font-size:11.5px;color:var(--text-tertiary);line-height:1.5">
+              Rent — the one number that could not have been otherwise — is painted the same alarm colour as the one that doubled.</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="pane">
+        <div class="plabel next"><span class="dot"></span>Proposed — colour = surprise</div>
+        <div class="surface">
+          <div class="card">
+            <div class="ctitle">May</div>
+            <div class="brow"><span class="bname">Income</span><span class="btrack"><i class="bfill" style="width:100%;background:var(--text-quaternary)"></i></span><span class="bval neu">+4 100 €</span><span class="bdelta d flat">= usual</span></div>
+            <div class="brow"><span class="bname">Expenses</span><span class="btrack"><i class="bfill" style="width:57%;background:var(--text-quaternary)"></i></span><span class="bval neu">2 340 €</span><span class="bdelta d dn">−10%</span></div>
+            <div class="brow"><span class="bname">Restaurant</span><span class="btrack"><i class="bfill warn" style="width:8%"></i></span><span class="bval" style="color:var(--bad)">324 €</span><span class="bdelta d up">+87%</span></div>
+            <div class="brow"><span class="bname">Rent</span><span class="btrack"><i class="bfill" style="width:14%;background:var(--text-quaternary)"></i></span><span class="bval neu">560 €</span><span class="bdelta d flat">fixed</span></div>
+            <div class="legend">
+              <span class="chip"><i style="background:var(--text-quaternary)"></i>as expected</span>
+              <span class="chip"><i style="background:var(--red)"></i>worse than usual</span>
+              <span class="chip"><i style="background:var(--green)"></i>better than usual</span>
+            </div>
+            <div style="margin-top:10px;font-size:11.5px;color:var(--text-tertiary);line-height:1.5">
+              Grey is the default, and it is most of the page. Colour is scarce, so when it appears you look — and it is telling you something the label could not.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <p class="cost"><b>What it costs:</b> nothing new is computed — it re-points the palette the app already has. The <code>+ / −</code> sign and the label still carry income-vs-expense, so no information is lost when colour stops repeating it.</p>
+  </section>
+
+  <!-- ═══ 6 ═══════════════════════════════════════════════════ -->
+  <section class="principle">
+    <div class="pnum">06</div>
+    <h2 class="pname">Three depths, not one long scroll</h2>
+    <p class="pdiag">The Dashboard is six full-width cards in a column, each the same width and roughly the same weight, so reading it is a scroll through equals. But the three questions you actually bring to it are different sizes: <b>am I fine?</b> (two seconds), <b>what changed?</b> (a minute), <b>why?</b> (ten). Give each its own depth, and let the first one finish above the fold.</p>
+
+    <div class="compare">
+      <div class="pane">
+        <div class="plabel now"><span class="dot"></span>Today — one flat column</div>
+        <div class="surface tight">
+          <div class="stack">
+            <div class="ghost"><span class="gt">Summary cards ×5</span><span class="gh">equal</span></div>
+            <div class="ghost tall"><span class="gt">Monthly Overview</span><span class="gh">350px</span></div>
+            <div class="ghost tall"><span class="gt">Expenses by Category</span><span class="gh">full width</span></div>
+            <div class="ghost tall"><span class="gt">Income by Category</span><span class="gh">full width</span></div>
+            <div class="ghost tall"><span class="gt">Expense Trends</span><span class="gh">full width</span></div>
+            <div class="ghost tall"><span class="gt">Spending Heatmap</span><span class="gh">full width</span></div>
+            <div class="ghost tall"><span class="gt">Monthly Summary</span><span class="gh">full width</span></div>
+          </div>
+          <div style="margin-top:12px;font-size:11.5px;color:var(--text-tertiary);line-height:1.5">
+            Seven stops, no ranking. The heatmap — a thing you look at maybe monthly — occupies the same real estate as the number you came for.</div>
+        </div>
+      </div>
+
+      <div class="pane">
+        <div class="plabel next"><span class="dot"></span>Proposed — glance / scan / dig</div>
+        <div class="surface tight">
+          <div class="depth">Glance · above the fold</div>
+          <div class="stack">
+            <div class="ghost" style="border-color:var(--accent-ring);background:var(--accent-softer)">
+              <span class="gt" style="color:var(--text-primary);font-weight:660">Verdict + the one number + in / out / saved</span></div>
+          </div>
+          <div class="depth">Scan · what changed</div>
+          <div class="stack">
+            <div class="ghost"><span class="gt">2 flags worth reading</span><span class="gh">news only</span></div>
+            <div class="ghost"><span class="gt">Category deviation bars</span><span class="gh">sorted by surprise</span></div>
+            <div class="ghost tall"><span class="gt">Monthly Overview</span><span class="gh">12M context</span></div>
+          </div>
+          <div class="depth">Dig · on demand</div>
+          <div class="stack">
+            <div class="ghost"><span class="gt">Trends · Heatmap · Income breakdown</span><span class="gh">collapsed ▾</span></div>
+            <div class="ghost"><span class="gt">Monthly Summary table</span><span class="gh">collapsed ▾</span></div>
+          </div>
+          <div style="margin-top:12px;font-size:11.5px;color:var(--text-tertiary);line-height:1.5">
+            Same six cards, same endpoints — re-ranked by how often you need them, and how fast the answer has to arrive.</div>
+        </div>
+      </div>
+    </div>
+    <p class="cost"><b>What it costs:</b> a re-order of <code>.dashboard-grid</code> and a <code>&lt;details&gt;</code> wrapper on the bottom tier. The exploration cards keep every control they have — they just stop competing with the answer.</p>
+  </section>
+
+  <footer>
+    <b>The through-line:</b> Balance knows more than it says. Six of these changes are the app spending what it already computes — the median, the deviation, the <code>price_changed</code> flag, <code>breakdownPeriodMonths()</code> — on having a point of view instead of laying out evidence.<br><br>
+    Cheapest to most: <b>05</b> (palette re-point) · <b>06</b> (re-order + collapse) · <b>03</b> (delete five controls) · <b>01</b> (hero block) · <b>02</b> (one median column on the breakdown endpoint) · <b>04</b> (a news rule per card).<br><br>
+    Sample data throughout: May 2026 — 4 100 € in, 2 340 € out, 6-month median expense 2 610 €.
+  </footer>
+</div>
+</body>
+</html>

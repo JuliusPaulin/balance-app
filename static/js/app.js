@@ -488,7 +488,9 @@ async function loadCategories() {
     }));
     renderCategoryLists();
     renderMerchantRules();
-    buildCatFilterChips();
+    // The rail's category list comes from the facet counts, not from this
+    // array, so it is refreshed by loadFacets() rather than from here.
+    renderRailCategories();
 }
 
 function renderCategoryLists() {
@@ -873,10 +875,23 @@ async function deleteMerchantRule(id) {
     toast("Rule deleted");
 }
 
-// ── Search helpers ──────────────────────────────────────────────────
+// ── Search & the filter rail ────────────────────────────────────────
+// The filters live in a rail beside the table rather than a drawer above it,
+// so nothing opens, nothing closes, and the table never moves under you. Each
+// value carries the count it would give — see /api/transactions/facets.
 let searchDebounce = null;
-let advancedOpen = false;
 let selectedCatIds = new Set();
+let selectedMonths = new Set();
+let selectedType   = "";           // "" | "expense" | "income"
+let periodGrain    = "month";      // "month" | "year"
+let facets         = { categories: [], types: [], months: [] };
+let railMore       = { period: false, cat: false };
+// Sorting used to live in two dropdowns inside the drawer while the table
+// headers already sorted on click. The headers won; this is where the state
+// they were duplicating now lives.
+let txSort = { col: "date", dir: "desc" };
+
+const RAIL_COLLAPSED = 6;          // values shown before "Show N more"
 
 function debounceSearch() {
     clearTimeout(searchDebounce);
@@ -892,60 +907,231 @@ function clearSearch() {
     loadTransactions();
 }
 
-function toggleAdvancedSearch() {
-    advancedOpen = !advancedOpen;
-    document.getElementById("advanced-search").style.display = advancedOpen ? "block" : "none";
+// Any rail control: reset to page 1 and reload. The counts move too, because
+// a count that ignored the other filters would be telling you about a list
+// you are not looking at.
+function onRailFilterChange() {
+    currentPage = 1;
+    loadTransactions();
 }
 
-// The button used to light up while the drawer was open, which told the user
-// something they could already see. What they cannot see is a filter still
-// applied under a closed drawer, so it reports that instead: how many of the
-// hidden filters are narrowing the list.
-function updateFilterButton(active) {
-    const btn   = document.getElementById("toggle-advanced-btn");
-    const count = document.getElementById("filter-count");
-    if (!btn) return;
-    btn.classList.toggle("active-filter", active > 0);
-    if (count) count.textContent = active ? ` · ${active}` : "";
-    btn.title = active
-        ? `${active} filter${active !== 1 ? "s" : ""} narrowing this list`
-        : "Filter by date, amount or category";
+// On a narrow window the rail sits above the table and starts shut, so the
+// Filters button still has a job there. On a wide one the rail is always
+// visible and the button is hidden by CSS.
+function toggleRail() {
+    document.getElementById("tx-rail").classList.toggle("open");
 }
 
-function buildCatFilterChips() {
-    const wrap = document.getElementById("cat-filter-wrap");
-    if (!wrap) return;
-    const expenseCats = categories.filter(c => c.type === "expense");
-    const incomeCats  = categories.filter(c => c.type === "income");
-    const all = [...expenseCats, ...incomeCats];
-    wrap.innerHTML = all.map(c => `
-        <button class="cat-chip ${selectedCatIds.has(c.id) ? "selected" : ""}"
-                onclick="toggleCatFilter(${c.id})">${escapeHtml(c.name)}</button>
-    `).join("");
+function toggleRailMore(which) {
+    railMore[which] = !railMore[which];
+    if (which === "cat") renderRailCategories(); else renderRailPeriods();
+}
+
+function setPeriodGrain(grain) {
+    periodGrain = grain;
+    selectedMonths.clear();
+    document.querySelectorAll(".rail-grain-btn").forEach(b =>
+        b.classList.toggle("active", b.dataset.grain === grain));
+    onRailFilterChange();
+}
+
+function toggleMonthFilter(key) {
+    if (selectedMonths.has(key)) selectedMonths.delete(key);
+    else selectedMonths.add(key);
+    onRailFilterChange();
+}
+
+function setTypeFilter(type) {
+    selectedType = selectedType === type ? "" : type;
+    onRailFilterChange();
 }
 
 function toggleCatFilter(id) {
     if (selectedCatIds.has(id)) selectedCatIds.delete(id);
     else selectedCatIds.add(id);
-    buildCatFilterChips();
-    currentPage = 1;
-    loadTransactions();
+    onRailFilterChange();
+}
+
+function clearPeriodFilter() {
+    selectedMonths.clear();
+    document.getElementById("search-date-from").value = "";
+    document.getElementById("search-date-to").value = "";
+    readDateFilter("search-date-from");
+    readDateFilter("search-date-to");
+    onRailFilterChange();
+}
+
+function clearCatFilter() {
+    selectedCatIds.clear();
+    onRailFilterChange();
+}
+
+function clearAmountFilter() {
+    document.getElementById("search-amt-min").value = "";
+    document.getElementById("search-amt-max").value = "";
+    onRailFilterChange();
 }
 
 function resetSearch() {
     document.getElementById("search-q").value = "";
-    document.getElementById("filter-type").value = "";
+    document.getElementById("search-clear").style.display = "none";
     document.getElementById("search-date-from").value = "";
     document.getElementById("search-date-to").value = "";
     document.getElementById("search-amt-min").value = "";
     document.getElementById("search-amt-max").value = "";
-    document.getElementById("search-sort").value = "date";
-    document.getElementById("search-dir").value = "desc";
-    document.getElementById("search-clear").style.display = "none";
+    document.getElementById("rail-cat-search").value = "";
+    readDateFilter("search-date-from");
+    readDateFilter("search-date-to");
     selectedCatIds.clear();
-    buildCatFilterChips();
-    currentPage = 1;
-    loadTransactions();
+    selectedMonths.clear();
+    selectedType = "";
+    onRailFilterChange();
+}
+
+// ── The rail's own rendering ────────────────────────────────────────
+// A month key is "2026-07" and a year key is "2026"; the same set holds both
+// because the grain decides which the rail is offering.
+function monthsToPeriods() {
+    if (periodGrain === "month") {
+        const rows = withSelected(facets.months, selectedMonths, m => m.month,
+                                  key => ({ month: key, n: 0 }));
+        return rows.sort((a, b) => b.month.localeCompare(a.month))
+            .map(m => ({ key: m.month, label: fmtMonthLabel(m.month), n: m.n }));
+    }
+    const byYear = new Map();
+    facets.months.forEach(m => {
+        const y = m.month.slice(0, 4);
+        byYear.set(y, (byYear.get(y) || 0) + m.n);
+    });
+    selectedMonths.forEach(y => { if (!byYear.has(y)) byYear.set(y, 0); });
+    return [...byYear.entries()].sort((a, b) => b[0].localeCompare(a[0]))
+        .map(([y, n]) => ({ key: y, label: y, n }));
+}
+
+function fmtMonthLabel(key) {
+    const [y, m] = key.split("-");
+    const names = ["Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                   "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+    return `${names[parseInt(m, 10) - 1]} ${y}`;
+}
+
+// One row of the rail. `sel` drives both the tick and the weight, so a chosen
+// value reads as chosen without relying on the tick alone.
+function railItem({ key, label, n, sel, max, onclick, box = true }) {
+    const share = max > 0 ? Math.max(3, Math.round((n / max) * 34)) : 0;
+    // A value that would return nothing under the filters already on is a
+    // dead click. It stays on the list — vanishing options are worse — but
+    // says so rather than looking like the others.
+    const dead = n === 0 && !sel ? " empty" : "";
+    return `<button class="rail-item ${sel ? "sel" : ""}${dead}" onclick="${onclick}" title="${escapeHtml(label)} — ${n} transaction${n !== 1 ? "s" : ""}">
+        ${box ? `<span class="rail-box"></span>` : ""}
+        <span class="rail-name">${escapeHtml(label)}</span>
+        <span class="rail-bar" style="width:${share}px"></span>
+        <span class="rail-n">${n.toLocaleString()}</span>
+    </button>`;
+}
+
+function renderRailPeriods() {
+    const el = document.getElementById("rail-periods");
+    if (!el) return;
+    const all  = monthsToPeriods();
+    const max  = Math.max(1, ...all.map(p => p.n));
+    const show = railMore.period
+        ? all
+        : collapseKeeping(all, p => selectedMonths.has(p.key), RAIL_COLLAPSED);
+    el.innerHTML = show.map(p => railItem({
+        ...p, sel: selectedMonths.has(p.key), max,
+        onclick: `toggleMonthFilter('${p.key}')`,
+    })).join("") || `<div class="rail-empty">Nothing in range</div>`;
+    renderRailMoreBtn("rail-period-more", all.length - show.length, "period");
+}
+
+// The collapsed rail shows the first few values — but never at the cost of
+// hiding one you have selected. Original order is kept rather than floating
+// the selected ones to the top, so the list does not reshuffle under the
+// cursor every time you tick something.
+function collapseKeeping(all, isSel, limit) {
+    const sel  = all.filter(isSel);
+    const rest = all.filter(x => !isSel(x)).slice(0, Math.max(0, limit - sel.length));
+    const keep = new Set([...sel, ...rest]);
+    return all.filter(x => keep.has(x));
+}
+
+// A value you have selected has to stay on its list even when the other
+// filters have taken it to zero. The facet query groups over rows that exist,
+// so a category with nothing left simply is not in the result — and the rail
+// would then show no sign of a filter it is applying. Put it back at zero.
+function withSelected(rows, selected, keyOf, make) {
+    const present = new Set(rows.map(keyOf));
+    const missing = [...selected].filter(k => !present.has(k)).map(make).filter(Boolean);
+    return [...rows, ...missing];
+}
+
+function renderRailCategories() {
+    const el = document.getElementById("rail-categories");
+    if (!el) return;
+    const term = (document.getElementById("rail-cat-search")?.value || "").toLowerCase().trim();
+    const rows = withSelected(facets.categories, selectedCatIds, c => c.id, id => {
+        const c = categories.find(x => x.id === id);
+        return c ? { id: c.id, name: c.name, type: c.type, n: 0 } : null;
+    });
+    // A category you have picked also stays visible through a search that no
+    // longer matches it — otherwise the filter vanishes mid-typing.
+    const all = rows.filter(c =>
+        selectedCatIds.has(c.id) || !term || c.name.toLowerCase().includes(term));
+    const max  = Math.max(1, ...all.map(c => c.n));
+    const show = (railMore.cat || term)
+        ? all
+        : collapseKeeping(all, c => selectedCatIds.has(c.id), RAIL_COLLAPSED);
+    el.innerHTML = show.map(c => railItem({
+        key: c.id, label: c.name, n: c.n, sel: selectedCatIds.has(c.id), max,
+        onclick: `toggleCatFilter(${c.id})`,
+    })).join("") || `<div class="rail-empty">No category matches</div>`;
+    renderRailMoreBtn("rail-cat-more", term ? 0 : all.length - show.length, "cat");
+}
+
+function renderRailTypes() {
+    const el = document.getElementById("rail-types");
+    if (!el) return;
+    const max = Math.max(1, ...facets.types.map(t => t.n));
+    const label = { expense: "Expenses", income: "Income" };
+    el.innerHTML = ["expense", "income"].map(t => {
+        const row = facets.types.find(x => x.type === t) || { n: 0 };
+        return railItem({
+            key: t, label: label[t], n: row.n, sel: selectedType === t, max,
+            onclick: `setTypeFilter('${t}')`,
+        });
+    }).join("");
+}
+
+function renderRailMoreBtn(id, hidden, which) {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    if (hidden <= 0 && !railMore[which]) { btn.style.display = "none"; return; }
+    btn.style.display = "block";
+    btn.textContent = railMore[which] ? "Show fewer" : `Show ${hidden} more…`;
+}
+
+function renderRail() {
+    renderRailPeriods();
+    renderRailTypes();
+    renderRailCategories();
+}
+
+// The tokens say what is narrowing the list in words, above the table. The
+// rail already shows it, but on a narrow window the rail is shut — and a
+// filter you cannot see is the fault this whole page is fixing.
+function renderFilterTokens(active) {
+    const el = document.getElementById("tx-tokens");
+    if (!el) return;
+    el.innerHTML = active.map(t =>
+        `<span class="tx-token">${escapeHtml(t.label)}<button class="tx-token-x" onclick="${t.clear}" title="Remove this filter">×</button></span>`
+    ).join("");
+    el.style.display = active.length ? "flex" : "none";
+    const clearBtn = document.getElementById("tx-clear-all");
+    if (clearBtn) clearBtn.style.display = active.length ? "block" : "none";
+    const count = document.getElementById("filter-count");
+    if (count) count.textContent = active.length ? ` · ${active.length}` : "";
 }
 
 // ── Transactions ────────────────────────────────────────────────────
@@ -965,40 +1151,104 @@ function readDateFilter(id) {
     return iso;
 }
 
-async function loadTransactions() {
-    const type     = document.getElementById("filter-type")?.value || "";
-    const q        = document.getElementById("search-q")?.value.trim() || "";
+// Every filter on the page, as query params. One builder, used for the list
+// and for the facet counts, so the counts can never describe a different
+// filter than the table under them.
+function txFilterParams() {
+    const p = new URLSearchParams();
+    const q = document.getElementById("search-q")?.value.trim() || "";
     const dateFrom = readDateFilter("search-date-from");
     const dateTo   = readDateFilter("search-date-to");
     const amtMin   = document.getElementById("search-amt-min")?.value || "";
     const amtMax   = document.getElementById("search-amt-max")?.value || "";
-    const sort     = document.getElementById("search-sort")?.value || "date";
-    const dir      = document.getElementById("search-dir")?.value || "desc";
 
-    let url = `/api/transactions?page=${currentPage}&per_page=50`;
-    if (type) url += `&type=${type}`;
-    if (q) url += `&q=${encodeURIComponent(q)}`;
-    if (dateFrom) url += `&date_from=${dateFrom}`;
-    if (dateTo) url += `&date_to=${dateTo}`;
-    if (amtMin) url += `&amount_min=${amtMin}`;
-    if (amtMax) url += `&amount_max=${amtMax}`;
-    if (selectedCatIds.size) url += `&category_ids=${[...selectedCatIds].join(",")}`;
-    if (sort) url += `&sort=${sort}&dir=${dir}`;
+    if (selectedType) p.set("type", selectedType);
+    if (q) p.set("q", q);
+    if (dateFrom) p.set("date_from", dateFrom);
+    if (dateTo) p.set("date_to", dateTo);
+    if (amtMin) p.set("amount_min", amtMin);
+    if (amtMax) p.set("amount_max", amtMax);
+    if (selectedCatIds.size) p.set("category_ids", [...selectedCatIds].join(","));
+    if (selectedMonths.size) {
+        // A year in the rail is every month it covers — the endpoint only
+        // knows about months, and teaching it about years would put the same
+        // calendar logic in two places.
+        const months = periodGrain === "year"
+            ? facets.months.map(m => m.month).filter(m => selectedMonths.has(m.slice(0, 4)))
+            : [...selectedMonths];
+        if (months.length) p.set("months", months.join(","));
+    }
+    return p;
+}
 
-    // Only the filters that live behind the drawer count — the search box and
-    // the type dropdown stay on screen and speak for themselves.
-    updateFilterButton([dateFrom, dateTo, amtMin, amtMax,
-                        selectedCatIds.size ? "y" : ""].filter(Boolean).length);
+// What is narrowing the list right now, in words, each with the call that
+// takes it off again.
+function activeFilterTokens() {
+    const out = [];
+    const dateFrom = document.getElementById("search-date-from")?.value.trim();
+    const dateTo   = document.getElementById("search-date-to")?.value.trim();
+    const amtMin   = document.getElementById("search-amt-min")?.value;
+    const amtMax   = document.getElementById("search-amt-max")?.value;
 
-    const data = await api(url);
+    if (selectedType) {
+        out.push({ label: selectedType === "income" ? "Income" : "Expenses",
+                   clear: `setTypeFilter('${selectedType}')` });
+    }
+    if (selectedMonths.size) {
+        const list = [...selectedMonths].sort();
+        const label = list.length === 1
+            ? (periodGrain === "year" ? list[0] : fmtMonthLabel(list[0]))
+            : `${list.length} periods`;
+        out.push({ label, clear: "clearPeriodFilter()" });
+    }
+    if (dateFrom || dateTo) {
+        out.push({ label: `${dateFrom || "…"} – ${dateTo || "…"}`, clear: "clearPeriodFilter()" });
+    }
+    selectedCatIds.forEach(id => {
+        const c = categories.find(x => x.id === id)
+               || facets.categories.find(x => x.id === id);
+        if (c) out.push({ label: c.name, clear: `toggleCatFilter(${id})` });
+    });
+    if (amtMin || amtMax) {
+        out.push({ label: `${amtMin ? fmt(amtMin) : "0 €"} – ${amtMax ? fmt(amtMax) : "any"}`,
+                   clear: "clearAmountFilter()" });
+    }
+    return out;
+}
+
+// The counts move with the filters, so they are refetched alongside the list.
+// A failure here must not take the table down with it: the rail keeps its last
+// counts and the list still loads.
+async function loadFacets() {
+    try {
+        facets = await api(`/api/transactions/facets?${txFilterParams()}`);
+    } catch (e) {
+        return;
+    }
+    renderRail();
+}
+
+async function loadTransactions() {
+    const params = txFilterParams();
+    params.set("page", currentPage);
+    params.set("per_page", 50);
+    params.set("sort", txSort.col);
+    params.set("dir", txSort.dir);
+
+    renderFilterTokens(activeFilterTokens());
+
+    const data = await api(`/api/transactions?${params}`);
     const tbody = document.getElementById("transactions-body");
+    loadFacets();
 
     const countEl = document.getElementById("search-count");
     if (countEl) {
-        // Answer "how much?" for the current filter, not just "how many".
-        countEl.textContent = data.total
-            ? `${data.total.toLocaleString()} result${data.total !== 1 ? "s" : ""} · −${fmt(data.sum_expense)} / +${fmt(data.sum_income)}`
-            : "";
+        // Answer "how much?" for the current filter, not just "how many" —
+        // and at a size that matches how much that is worth knowing.
+        countEl.innerHTML = data.total
+            ? `<span class="tx-result-n">${data.total.toLocaleString()} transaction${data.total !== 1 ? "s" : ""}</span>
+               <span class="tx-result-money"><span class="out">−${fmt(data.sum_expense)}</span> out · <span class="in">+${fmt(data.sum_income)}</span> in</span>`
+            : `<span class="tx-result-n">Nothing matches</span>`;
     }
 
     if (data.items.length === 0) {
@@ -1135,22 +1385,17 @@ async function deleteTransaction(id) {
 }
 
 function sortTxCol(col) {
-    const sortEl = document.getElementById("search-sort");
-    const dirEl  = document.getElementById("search-dir");
-    if (!sortEl || !dirEl) return;
-    if (sortEl.value === col) {
-        dirEl.value = dirEl.value === "asc" ? "desc" : "asc";
+    if (txSort.col === col) {
+        txSort.dir = txSort.dir === "asc" ? "desc" : "asc";
     } else {
-        sortEl.value = col;
-        dirEl.value = "desc";
+        txSort = { col, dir: "desc" };
     }
     currentPage = 1;
     loadTransactions();
 }
 
 function updateTxSortIcons() {
-    const col = document.getElementById("search-sort")?.value || "date";
-    const dir = document.getElementById("search-dir")?.value || "desc";
+    const { col, dir } = txSort;
     document.querySelectorAll(".tx-th[data-col]").forEach(th => {
         const c    = th.dataset.col;
         const icon = th.querySelector(".sort-icon");
@@ -2665,7 +2910,10 @@ function renderBreakdownBars(containerId, breakdown, type) {
         return;
     }
     const total = breakdown.items.reduce((s, i) => s + i.total, 0);
-    const max   = breakdown.items[0].total;
+    // The track has to hold the baseline tick as well as the bar, so it is
+    // scaled by whichever is larger. Scaling by the bars alone would push a
+    // tick for an over-median month clean off the end of its own track.
+    const max = Math.max(...breakdown.items.map(i => Math.max(i.total, i.median || 0)));
     // One quiet bar color; the category's identity color lives in the label
     // dot (design #8). Bars keep a minimum width so tail rows stay visible.
     const fill = rgbaVar(type === "income" ? "--green" : "--accent", 0.55);
@@ -2675,12 +2923,65 @@ function renderBreakdownBars(containerId, breakdown, type) {
         // Match the type as well as the name — "Other" and "Investments" exist
         // on both sides, and the wrong id would drill into the wrong category.
         const catId = categories.find(c => c.name === item.name && c.type === type)?.id ?? "";
+        const { tick, delta, hot } = baselineMarks(item, max, type);
         return `<div class="cat-bar-row" style="cursor:pointer" onclick="openCategoryDrilldown(${catId},'${item.name.replace(/'/g,"\\'")}')">
             <div class="cat-bar-label"><span class="cat-dot" style="background:${catDotColor(catId)}"></span>${item.name}</div>
-            <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${width}%;background:${fill}"></div></div>
-            <div class="cat-bar-amount">${fmt(item.total)} <span class="cat-bar-pct-inline">· ${pct}%</span></div>
+            <div class="cat-bar-track"><div class="cat-bar-fill${hot ? " over" : ""}" style="width:${width}%${hot ? "" : `;background:${fill}`}"></div>${tick}</div>
+            <div class="cat-bar-amount">${fmt(item.total)} <span class="cat-bar-pct-inline">· ${pct}%</span>${delta}</div>
         </div>`;
     }).join("");
+}
+
+// How far off its median a category has to land before the card says anything
+// (QUIET_BAND), and before the bar itself takes the warning colour
+// (OUTLIER_BAND). Real spending swings; the bands are wide on purpose.
+const QUIET_BAND = 0.25;
+const OUTLIER_BAND = 0.50;
+
+// "Normal" for a category, drawn on the same track as the month itself: a tick
+// where the median sits, and how far this month lands from it. The endpoint
+// sends a median only for a single month — over a longer period `median` is
+// null and every one of these comes back empty, so the bars draw as they did
+// before any of this existed.
+function baselineMarks(item, max, type) {
+    const empty = { tick: "", delta: "", hot: false };
+    if (item.median == null) return empty;
+
+    // A category that never moves has no news in it; saying "0%" beside rent
+    // every month teaches the eye to skip the column that carries the news.
+    if (item.fixed) return { ...empty, delta: `<span class="cat-bar-delta flat">fixed</span>` };
+
+    // No usual to be off. Reporting a share of zero would be a divide by
+    // nothing dressed up as a percentage.
+    if (item.median === 0) {
+        return { ...empty, delta: `<span class="cat-bar-delta flat" title="Nothing in this category in the six months before">unusual</span>` };
+    }
+
+    const ratio  = item.total / item.median;
+    const change = ratio - 1;
+    // A quarter either way is ordinary month-to-month movement, not a story.
+    // It still gets a tick — seeing the month land near its own median is the
+    // point — but no number. A tenth, which this used to be, painted most of
+    // a real card red and taught the eye to ignore the colour.
+    const quiet = Math.abs(change) < QUIET_BAND;
+    // Up is bad on spending and good on income. The Trends page already knows
+    // this; a rising salary painted red reads as a warning about earning more.
+    const good = type === "income" ? change > 0 : change < 0;
+    const tone = quiet ? "flat" : good ? "down" : "up";
+    // Past a few times over, a percentage stops being readable — "+3726%" is
+    // a category you barely ever buy, not a number anyone reads. Say it as a
+    // multiple, which is both shorter and how you'd say it out loud.
+    const text = quiet ? "as usual"
+        : ratio >= 4 ? `${Math.round(ratio)}× usual`
+        : `${change > 0 ? "+" : ""}${Math.round(change * 100)}%`;
+
+    return {
+        tick: `<span class="cat-bar-tick" style="left:${Math.min(100, (item.median / max) * 100).toFixed(1)}%" title="Usual: ${fmt(item.median)}"></span>`,
+        delta: `<span class="cat-bar-delta ${tone}" title="Usual: ${fmt(item.median)} a month">${text}</span>`,
+        // The bar itself only turns colour for a real outlier. Half the card
+        // in red says nothing; two rows in red is the card doing its job.
+        hot: !good && change >= OUTLIER_BAND,
+    };
 }
 
 async function openCategoryDrilldown(catId, catName) {

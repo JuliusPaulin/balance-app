@@ -86,7 +86,7 @@ through `db`: `db.IntegrityError`, `db.DatabaseError`, `db.Json(...)`,
 
 ## Tests
 
-`python3 -m pytest tests/` — 140 tests, all green.
+`python3 -m pytest tests/` — 153 tests, all green.
 
 `conftest.py` points `SQLITE_PATH` at a throwaway file **at import time**, before
 pytest collects any test module. This matters: test modules `import config` /
@@ -127,6 +127,40 @@ test a category the app never uses), and `add_tx()` posts a transaction.
 - CRUD: create, read, update, delete
 - Filters: by month, category, type, store (search), date range, amount range
 - `GET /api/transactions` query params: `month`, `months` (comma-separated), `category_ids`, `type`, `q`, `date_from`, `date_to`, `amount_min`, `amount_max`, `sort`, `dir`, `page`, `per_page`
+
+**The filters live in a rail beside the table, not a drawer above it.** The
+drawer pushed the list off screen at the moment you were filtering it, hid
+what it was doing once shut, and held 34 category chips in a six-row wall with
+no search, no counts and no order you would guess. The rail is always there,
+so nothing opens, nothing closes, and the table never moves.
+
+- **Every value carries the count it would give** — `GET
+  /api/transactions/facets`, which takes the same query params as the list.
+  That is what makes the rail worth the width: "Groceries 793" is a read on
+  the spending as well as a control, and a dead end can say so.
+- **A facet ignores its own filter and honours every other.** Picking
+  Groceries must not collapse the category counts to Groceries alone — you
+  still need to see what adding Lunch would give — but the *type* counts do
+  narrow, because that filter is not theirs. `_filter_clauses(args, uid,
+  omit=…)` in `routes/transactions.py` is the single WHERE builder for both
+  the list and the counts, so the counts can never describe a different
+  filter than the table under them. `omit="period"` covers `month`, `months`
+  and the date range together — the rail shows them as one section and each
+  undoes the others.
+- **A selected value never disappears.** The facet query groups over rows
+  that exist, so a category the other filters have taken to zero is simply
+  absent from the result — and the rail would then show no sign of a filter
+  it is applying. `withSelected()` puts it back at 0, and `collapseKeeping()`
+  makes sure the "Show N more" cut never hides it either.
+- Categories come back **most-used first**. Alphabetical order buried the five
+  categories you live in under the twenty-nine you touch twice a year.
+- **Sorting belongs to the table headers.** The old "Sort by" and "Direction"
+  dropdowns duplicated headers that already sorted on click and already drew
+  the direction arrow; they are gone and the state lives in `txSort`.
+- Applied filters also render as **removable tokens above the table**, because
+  at ≤1024px the rail stacks below the list and starts shut — and a filter you
+  cannot see is the fault the whole page exists to fix.
+- Mockups for the four directions considered: `docs/mockups/tx-filters/`.
 
 ### Categories
 - CRUD with reassignment of transactions on delete
@@ -288,6 +322,35 @@ Expense Trends → Spending Heatmap → Monthly Summary.
   the reason `loadDashboard()` now waits for the monthly rows before asking for
   the breakdown. Category lookup matches on **name and type** — "Other" and
   "Investments" exist on both sides.
+  - **Each bar carries its own baseline.** A tick on the track marks that
+    category's **median month** over the six months *before* the one on
+    screen, and the right-hand column says how far this month landed from it.
+    A number alone ("Groceries 612 €") is a fact waiting for a comparison;
+    the app is the only thing in the room that knows whether that is a lot.
+    - The judged month stays **out of its own baseline**, so "usual" means
+      what it says. A **median**, not a mean — one holiday should not get to
+      redefine normal.
+    - A month where a category saw nothing counts as **0**, not as missing.
+      Something you buy twice a year is unusual every time, and dropping the
+      empty months would report it as routine.
+    - **Only a single month gets a baseline.** A twelve-month sum has no
+      monthly normal to stand beside, so `median` comes back `null` over a
+      period and the bars draw exactly as they did before. The "Latest month"
+      scope asks as `?months=<one month>`, so that path is covered too.
+    - Under **three months of history** there is no honest baseline and the
+      endpoint sends none — better than calling your second recorded month a
+      300% overspend.
+    - `fixed` marks a category that does not move *and* has not moved this
+      month (rent, insurance). Saying "0% off normal" beside rent every month
+      teaches the eye to skip the column carrying the news. A flat category
+      that **jumps** loses the flag and reports the jump — that is the loudest
+      thing on the card.
+    - Two bands in `app.js`, both wide on purpose: `QUIET_BAND` (25%) is
+      ordinary movement and reads "as usual"; only past `OUTLIER_BAND` (50%)
+      does the **bar itself** turn red. At 10% most of a real card went red
+      and the colour stopped meaning anything. Past 4× the median a
+      percentage is unreadable — "38× usual" beats "+3726%".
+    - Polarity follows Trends: over is **red on spending, green on income**.
   - **Clicking a bar** opens a drill-down modal: all transactions for that category in the same period, sorted largest → smallest
 - **Monthly Summary** — clicking any row (monthly or yearly view) opens every
   transaction in that month, income and expense, newest first. The note button
@@ -415,12 +478,17 @@ PUT/DELETE /api/merchant-rules/<id>
 GET/POST   /api/transactions          ?month, months, category_ids, type, q,
 PUT/DELETE /api/transactions/<id>      date_from, date_to, amount_min, amount_max,
                                        sort, dir, page, per_page
+GET        /api/transactions/facets   same params → per-value counts for the
+                                       filter rail (categories, types, months);
+                                       each facet omits its own filter
 
 GET        /api/dashboard/monthly-summary
 GET        /api/dashboard/top-expenses
 GET        /api/dashboard/category-trends
 GET        /api/dashboard/category-breakdown   ?month, months, year, type
                                                (type = expense | income; default expense)
+                                               single month → each item also carries
+                                               `median` (the 6 months before) + `fixed`
 GET        /api/dashboard/heatmap          ?year
 
 GET        /api/reports/annual

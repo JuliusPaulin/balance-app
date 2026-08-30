@@ -189,3 +189,99 @@ def test_paging(client, login, make_user):
     assert len(page1["items"]) == len(page2["items"]) == 2
     assert page2["page"] == 2
     assert not set(stores(page1)) & set(stores(page2))
+
+
+# ── Facet counts (the filter rail) ──────────────────────────────────
+# The rail beside the list shows, against every filter value, the number of
+# rows it would give. The rule that makes it honest: a facet's counts apply
+# every OTHER filter but not its own, because they answer "what would I get
+# if I clicked this" — counting with its own selection applied would report
+# the list you are already looking at.
+def _facets(client, query=""):
+    return client.get("/api/transactions/facets" + query).get_json()
+
+
+def _seed_facets(client):
+    groceries = cat_id(client, "Groceries")
+    lunch     = cat_id(client, "Lunch")
+    job       = cat_id(client, "Job", "income")
+    add_tx(client, "2026-01-10", "Lidl",     groceries,  20.0)
+    add_tx(client, "2026-01-20", "K-Market", groceries,  30.0)
+    add_tx(client, "2026-02-10", "Lidl",     groceries,  25.0)
+    add_tx(client, "2026-02-11", "Fafa's",   lunch,      10.0)
+    add_tx(client, "2026-02-25", "Employer", job,      3000.0, "income")
+    return groceries, lunch, job
+
+
+def test_facets_count_every_value(client, login, make_user):
+    make_user()
+    _seed_facets(client)
+    got = _facets(client)
+
+    assert {c["name"]: c["n"] for c in got["categories"]} == {
+        "Groceries": 3, "Lunch": 1, "Job": 1}
+    assert {t["type"]: t["n"] for t in got["types"]} == {"expense": 4, "income": 1}
+    assert {m["month"]: m["n"] for m in got["months"]} == {"2026-01": 2, "2026-02": 3}
+
+
+def test_categories_come_back_most_used_first(client, login, make_user):
+    """The rail is meant to be scanned. Alphabetical order would bury the
+    categories you live in under the ones you touch twice a year."""
+    make_user()
+    _seed_facets(client)
+    got = _facets(client)
+    assert [c["name"] for c in got["categories"]][0] == "Groceries"
+    assert [c["n"] for c in got["categories"]] == sorted(
+        [c["n"] for c in got["categories"]], reverse=True)
+
+
+def test_a_facet_ignores_its_own_filter(client, login, make_user):
+    """Picking Groceries must not collapse the category counts to Groceries
+    alone — you still need to see what adding Lunch would give."""
+    make_user()
+    groceries, lunch, _ = _seed_facets(client)
+    got = _facets(client, f"?category_ids={groceries}")
+
+    counts = {c["name"]: c["n"] for c in got["categories"]}
+    assert counts["Groceries"] == 3
+    assert counts["Lunch"] == 1          # unchanged by the category filter
+
+
+def test_a_facet_honours_every_other_filter(client, login, make_user):
+    """The type counts DO narrow under a category filter — that one is not
+    their own, so it applies."""
+    make_user()
+    groceries, _, _ = _seed_facets(client)
+    got = _facets(client, f"?category_ids={groceries}")
+
+    assert {t["type"]: t["n"] for t in got["types"]} == {"expense": 3}
+    assert {m["month"]: m["n"] for m in got["months"]} == {"2026-01": 2, "2026-02": 1}
+
+
+def test_period_covers_months_and_the_date_range_together(client, login, make_user):
+    """The rail shows month picks and the date boxes as one section, and each
+    undoes the other, so the month counts drop both."""
+    make_user()
+    _seed_facets(client)
+    got = _facets(client, "?months=2026-01&date_from=2026-02-01")
+
+    # Neither the month pick nor the range narrows the month counts...
+    assert {m["month"]: m["n"] for m in got["months"]} == {"2026-01": 2, "2026-02": 3}
+    # ...but both still narrow the list itself.
+    listed = client.get("/api/transactions?months=2026-01&date_from=2026-02-01").get_json()
+    assert listed["total"] == 0
+
+
+def test_facets_narrow_under_the_search_box(client, login, make_user):
+    make_user()
+    _seed_facets(client)
+    got = _facets(client, "?q=lidl")
+    assert {c["name"]: c["n"] for c in got["categories"]} == {"Groceries": 2}
+
+
+def test_facets_are_scoped_to_the_user(client, login, make_user):
+    make_user()
+    _seed_facets(client)
+    assert sum(c["n"] for c in _facets(client)["categories"]) == 5
+    make_user()                                    # fresh user, same client
+    assert _facets(client)["categories"] == []

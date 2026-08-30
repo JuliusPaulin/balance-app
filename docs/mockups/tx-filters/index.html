@@ -1,0 +1,489 @@
+<!DOCTYPE html>
+<html lang="en" data-theme="light">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Transactions filter — four ways</title>
+<style>
+:root{
+  color-scheme:light;
+  --bg:#ffffff; --bg-secondary:#f6f7f9; --bg-tertiary:#f0f2f5;
+  --text-primary:#0d1320; --text-secondary:#5e6678; --text-tertiary:#9aa1b1; --text-quaternary:#b6bcc9;
+  --accent:#00a06b; --on-accent:#fff; --green:#00a06b; --red:#e0445b;
+  --accent-soft:rgba(0,160,107,0.08); --accent-softer:rgba(0,160,107,0.04); --accent-ring:rgba(0,160,107,0.18);
+  --separator:#e6e9ee; --border:#e6e9ee; --row-stripe:#f6f7f9;
+  --shadow-card:0 1px 2px rgba(16,24,40,.04),0 6px 18px rgba(16,24,40,.05);
+  --shadow-pop:0 12px 32px rgba(16,24,40,.14),0 2px 6px rgba(16,24,40,.06);
+  --radius-xs:6px; --radius-sm:8px; --radius:12px; --radius-lg:16px;
+  --font:-apple-system,BlinkMacSystemFont,'SF Pro Display','SF Pro Text','Helvetica Neue',Arial,sans-serif;
+  --mono:ui-monospace,SFMono-Regular,'SF Mono',Menlo,monospace;
+}
+:root[data-theme="dark"]{
+  color-scheme:dark;
+  --bg:#121722; --bg-secondary:#0b0e14; --bg-tertiary:#171d2a;
+  --text-primary:#e7ebf2; --text-secondary:#8a93a6; --text-tertiary:#5d6677; --text-quaternary:#454d5e;
+  --accent:#00e599; --on-accent:#04231a; --green:#00e599; --red:#ff5c72;
+  --accent-soft:rgba(0,229,153,.10); --accent-softer:rgba(0,229,153,.05); --accent-ring:rgba(0,229,153,.22);
+  --separator:#212938; --border:#212938; --row-stripe:#0f141e;
+  --shadow-card:0 1px 2px rgba(0,0,0,.4),0 6px 18px rgba(0,0,0,.3);
+  --shadow-pop:0 12px 32px rgba(0,0,0,.6),0 2px 6px rgba(0,0,0,.4);
+}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font);background:var(--bg-secondary);color:var(--text-primary);
+  -webkit-font-smoothing:antialiased;padding:56px 24px 110px}
+.wrap{max-width:1080px;margin:0 auto}
+.eyebrow{font-size:11px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;color:var(--accent)}
+h1{font-size:32px;font-weight:700;letter-spacing:-.022em;margin:10px 0 0}
+.lede{margin-top:14px;font-size:15.5px;line-height:1.65;color:var(--text-secondary);max-width:700px}
+.lede b{color:var(--text-primary);font-weight:600}
+.themebtn{position:fixed;top:18px;right:20px;z-index:90;background:var(--bg);border:1px solid var(--border);
+  color:var(--text-secondary);font:600 12px/1 var(--font);padding:9px 14px;border-radius:999px;cursor:pointer;box-shadow:var(--shadow-card)}
+
+/* diagnosis list */
+.faults{margin-top:26px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow-card);padding:18px 20px}
+.faults h3{font-size:13px;font-weight:660;letter-spacing:-.005em;margin-bottom:12px}
+.faults ol{margin:0;padding-left:20px}
+.faults li{font-size:13.5px;line-height:1.65;color:var(--text-secondary);margin-bottom:7px}
+.faults li b{color:var(--text-primary);font-weight:600}
+
+/* option block */
+.opt{margin-top:60px;padding-top:34px;border-top:1px solid var(--border)}
+.opthead{display:flex;align-items:baseline;gap:12px;flex-wrap:wrap}
+.optkey{font:700 12px/1 var(--font);letter-spacing:.08em;color:var(--text-quaternary)}
+.optname{font-size:23px;font-weight:660;letter-spacing:-.018em}
+.optlike{font-size:12px;font-weight:600;color:var(--text-tertiary);background:var(--bg-tertiary);
+  padding:4px 9px;border-radius:99px}
+.optidea{margin-top:11px;font-size:14.5px;line-height:1.6;color:var(--text-secondary);max-width:760px}
+.optidea b{color:var(--text-primary);font-weight:600}
+.demo{margin-top:22px;background:var(--bg-secondary);border:1px solid var(--border);
+  border-radius:var(--radius-lg);padding:18px}
+.tradeoff{margin-top:16px;display:grid;grid-template-columns:1fr 1fr;gap:14px}
+@media(max-width:760px){.tradeoff{grid-template-columns:1fr}}
+.to{font-size:12.5px;line-height:1.6;color:var(--text-tertiary);padding-left:12px;border-left:2px solid var(--border)}
+.to b{display:block;color:var(--text-secondary);font-weight:660;margin-bottom:4px;font-size:11px;
+  letter-spacing:.07em;text-transform:uppercase}
+
+/* ── app-like primitives ─────────────────────────────────────── */
+.card{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);box-shadow:var(--shadow-card)}
+.pad{padding:14px}
+.row{display:flex;align-items:center;gap:9px;flex-wrap:wrap}
+.grow{flex:1;min-width:120px}
+.sbox{display:flex;align-items:center;gap:8px;background:var(--bg-secondary);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:0 11px;height:36px;flex:1;min-width:150px}
+.sbox svg{flex:none;color:var(--text-tertiary)}
+.sbox input{border:0;background:transparent;outline:none;font:400 13.5px/1 var(--font);color:var(--text-primary);
+  width:100%;height:100%}
+.sbox input::placeholder{color:var(--text-tertiary)}
+.btn{display:inline-flex;align-items:center;gap:6px;font:600 12.5px/1 var(--font);height:36px;padding:0 12px;
+  border-radius:var(--radius-sm);border:1px solid var(--border);background:var(--bg);color:var(--text-secondary);
+  cursor:pointer;white-space:nowrap}
+.btn:hover{color:var(--text-primary);border-color:var(--text-quaternary)}
+.btn.pri{background:var(--accent);border-color:var(--accent);color:var(--on-accent)}
+.btn.sm{height:30px;padding:0 10px;font-size:11.5px}
+.seg{display:inline-flex;background:var(--bg-tertiary);border-radius:var(--radius-sm);padding:2px;gap:2px}
+.seg button{font:600 12px/1 var(--font);color:var(--text-secondary);background:transparent;border:0;
+  padding:7px 11px;border-radius:6px;cursor:pointer;white-space:nowrap}
+.seg button.on{background:var(--bg);color:var(--text-primary);box-shadow:var(--shadow-card)}
+:root[data-theme="dark"] .seg button.on{background:var(--bg-tertiary);color:var(--text-primary);
+  box-shadow:inset 0 0 0 1px var(--border)}
+
+/* filter tokens */
+.tok{display:inline-flex;align-items:center;gap:6px;height:30px;padding:0 4px 0 10px;border-radius:99px;
+  font:600 12px/1 var(--font);background:var(--accent-soft);color:var(--text-primary);
+  border:1px solid var(--accent-ring);white-space:nowrap}
+.tok .k{color:var(--text-secondary);font-weight:500}
+.tok .x{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;border-radius:50%;
+  color:var(--text-tertiary);cursor:pointer;font-size:14px;line-height:1;border:0;background:transparent}
+.tok .x:hover{background:var(--bg-tertiary);color:var(--text-primary)}
+.tok.add{background:transparent;border:1px dashed var(--border);color:var(--text-secondary);
+  padding:0 11px;cursor:pointer;font-weight:600}
+.tok.add:hover{border-color:var(--accent);color:var(--accent)}
+
+/* result line */
+.resline{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;font-variant-numeric:tabular-nums}
+.rescount{font-size:15px;font-weight:680;letter-spacing:-.015em}
+.resmoney{font-size:12.5px;font-weight:600;color:var(--text-secondary)}
+.resmoney .out{color:var(--red)} .resmoney .in{color:var(--green)}
+.resnote{font-size:12px;color:var(--text-tertiary)}
+
+/* fake table */
+table{width:100%;border-collapse:collapse}
+th{text-align:left;font:600 10.5px/1 var(--font);letter-spacing:.07em;text-transform:uppercase;
+  color:var(--text-tertiary);padding:9px 12px;border-bottom:1px solid var(--border);white-space:nowrap;cursor:pointer}
+th .ar{color:var(--accent);margin-left:3px}
+td{font-size:13px;padding:10px 12px;border-bottom:1px solid var(--separator);white-space:nowrap}
+tr:last-child td{border-bottom:0}
+tbody tr:nth-child(even){background:var(--row-stripe)}
+.amt{text-align:right;font-variant-numeric:tabular-nums;font-weight:560}
+.amt.neg{color:var(--text-primary)} .amt.pos{color:var(--green)}
+.cdot{display:inline-block;width:7px;height:7px;border-radius:50%;margin-right:6px;vertical-align:middle}
+.cell-cat{color:var(--text-secondary)}
+.tbl-wrap{overflow-x:auto}
+
+/* popover */
+.pop{position:absolute;z-index:40;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow-pop);width:290px;max-width:calc(100vw - 72px);overflow:hidden}
+.pop-head{padding:9px 10px;border-bottom:1px solid var(--separator)}
+.pop-head .sbox{height:32px;background:var(--bg-secondary)}
+.pop-list{max-height:230px;overflow-y:auto;padding:5px}
+.pop-item{display:flex;align-items:center;gap:9px;padding:7px 9px;border-radius:var(--radius-xs);
+  font-size:13px;cursor:pointer}
+.pop-item:hover{background:var(--bg-secondary)}
+.pop-item .n{margin-left:auto;font-size:11.5px;color:var(--text-tertiary);font-variant-numeric:tabular-nums}
+.box{width:15px;height:15px;border-radius:4px;border:1.5px solid var(--text-quaternary);flex:none;
+  display:inline-flex;align-items:center;justify-content:center}
+.pop-item.sel .box{background:var(--accent);border-color:var(--accent)}
+.pop-item.sel .box::after{content:"";width:4px;height:8px;border:solid var(--on-accent);
+  border-width:0 2px 2px 0;transform:rotate(45deg) translate(-1px,-1px)}
+.pop-foot{padding:8px 10px;border-top:1px solid var(--separator);display:flex;justify-content:space-between;gap:8px}
+.relwrap{position:relative}
+/* Narrow: a 290px popover anchored mid-row runs off the side, so let the
+   picker just flow into the layout instead of floating over it. */
+@media(max-width:760px){
+  .pop{position:static;width:100%;max-width:none;margin-top:8px;box-shadow:none}
+}
+
+/* the category wall (for the "today" panel) */
+.wall{display:flex;flex-wrap:wrap;gap:5px}
+.wchip{font:500 11.5px/1 var(--font);color:var(--text-secondary);background:var(--bg-secondary);
+  border:1px solid var(--border);padding:5px 9px;border-radius:99px;white-space:nowrap}
+.flabel{font:600 10px/1 var(--font);letter-spacing:.07em;text-transform:uppercase;color:var(--text-tertiary);
+  display:block;margin-bottom:6px}
+.finput{width:100%;height:34px;border:1px solid var(--border);background:var(--bg);border-radius:var(--radius-sm);
+  padding:0 10px;font:400 13px/1 var(--font);color:var(--text-primary)}
+.fgrid{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}
+@media(max-width:760px){.fgrid{grid-template-columns:repeat(2,1fr)}}
+
+/* query bar */
+.qbar{display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--border);
+  border-radius:var(--radius-sm);padding:0 12px;height:42px}
+.qbar .qtext{font:400 14px/1 var(--mono);color:var(--text-primary);display:flex;align-items:center;gap:0;flex:1;
+  overflow-x:auto;white-space:nowrap}
+.qtok{color:var(--accent);font-weight:600}
+.qcar{display:inline-block;width:1.5px;height:17px;background:var(--accent);margin-left:2px;
+  animation:bl 1.05s step-end infinite;vertical-align:middle}
+@keyframes bl{50%{opacity:0}}
+.qsug{margin-top:6px;background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow-pop);overflow:hidden;max-width:430px}
+.qsug .qi{display:flex;align-items:center;gap:10px;padding:8px 12px;font-size:13px}
+.qsug .qi + .qi{border-top:1px solid var(--separator)}
+.qsug .qi.on{background:var(--accent-soft)}
+.qsug code{font:600 12px/1 var(--mono);color:var(--accent);background:var(--accent-softer);
+  padding:3px 6px;border-radius:5px}
+.qsug .qd{color:var(--text-tertiary);font-size:12px;margin-left:auto}
+
+/* facet rail */
+.railgrid{display:grid;grid-template-columns:212px 1fr;gap:14px;align-items:start}
+@media(max-width:760px){.railgrid{grid-template-columns:1fr}}
+.rail{background:var(--bg);border:1px solid var(--border);border-radius:var(--radius);
+  box-shadow:var(--shadow-card);padding:12px;position:sticky;top:16px}
+.rsec + .rsec{margin-top:14px;padding-top:14px;border-top:1px solid var(--separator)}
+.rsec h4{font:600 10px/1 var(--font);letter-spacing:.08em;text-transform:uppercase;color:var(--text-tertiary);
+  margin-bottom:9px;display:flex;align-items:center}
+.rsec h4 .clr{margin-left:auto;text-transform:none;letter-spacing:0;font-size:11px;color:var(--accent);cursor:pointer}
+.fitem{display:flex;align-items:center;gap:8px;padding:5px 4px;border-radius:var(--radius-xs);
+  font-size:12.5px;cursor:pointer}
+.fitem:hover{background:var(--bg-secondary)}
+.fitem .n{margin-left:auto;font-size:11px;color:var(--text-tertiary);font-variant-numeric:tabular-nums}
+.fitem.sel{color:var(--text-primary);font-weight:600}
+.more{font-size:11.5px;color:var(--accent);cursor:pointer;padding:5px 4px;font-weight:600}
+.minibar{height:3px;border-radius:2px;background:var(--accent-ring);flex:none}
+
+.verdict{margin-top:64px;padding:22px 24px;background:var(--bg);border:1px solid var(--border);
+  border-radius:var(--radius);box-shadow:var(--shadow-card)}
+.verdict h3{font-size:15px;font-weight:680;letter-spacing:-.012em}
+.verdict p{margin-top:11px;font-size:13.5px;line-height:1.7;color:var(--text-secondary)}
+.verdict p b{color:var(--text-primary);font-weight:640}
+</style>
+</head>
+<body>
+<button class="themebtn" onclick="var r=document.documentElement;r.setAttribute('data-theme',r.getAttribute('data-theme')==='dark'?'light':'dark')">Toggle theme</button>
+
+<div class="wrap">
+  <div class="eyebrow">Balance. — transactions</div>
+  <h1>Four ways to fix the filter pane</h1>
+  <p class="lede">Same page, same endpoint, same query params. What changes is where the filters live and what they look like once they're on. Every panel below is interactive — click the chips, open the pickers, remove a token.</p>
+
+  <div class="faults">
+    <h3>What's actually wrong with it today</h3>
+    <ol>
+      <li><b>34 category chips in a six-row wall.</b> No search, no counts, no order you'd guess. It's the biggest thing in the drawer and the hardest to use.</li>
+      <li><b>Opening the filters pushes the table off screen.</b> You lose sight of the thing you're filtering at the exact moment you're filtering it.</li>
+      <li><b>Two ways to sort.</b> "Sort by" and "Direction" dropdowns sit in the drawer while the table headers already sort on click, and the header arrow already shows the direction.</li>
+      <li><b>Closed, the drawer hides what it's doing.</b> A count on a button is not the same as being able to see — or drop — the one filter that's narrowing your list.</li>
+      <li><b>The result line is the smallest text on the page.</b> "2 810 results · −95 616 € / +99 309 €" is the most useful feedback here, set in grey 11px next to a button.</li>
+      <li><b>The common queries take the most work.</b> "This month", "over 100 €", "last week" are three or four interactions each, every time.</li>
+    </ol>
+  </div>
+
+  <!-- ═══ A ═══ -->
+  <section class="opt">
+    <div class="opthead"><span class="optkey">OPTION A</span><span class="optname">Filter tokens in the bar</span><span class="optlike">Linear · GitHub · Notion</span></div>
+    <p class="optidea">Kill the drawer. A filter, once applied, becomes a <b>token that lives in the bar</b> — visible, individually removable, no layout shift. <b>+&nbsp;Filter</b> opens a small menu of facets; picking one opens its values. The result line moves up and gets a size that matches how much it's worth. Sorting belongs to the table headers and is deleted from here.</p>
+
+    <div class="demo">
+      <div class="card pad" style="position:relative;overflow:visible">
+        <div class="row">
+          <div class="sbox"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg><input placeholder="Search store or category…" value="market"></div>
+          <div class="relwrap">
+            <button class="tok add" onclick="tp('popA',event)">+ Filter</button>
+            <div class="pop" id="popA" style="display:none;top:38px;left:0">
+              <div class="pop-list">
+                <div class="pop-item" onclick="addTok('Category','Groceries');tp('popA',event)">Category</div>
+                <div class="pop-item" onclick="addTok('Amount','over 100 €');tp('popA',event)">Amount</div>
+                <div class="pop-item" onclick="addTok('Date','last 30 days');tp('popA',event)">Date</div>
+                <div class="pop-item" onclick="addTok('Type','Expenses');tp('popA',event)">Type</div>
+              </div>
+            </div>
+          </div>
+          <div id="toksA" class="row" style="gap:6px">
+            <span class="tok"><span class="k">Type</span> Expenses<button class="x" onclick="this.parentNode.remove()">×</button></span>
+            <span class="tok"><span class="k">Category</span> Groceries, Lunch<button class="x" onclick="this.parentNode.remove()">×</button></span>
+            <span class="tok"><span class="k">Over</span> 20 €<button class="x" onclick="this.parentNode.remove()">×</button></span>
+          </div>
+          <button class="btn sm" style="margin-left:auto" onclick="document.getElementById('toksA').innerHTML=''">Clear all</button>
+        </div>
+        <div style="margin-top:13px;padding-top:12px;border-top:1px solid var(--separator)" class="resline">
+          <span class="rescount">148 transactions</span>
+          <span class="resmoney"><span class="out">−3 412 €</span> out</span>
+          <span class="resnote">· 23,05 € average · Jan–Jul 2026</span>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Date <span class="ar">↓</span></th><th>Store</th><th>Category</th><th style="text-align:right">Amount</th></tr></thead>
+          <tbody>
+            <tr><td>31.7.2026</td><td>SUPERMARKET CENTRAL</td><td class="cell-cat"><i class="cdot" style="background:#00a06b"></i>Groceries</td><td class="amt neg">−13,21 €</td></tr>
+            <tr><td>28.7.2026</td><td>SUPERMARKET NORTH</td><td class="cell-cat"><i class="cdot" style="background:#00a06b"></i>Groceries</td><td class="amt neg">−41,80 €</td></tr>
+            <tr><td>24.7.2026</td><td>SUPERMARKET CENTRAL</td><td class="cell-cat"><i class="cdot" style="background:#00a06b"></i>Groceries</td><td class="amt neg">−22,45 €</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+    <div class="tradeoff">
+      <div class="to"><b>Why it works</b> Nothing is ever hidden, so you always know why the list looks like it does. Removing one filter is one click, not open-drawer-find-field-clear. The table never moves.</div>
+      <div class="to"><b>What it costs</b> The most new JS of the four — a token model, a two-step picker, and rewriting how filters serialise. Many tokens could wrap to a second line on a narrow window.</div>
+    </div>
+  </section>
+
+  <!-- ═══ B ═══ -->
+  <section class="opt">
+    <div class="opthead"><span class="optkey">OPTION B</span><span class="optname">One query bar</span><span class="optlike">Gmail · Jira · Raycast</span></div>
+    <p class="optidea">Everything collapses into a <b>single field that understands a small language</b>: <code style="font-family:var(--mono);font-size:12.5px">market over:20 in:groceries after:1.7</code>. Suggestions appear as you type, so the syntax is learned by using it rather than read. Built for the one expert who uses this app every day — you.</p>
+
+    <div class="demo">
+      <div class="card pad">
+        <div class="qbar">
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--text-tertiary)" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+          <div class="qtext">market&nbsp;<span class="qtok">over:</span>20&nbsp;<span class="qtok">in:</span>groceries&nbsp;<span class="qtok">after:</span>1.7<span class="qcar"></span></div>
+          <button class="btn sm">Save view</button>
+        </div>
+        <div class="qsug">
+          <div class="qi on"><code>in:</code> category <span class="qd">in:groceries, in:lunch</span></div>
+          <div class="qi"><code>over: / under:</code> amount <span class="qd">over:100</span></div>
+          <div class="qi"><code>after: / before:</code> date <span class="qd">after:1.7 · after:2026-07-01</span></div>
+          <div class="qi"><code>is:</code> type <span class="qd">is:income · is:expense</span></div>
+        </div>
+        <div style="margin-top:13px;padding-top:12px;border-top:1px solid var(--separator)" class="resline">
+          <span class="rescount">148 transactions</span>
+          <span class="resmoney"><span class="out">−3 412 €</span> out</span>
+          <span class="resnote">· 23,05 € average</span>
+        </div>
+        <div class="row" style="margin-top:12px;gap:6px">
+          <span style="font:600 10px/1 var(--font);letter-spacing:.07em;text-transform:uppercase;color:var(--text-tertiary)">Saved</span>
+          <button class="btn sm">This month</button>
+          <button class="btn sm">Big ones (over 100 €)</button>
+          <button class="btn sm">Uncategorised</button>
+          <button class="btn sm">Eating out</button>
+        </div>
+      </div>
+    </div>
+    <div class="tradeoff">
+      <div class="to"><b>Why it works</b> The fastest possible input once it's in your fingers, and the whole filter state is one string — so a saved view, a bookmark, or a shared link is free. Takes the least vertical space of the four by a mile.</div>
+      <div class="to"><b>What it costs</b> A parser, and it's the least discoverable — everything depends on the suggestions being good. If you ever hand this app to someone else, they'd be lost for a week.</div>
+    </div>
+  </section>
+
+  <!-- ═══ C ═══ -->
+  <section class="opt">
+    <div class="opthead"><span class="optkey">OPTION C</span><span class="optname">Persistent facet rail</span><span class="optlike">Airbnb · Amazon · any shop</span></div>
+    <p class="optidea">Filters move out of the way of the table entirely, into a <b>rail that's always open</b> beside it. Every value carries <b>the count it would give you</b> and a bar for its share, so the filter list doubles as a summary of your spending. Categories are sorted by how much you actually use them, not alphabetically.</p>
+
+    <div class="demo">
+      <div class="railgrid">
+        <div class="rail">
+          <div class="rsec">
+            <h4>Period</h4>
+            <div class="seg" style="width:100%;display:grid;grid-template-columns:1fr 1fr">
+              <button class="on">Month</button><button>Year</button>
+            </div>
+            <div class="fitem sel" style="margin-top:6px">July 2026 <span class="n">312</span></div>
+            <div class="fitem">June 2026 <span class="n">288</span></div>
+            <div class="fitem">May 2026 <span class="n">341</span></div>
+            <div class="more">Custom range…</div>
+          </div>
+          <div class="rsec">
+            <h4>Type <span class="clr">clear</span></h4>
+            <div class="fitem sel"><span class="box"></span>Expenses <span class="n">2 604</span></div>
+            <div class="fitem"><span class="box"></span>Income <span class="n">206</span></div>
+          </div>
+          <div class="rsec">
+            <h4>Category <span class="clr">clear</span></h4>
+            <div class="sbox" style="height:30px;margin-bottom:7px"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg><input placeholder="Find a category…" style="font-size:12.5px"></div>
+            <div class="fitem sel"><span class="box"></span><span>Groceries</span><i class="minibar" style="width:34px"></i><span class="n">421</span></div>
+            <div class="fitem"><span class="box"></span><span>Other</span><i class="minibar" style="width:26px"></i><span class="n">318</span></div>
+            <div class="fitem"><span class="box"></span><span>Restaurant</span><i class="minibar" style="width:18px"></i><span class="n">204</span></div>
+            <div class="fitem"><span class="box"></span><span>Lunch</span><i class="minibar" style="width:14px"></i><span class="n">166</span></div>
+            <div class="fitem"><span class="box"></span><span>Going out</span><i class="minibar" style="width:9px"></i><span class="n">98</span></div>
+            <div class="more">Show 29 more…</div>
+          </div>
+          <div class="rsec">
+            <h4>Amount</h4>
+            <div class="row" style="gap:6px">
+              <input class="finput" placeholder="Min" style="flex:1;min-width:0">
+              <input class="finput" placeholder="Max" style="flex:1;min-width:0">
+            </div>
+          </div>
+        </div>
+
+        <div>
+          <div class="card pad">
+            <div class="row">
+              <div class="sbox"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg><input placeholder="Search store…"></div>
+              <button class="btn pri">+ Add</button>
+            </div>
+            <div style="margin-top:12px;padding-top:11px;border-top:1px solid var(--separator)" class="resline">
+              <span class="rescount">421 transactions</span>
+              <span class="resmoney"><span class="out">−8 940 €</span> out</span>
+              <span class="resnote">· Groceries · July 2026</span>
+            </div>
+          </div>
+          <div class="card" style="margin-top:12px">
+            <div class="tbl-wrap"><table>
+              <thead><tr><th>Date <span class="ar">↓</span></th><th>Store</th><th>Category</th><th style="text-align:right">Amount</th></tr></thead>
+              <tbody>
+                <tr><td>31.7.2026</td><td>SUPERMARKET CENTRAL</td><td class="cell-cat"><i class="cdot" style="background:#00a06b"></i>Groceries</td><td class="amt neg">−13,21 €</td></tr>
+                <tr><td>31.7.2026</td><td>Corner Market East</td><td class="cell-cat"><i class="cdot" style="background:#00a06b"></i>Groceries</td><td class="amt neg">−3,94 €</td></tr>
+                <tr><td>30.7.2026</td><td>Corner Market</td><td class="cell-cat"><i class="cdot" style="background:#00a06b"></i>Groceries</td><td class="amt neg">−15,88 €</td></tr>
+                <tr><td>30.7.2026</td><td>Corner Market East</td><td class="cell-cat"><i class="cdot" style="background:#00a06b"></i>Groceries</td><td class="amt neg">−8,32 €</td></tr>
+                <tr><td>29.7.2026</td><td>Night Shop</td><td class="cell-cat"><i class="cdot" style="background:#00a06b"></i>Groceries</td><td class="amt neg">−6,10 €</td></tr>
+              </tbody>
+            </table></div>
+          </div>
+        </div>
+      </div>
+    </div>
+    <div class="tradeoff">
+      <div class="to"><b>Why it works</b> Nothing opens or closes, so nothing ever shifts. The counts turn the filter list into a second read on your spending — you learn something just by looking at it, before clicking anything.</div>
+      <div class="to"><b>What it costs</b> A real chunk of horizontal space, which hurts on a laptop window. The counts need a faceted count query per load, or they go stale and lie.</div>
+    </div>
+  </section>
+
+  <!-- ═══ D ═══ -->
+  <section class="opt">
+    <div class="opthead"><span class="optkey">OPTION D</span><span class="optname">Keep the drawer, fix its six faults</span><span class="optlike">smallest diff</span></div>
+    <p class="optidea">The current shape isn't wrong — the details are. A row of <b>quick filters</b> for the queries you actually run, the category wall replaced by <b>one searchable picker with counts</b>, the two sort dropdowns deleted in favour of the headers that already sort, applied filters shown as <b>removable tokens even when the drawer is shut</b>, and the result line promoted to something you can read.</p>
+
+    <div class="demo">
+      <div class="card pad">
+        <div class="row">
+          <div class="sbox"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg><input placeholder="Search store or category…"></div>
+          <div class="seg"><button class="on">All</button><button>Expenses</button><button>Income</button></div>
+          <button class="btn" onclick="var d=document.getElementById('drwD');d.style.display=d.style.display==='none'?'block':'none'">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M7 12h10M10 18h4"/></svg>More</button>
+        </div>
+
+        <div class="row" style="margin-top:10px;gap:6px">
+          <span style="font:600 10px/1 var(--font);letter-spacing:.07em;text-transform:uppercase;color:var(--text-tertiary);margin-right:2px">Quick</span>
+          <div class="seg"><button>7 days</button><button class="on">This month</button><button>Last month</button><button>This year</button></div>
+          <button class="btn sm">Over 100 €</button>
+          <button class="btn sm">Uncategorised</button>
+        </div>
+
+        <!-- tokens stay visible with the drawer shut -->
+        <div class="row" style="margin-top:11px;gap:6px" id="toksD">
+          <span class="tok"><span class="k">Category</span> Groceries +2<button class="x" onclick="this.parentNode.remove()">×</button></span>
+          <span class="tok"><span class="k">Over</span> 20 €<button class="x" onclick="this.parentNode.remove()">×</button></span>
+          <button class="btn sm" style="border-style:dashed" onclick="document.getElementById('toksD').querySelectorAll('.tok').forEach(t=>t.remove())">Clear</button>
+        </div>
+
+        <div id="drwD" style="display:none;margin-top:13px;padding-top:13px;border-top:1px solid var(--separator)">
+          <div class="fgrid">
+            <div><span class="flabel">From date</span><input class="finput" placeholder="31.7.2026"></div>
+            <div><span class="flabel">To date</span><input class="finput" placeholder="31.7.2026"></div>
+            <div><span class="flabel">Min amount</span><input class="finput" placeholder="0 €"></div>
+            <div><span class="flabel">Max amount</span><input class="finput" placeholder="Any"></div>
+          </div>
+          <div style="margin-top:12px" class="relwrap">
+            <span class="flabel">Categories</span>
+            <button class="btn" onclick="tp('popD',event)" style="width:230px;justify-content:space-between">Groceries, Lunch, Restaurant <span style="color:var(--text-tertiary)">▾</span></button>
+            <div class="pop" id="popD" style="display:none;top:56px;left:0">
+              <div class="pop-head"><div class="sbox"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg><input placeholder="Find a category…" style="font-size:12.5px"></div></div>
+              <div class="pop-list">
+                <div class="pop-item sel" onclick="this.classList.toggle('sel')"><span class="box"></span>Groceries<span class="n">421</span></div>
+                <div class="pop-item sel" onclick="this.classList.toggle('sel')"><span class="box"></span>Lunch<span class="n">166</span></div>
+                <div class="pop-item sel" onclick="this.classList.toggle('sel')"><span class="box"></span>Restaurant<span class="n">204</span></div>
+                <div class="pop-item" onclick="this.classList.toggle('sel')"><span class="box"></span>Other<span class="n">318</span></div>
+                <div class="pop-item" onclick="this.classList.toggle('sel')"><span class="box"></span>Going out<span class="n">98</span></div>
+                <div class="pop-item" onclick="this.classList.toggle('sel')"><span class="box"></span>Car parking<span class="n">77</span></div>
+                <div class="pop-item" onclick="this.classList.toggle('sel')"><span class="box"></span>Travel<span class="n">54</span></div>
+                <div class="pop-item" onclick="this.classList.toggle('sel')"><span class="box"></span>Telecom<span class="n">31</span></div>
+              </div>
+              <div class="pop-foot"><button class="btn sm">Clear</button><button class="btn sm pri" onclick="tp('popD',event)">Done</button></div>
+            </div>
+          </div>
+          <div style="margin-top:12px;font-size:12px;color:var(--text-tertiary)">Sorting lives in the table headers — click a column, click again to flip it.</div>
+        </div>
+
+        <div style="margin-top:13px;padding-top:12px;border-top:1px solid var(--separator)" class="resline">
+          <span class="rescount">148 transactions</span>
+          <span class="resmoney"><span class="out">−3 412 €</span> out · <span class="in">+0 €</span> in</span>
+          <span class="resnote">· 23,05 € average · 1.–31.7.2026</span>
+        </div>
+      </div>
+
+      <div class="card" style="margin-top:12px">
+        <div class="tbl-wrap"><table>
+          <thead><tr><th>Date <span class="ar">↓</span></th><th>Store</th><th>Category</th><th style="text-align:right">Amount</th></tr></thead>
+          <tbody>
+            <tr><td>31.7.2026</td><td>SUPERMARKET CENTRAL</td><td class="cell-cat"><i class="cdot" style="background:#00a06b"></i>Groceries</td><td class="amt neg">−13,21 €</td></tr>
+            <tr><td>30.7.2026</td><td>Corner Market</td><td class="cell-cat"><i class="cdot" style="background:#00a06b"></i>Groceries</td><td class="amt neg">−15,88 €</td></tr>
+            <tr><td>29.7.2026</td><td>Falafel Place</td><td class="cell-cat"><i class="cdot" style="background:#5856D6"></i>Lunch</td><td class="amt neg">−10,90 €</td></tr>
+          </tbody>
+        </table></div>
+      </div>
+    </div>
+    <div class="tradeoff">
+      <div class="to"><b>Why it works</b> Every fault on the list above is answered, and nothing you already know how to use moves. Shippable in an afternoon, and it doesn't block doing A or C later.</div>
+      <div class="to"><b>What it costs</b> It's a repair, not a rethink — the drawer still pushes the table down when it's open. Ambition is the thing it's short on.</div>
+    </div>
+  </section>
+
+  <div class="verdict">
+    <h3>If you want a recommendation</h3>
+    <p><b>D now, A next.</b> D is an afternoon and clears every fault on the list, so the page stops feeling unfinished immediately. A is the one that actually changes the idea — filters you can see and drop without opening anything — and D's tokens are the same component, so building D isn't work you'd throw away.</p>
+    <p><b>C</b> is the best of the four if you filter more than you scroll, and the counts are genuinely nice, but it wants a wide window and a faceted count query. <b>B</b> is the most fun and the fastest to use once learned — worth having as an <i>addition</i> to whichever you pick, not instead of it.</p>
+  </div>
+</div>
+
+<script>
+function tp(id, e){ if(e) e.stopPropagation();
+  var p=document.getElementById(id); var open=p.style.display!=='none';
+  document.querySelectorAll('.pop').forEach(function(x){x.style.display='none'});
+  p.style.display=open?'none':'block'; }
+document.addEventListener('click',function(){document.querySelectorAll('.pop').forEach(function(x){x.style.display='none'})});
+document.querySelectorAll('.pop').forEach(function(p){p.addEventListener('click',function(e){e.stopPropagation()})});
+document.querySelectorAll('.seg').forEach(function(g){g.addEventListener('click',function(e){
+  if(e.target.tagName!=='BUTTON')return;
+  g.querySelectorAll('button').forEach(function(b){b.classList.remove('on')}); e.target.classList.add('on');});});
+document.querySelectorAll('.fitem, .pop-item').forEach(function(i){ if(i.querySelector('.box'))
+  i.addEventListener('click',function(){i.classList.toggle('sel')});});
+function addTok(k,v){ var w=document.getElementById('toksA');
+  var s=document.createElement('span'); s.className='tok';
+  s.innerHTML='<span class="k">'+k+'</span> '+v+'<button class="x">×</button>';
+  s.querySelector('.x').onclick=function(){s.remove()}; w.appendChild(s); }
+</script>
+</body>
+</html>

@@ -232,73 +232,89 @@
             </button>
         </div>
 
-        <!-- Search Panel -->
-        <div class="card mb-4" id="search-panel">
-            <div class="search-top-row">
-                <div class="search-input-wrap">
-                    <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
-                    <input class="search-text-input" id="search-q" placeholder="Search store or category…" oninput="debounceSearch()">
-                    <button class="search-clear" id="search-clear" onclick="clearSearch()" style="display:none">
-                        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
-                    </button>
-                </div>
-                <select class="form-select" id="filter-type" style="width:120px" onchange="loadTransactions()">
-                    <option value="">All types</option>
-                    <option value="expense">Expenses</option>
-                    <option value="income">Income</option>
-                </select>
-                <button class="btn btn-secondary btn-sm" id="toggle-advanced-btn" onclick="toggleAdvancedSearch()">
-                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
-                    Filters<span id="filter-count"></span>
-                </button>
-                <span class="search-results-count" id="search-count"></span>
+        <!-- Filters live in a rail beside the table, not in a drawer above it.
+             Nothing here opens or closes, so the table never moves under you,
+             and every value carries the count it would give — which makes the
+             list a read on the spending as well as a control. -->
+        <div class="tx-layout">
+        <aside class="tx-rail" id="tx-rail">
+            <div class="tx-rail-head">
+                <span>Filters</span>
+                <button class="tx-rail-clear" id="tx-clear-all" onclick="resetSearch()">Clear all</button>
             </div>
 
-            <div id="advanced-search" style="display:none">
-                <div class="search-divider"></div>
-                <div class="search-advanced-grid">
-                    <div class="form-group" style="margin:0">
-                        <label class="form-label">From date</label>
-                        <input type="text" inputmode="numeric" placeholder="31.7.2026" title="Day.Month.Year" class="form-input" id="search-date-from" onchange="loadTransactions()">
-                    </div>
-                    <div class="form-group" style="margin:0">
-                        <label class="form-label">To date</label>
-                        <input type="text" inputmode="numeric" placeholder="31.7.2026" title="Day.Month.Year" class="form-input" id="search-date-to" onchange="loadTransactions()">
-                    </div>
-                    <div class="form-group" style="margin:0">
-                        <label class="form-label">Min amount (€)</label>
-                        <input type="number" class="form-input" id="search-amt-min" placeholder="0" min="0" step="0.01" oninput="debounceSearch()">
-                    </div>
-                    <div class="form-group" style="margin:0">
-                        <label class="form-label">Max amount (€)</label>
-                        <input type="number" class="form-input" id="search-amt-max" placeholder="Any" min="0" step="0.01" oninput="debounceSearch()">
-                    </div>
-                    <div class="form-group" style="margin:0; grid-column: span 2">
-                        <label class="form-label">Categories</label>
-                        <div class="cat-filter-wrap" id="cat-filter-wrap"></div>
-                    </div>
-                    <div class="form-group" style="margin:0">
-                        <label class="form-label">Sort by</label>
-                        <select class="form-select" id="search-sort" onchange="loadTransactions()">
-                            <option value="date">Date</option>
-                            <option value="amount">Amount</option>
-                            <option value="store">Store</option>
-                            <option value="category">Category</option>
-                        </select>
-                    </div>
-                    <div class="form-group" style="margin:0">
-                        <label class="form-label">Direction</label>
-                        <select class="form-select" id="search-dir" onchange="loadTransactions()">
-                            <option value="desc">Newest / Highest first</option>
-                            <option value="asc">Oldest / Lowest first</option>
-                        </select>
-                    </div>
+            <div class="rail-sec">
+                <h4>Period
+                    <button class="rail-clear" onclick="clearPeriodFilter()">clear</button>
+                </h4>
+                <div class="btn-group rail-seg">
+                    <button class="btn btn-secondary btn-sm rail-grain-btn active" data-grain="month" onclick="setPeriodGrain('month')">Month</button>
+                    <button class="btn btn-secondary btn-sm rail-grain-btn" data-grain="year" onclick="setPeriodGrain('year')">Year</button>
                 </div>
-                <div style="margin-top:12px">
-                    <button class="btn btn-ghost btn-sm" onclick="resetSearch()">Reset all filters</button>
+                <div class="rail-list" id="rail-periods"></div>
+                <button class="rail-more" id="rail-period-more" onclick="toggleRailMore('period')"></button>
+                <div class="rail-dates" id="rail-dates">
+                    <label class="rail-field">
+                        <span>From</span>
+                        <input type="text" inputmode="numeric" placeholder="1.7.2026" title="Day.Month.Year" class="form-input" id="search-date-from" onchange="onRailFilterChange()">
+                    </label>
+                    <label class="rail-field">
+                        <span>To</span>
+                        <input type="text" inputmode="numeric" placeholder="31.7.2026" title="Day.Month.Year" class="form-input" id="search-date-to" onchange="onRailFilterChange()">
+                    </label>
                 </div>
             </div>
-        </div>
+
+            <div class="rail-sec">
+                <h4>Type
+                    <button class="rail-clear" onclick="setTypeFilter('')">clear</button>
+                </h4>
+                <div class="rail-list" id="rail-types"></div>
+            </div>
+
+            <div class="rail-sec">
+                <h4>Category
+                    <button class="rail-clear" onclick="clearCatFilter()">clear</button>
+                </h4>
+                <div class="rail-search">
+                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                    <input id="rail-cat-search" placeholder="Find a category…" oninput="renderRailCategories()">
+                </div>
+                <div class="rail-list" id="rail-categories"></div>
+                <button class="rail-more" id="rail-cat-more" onclick="toggleRailMore('cat')"></button>
+            </div>
+
+            <div class="rail-sec">
+                <h4>Amount
+                    <button class="rail-clear" onclick="clearAmountFilter()">clear</button>
+                </h4>
+                <div class="rail-amounts">
+                    <input type="number" class="form-input" id="search-amt-min" placeholder="Min €" min="0" step="0.01" oninput="debounceSearch()">
+                    <input type="number" class="form-input" id="search-amt-max" placeholder="Max €" min="0" step="0.01" oninput="debounceSearch()">
+                </div>
+            </div>
+        </aside>
+
+        <div class="tx-main">
+            <div class="card mb-4" id="search-panel">
+                <div class="search-top-row">
+                    <button class="btn btn-secondary btn-sm tx-rail-toggle" onclick="toggleRail()">
+                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 6h16M7 12h10M10 18h4"/></svg>
+                        Filters<span id="filter-count"></span>
+                    </button>
+                    <div class="search-input-wrap">
+                        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><path d="M21 21l-4.35-4.35"/></svg>
+                        <input class="search-text-input" id="search-q" placeholder="Search store or category…" oninput="debounceSearch()">
+                        <button class="search-clear" id="search-clear" onclick="clearSearch()" style="display:none">
+                            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M18 6L6 18M6 6l12 12"/></svg>
+                        </button>
+                    </div>
+                </div>
+                <!-- The most useful line on the page, so it gets a size that
+                     says so rather than 11px of grey beside a button. -->
+                <div class="tx-result-line" id="search-count"></div>
+                <div class="tx-tokens" id="tx-tokens"></div>
+            </div>
 
         <div class="card">
             <div class="table-container">
@@ -317,6 +333,9 @@
             </div>
             <div class="pagination" id="transactions-pagination"></div>
         </div>
+        </div>
+        </div>
+
     </div>
 
     <!-- Import Page -->

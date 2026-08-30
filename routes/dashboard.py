@@ -7,6 +7,88 @@ from core import current_user_id
 
 bp = Blueprint("dashboard", __name__)
 
+# How many months behind the one on screen count as "normal", and how flat a
+# category has to be before we stop reporting its movement at all.
+_BASELINE_MONTHS = 6
+_FIXED_SPREAD = 0.03
+# Below this many months of history there is no honest baseline to draw.
+_MIN_BASELINE_MONTHS = 3
+
+
+def _month_add(month, delta):
+    """"2026-05" plus a number of months, as "YYYY-MM"."""
+    index = int(month[:4]) * 12 + int(month[5:7]) - 1 + delta
+    return f"{index // 12:04d}-{index % 12 + 1:02d}"
+
+
+def _median(values):
+    ordered = sorted(values)
+    if not ordered:
+        return 0.0
+    mid = len(ordered) // 2
+    if len(ordered) % 2:
+        return ordered[mid]
+    return (ordered[mid - 1] + ordered[mid]) / 2
+
+
+def _attach_baseline(conn, uid, txn_type, month, items):
+    """Put "normal" beside each category's total, so a number stops being a
+    length and starts being a judgement.
+
+    The baseline is the median of that category's monthly totals over the six
+    months BEFORE the one on screen. The month being judged stays out of its
+    own baseline, so "usual" means what it says. A median rather than a mean,
+    because one holiday should not get to redefine normal.
+
+    A month where a category saw nothing counts as **0**, not as missing:
+    something you buy twice a year is unusual every time, and dropping the
+    empty months from the median would report it as routine.
+
+    Only single-month views get a baseline. A twelve-month sum has no monthly
+    normal to sit beside, and inventing one would be a claim the data does
+    not make — so `median` comes back None and the bars draw as they always
+    have.
+    """
+    baseline_months = [_month_add(month, -d) for d in range(1, _BASELINE_MONTHS + 1)]
+    rows = conn.execute("""
+        SELECT c.name as name, substr(t.date, 1, 7) as m, SUM(t.amount) as total
+        FROM transactions t
+        JOIN categories c ON t.category_id = c.id
+        WHERE t.user_id = %s AND t.type = %s
+          AND substr(t.date, 1, 7) >= %s AND substr(t.date, 1, 7) <= %s
+        GROUP BY c.id, c.name, m
+    """, (uid, txn_type, baseline_months[-1], baseline_months[0])).fetchall()
+
+    # Too little history to say what normal is. Saying nothing beats telling
+    # someone their second recorded month is a 300% overspend.
+    if len({r["m"] for r in rows}) < _MIN_BASELINE_MONTHS:
+        for item in items:
+            item["median"] = None
+        return items
+
+    by_category = {}
+    for r in rows:
+        by_category.setdefault(r["name"], {})[r["m"]] = r["total"]
+
+    for item in items:
+        history = by_category.get(item["name"], {})
+        monthly = [history.get(m, 0.0) for m in baseline_months]
+        median = _median(monthly)
+        item["median"] = median
+        # Rent does not move, and a category that never moves has no news in
+        # it. Reporting "0% off normal" beside it every month teaches the eye
+        # to skip the column that carries the actual news.
+        #
+        # "Fixed" has to mean this month too, not just the six behind it. A
+        # category that has been flat for half a year and then jumps is the
+        # loudest thing on the card, and an earlier version of this line
+        # marked it fixed and said nothing.
+        deviation = _median([abs(v - median) for v in monthly])
+        flat = median > 0 and (deviation / median) <= _FIXED_SPREAD
+        item["fixed"] = flat and abs(item["total"] - median) / median <= _FIXED_SPREAD
+    return items
+
+
 
 @bp.route("/api/dashboard/monthly-summary")
 def monthly_summary():
@@ -146,7 +228,14 @@ def category_breakdown():
                     GROUP BY c.id, c.name
                     ORDER BY total DESC
                 """, [uid, txn_type] + months_list).fetchall()
-                return jsonify({"type": txn_type, "months": months_list, "items": [dict(r) for r in rows]})
+                items = [dict(r) for r in rows]
+                # "Latest month" scope arrives here as a one-element list, so
+                # a single month gets its baseline whichever way it was asked
+                # for. Several months are a sum, and a sum has no monthly
+                # normal to stand beside.
+                if len(months_list) == 1:
+                    _attach_baseline(conn, uid, txn_type, months_list[0], items)
+                return jsonify({"type": txn_type, "months": months_list, "items": items})
 
         if year:
             rows = conn.execute("""
@@ -181,7 +270,10 @@ def category_breakdown():
             ORDER BY total DESC
         """, (uid, txn_type, month)).fetchall()
 
-    return jsonify({"type": txn_type, "month": month, "items": [dict(r) for r in rows]})
+        items = [dict(r) for r in rows]
+        _attach_baseline(conn, uid, txn_type, month, items)
+
+    return jsonify({"type": txn_type, "month": month, "items": items})
 
 
 @bp.route("/api/dashboard/heatmap")

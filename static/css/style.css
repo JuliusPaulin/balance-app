@@ -1097,6 +1097,267 @@ tbody tr:last-child td {
     border-color: var(--accent) !important;
 }
 
+/* ── Transactions: the filter rail ───────────────────────────────────
+   Filters sit beside the table instead of in a drawer above it, so opening
+   them never pushes the list off screen. Every value carries the count it
+   would give, which makes the rail a read on the spending as well as a
+   control. See /api/transactions/facets. */
+.tx-layout {
+    display: grid;
+    grid-template-columns: 232px minmax(0, 1fr);
+    gap: 16px;
+    align-items: start;
+}
+.tx-main { min-width: 0; }
+
+.tx-rail {
+    background: var(--bg);
+    border: 1px solid var(--border);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow-card);
+    padding: 12px;
+    position: sticky;
+    top: 16px;
+    max-height: calc(100vh - 32px);
+    overflow-y: auto;
+}
+.tx-rail-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: var(--text-footnote);
+    font-weight: 700;
+    letter-spacing: 0.07em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    padding-bottom: 10px;
+}
+.tx-rail-clear {
+    border: 0;
+    background: transparent;
+    color: var(--accent);
+    font: 600 11px/1 var(--font);
+    text-transform: none;
+    letter-spacing: 0;
+    cursor: pointer;
+    display: none;
+}
+.tx-rail-clear:hover { text-decoration: underline; }
+
+.rail-sec { padding-top: 13px; border-top: 0.5px solid var(--separator); }
+.rail-sec:first-of-type { padding-top: 0; border-top: 0; }
+.rail-sec + .rail-sec { margin-top: 13px; }
+.rail-sec h4 {
+    display: flex;
+    align-items: center;
+    font-size: 10px;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: var(--text-tertiary);
+    margin-bottom: 8px;
+}
+.rail-clear {
+    margin-left: auto;
+    border: 0;
+    background: transparent;
+    color: var(--accent);
+    font: 600 11px/1 var(--font);
+    text-transform: none;
+    letter-spacing: 0;
+    cursor: pointer;
+    opacity: 0;
+    transition: opacity var(--transition);
+}
+.rail-sec:hover .rail-clear { opacity: 1; }
+.rail-clear:hover { text-decoration: underline; }
+
+.rail-seg { width: 100%; margin-bottom: 8px; }
+.rail-seg .btn { flex: 1; justify-content: center; }
+
+.rail-list { display: flex; flex-direction: column; gap: 1px; }
+.rail-item {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    width: 100%;
+    padding: 6px 5px;
+    border: 0;
+    background: transparent;
+    border-radius: var(--radius-xs);
+    font: 500 var(--text-subhead)/1.2 var(--font);
+    color: var(--text-secondary);
+    cursor: pointer;
+    text-align: left;
+}
+.rail-item:hover { background: var(--bg-secondary); color: var(--text-primary); }
+.rail-item.sel { color: var(--text-primary); font-weight: 640; }
+.rail-item.empty { color: var(--text-quaternary); }
+.rail-item.empty .rail-bar { background: var(--separator); }
+.rail-name {
+    flex: 1;
+    min-width: 0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+/* The share bar is the reason the rail doubles as a summary — it reads at a
+   glance even when the number does not. */
+.rail-bar {
+    height: 3px;
+    border-radius: 2px;
+    background: var(--accent-ring);
+    flex: none;
+}
+.rail-item.sel .rail-bar { background: var(--accent); }
+.rail-n {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    font-variant-numeric: tabular-nums;
+    flex: none;
+    min-width: 26px;
+    text-align: right;
+}
+.rail-box {
+    width: 14px;
+    height: 14px;
+    flex: none;
+    border-radius: 4px;
+    border: 1.5px solid var(--text-quaternary);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+}
+.rail-item.sel .rail-box { background: var(--accent); border-color: var(--accent); }
+.rail-item.sel .rail-box::after {
+    content: "";
+    width: 3.5px;
+    height: 7px;
+    border: solid var(--on-accent);
+    border-width: 0 2px 2px 0;
+    transform: rotate(45deg) translate(-1px, -1px);
+}
+
+.rail-more {
+    border: 0;
+    background: transparent;
+    color: var(--accent);
+    font: 600 var(--text-caption)/1 var(--font);
+    padding: 6px 5px;
+    cursor: pointer;
+    display: none;
+}
+.rail-more:hover { text-decoration: underline; }
+.rail-empty { padding: 6px 5px; font-size: var(--text-caption); color: var(--text-tertiary); }
+
+.rail-search {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    background: var(--bg-secondary);
+    border: 1px solid var(--border);
+    border-radius: var(--radius-sm);
+    padding: 0 8px;
+    height: 30px;
+    margin-bottom: 6px;
+}
+.rail-search svg { flex: none; color: var(--text-tertiary); }
+.rail-search input {
+    border: 0;
+    background: transparent;
+    outline: none;
+    width: 100%;
+    height: 100%;
+    font: 400 var(--text-subhead)/1 var(--font);
+    color: var(--text-primary);
+}
+
+.rail-dates { display: flex; flex-direction: column; gap: 6px; margin-top: 8px; }
+.rail-field { display: flex; align-items: center; gap: 8px; }
+.rail-field > span {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    width: 32px;
+    flex: none;
+}
+.rail-field .form-input { height: 30px; font-size: var(--text-subhead); padding: 0 8px; }
+.rail-amounts { display: flex; gap: 6px; }
+.rail-amounts .form-input {
+    height: 30px;
+    font-size: var(--text-subhead);
+    padding: 0 8px;
+    min-width: 0;
+    flex: 1;
+}
+
+/* The result line — the most useful sentence on the page, at a size that
+   says so instead of 11px of grey beside a button. */
+.tx-result-line {
+    display: flex;
+    align-items: baseline;
+    gap: 10px;
+    flex-wrap: wrap;
+    margin-top: 12px;
+    padding-top: 11px;
+    border-top: 0.5px solid var(--separator);
+    font-variant-numeric: tabular-nums;
+}
+.tx-result-n { font-size: var(--text-body); font-weight: 680; letter-spacing: -0.015em; }
+.tx-result-money { font-size: var(--text-subhead); font-weight: 600; color: var(--text-secondary); }
+.tx-result-money .out { color: var(--red); }
+.tx-result-money .in  { color: var(--green); }
+
+/* Applied filters in words. The rail already shows them, but on a narrow
+   window the rail is shut — and a filter you cannot see is the fault this
+   whole page exists to fix. */
+.tx-tokens { display: none; flex-wrap: wrap; gap: 6px; margin-top: 10px; }
+.tx-token {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    height: 26px;
+    padding: 0 3px 0 9px;
+    border-radius: 99px;
+    font: 600 var(--text-caption)/1 var(--font);
+    background: var(--accent-soft);
+    border: 1px solid var(--accent-ring);
+    color: var(--text-primary);
+    white-space: nowrap;
+}
+.tx-token-x {
+    width: 18px;
+    height: 18px;
+    border: 0;
+    border-radius: 50%;
+    background: transparent;
+    color: var(--text-tertiary);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+}
+.tx-token-x:hover { background: var(--bg-tertiary); color: var(--text-primary); }
+
+/* Wide enough for the rail: it is always open, so the button that would
+   open it has nothing to do. */
+.tx-rail-toggle { display: none; }
+
+@media (max-width: 1024px) {
+    .tx-layout { grid-template-columns: minmax(0, 1fr); }
+    .tx-rail-toggle { display: inline-flex; }
+    /* Narrow: the rail stacks above the table and starts shut, so the list
+       is still the first thing on screen. */
+    .tx-rail {
+        display: none;
+        position: static;
+        max-height: none;
+        order: 2;
+    }
+    .tx-rail.open { display: block; }
+    .tx-main { order: 1; }
+    .tx-rail-clear { display: block; }
+}
+
 /* ── Category Bars — horizontal bar chart ────────────────────────── */
 .cat-bar-row {
     display: flex;
@@ -1136,9 +1397,42 @@ tbody tr:last-child td {
     min-width: 2px;
 }
 
+/* ── The baseline: "normal" drawn on the same track as the month ──
+   The tick is where this category's median month sits; the bar is where this
+   one landed. A bar past its own tick is the whole point of the card, so it
+   takes the warning colour and stops being one green length among six. */
+.cat-bar-fill.over {
+    background: color-mix(in srgb, var(--red) 48%, transparent);
+}
+
+.cat-bar-tick {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 2px;
+    margin-left: -1px;
+    border-radius: 2px;
+    /* Has to read against the empty track AND against the fill it sits on. */
+    background: var(--text-secondary);
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+.cat-bar-delta {
+    display: inline-block;
+    width: 62px;
+    text-align: right;
+    font-size: var(--text-caption);
+    font-weight: 600;
+    font-variant-numeric: tabular-nums;
+}
+.cat-bar-delta.up   { color: var(--red); }
+.cat-bar-delta.down { color: var(--green); }
+.cat-bar-delta.flat { color: var(--text-quaternary); }
+
 .cat-bar-amount {
     /* Holds "421 € · 12.8% +73%" on one line (design #8, #16) */
-    width: 165px;
+    width: 192px;
     font-size: var(--text-subhead);
     font-weight: 500;
     font-variant-numeric: tabular-nums;
@@ -1287,37 +1581,6 @@ tbody tr:last-child td {
 }
 
 /* ── Category Chips ──────────────────────────────────────────────── */
-.cat-filter-wrap {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
-    margin-top: 2px;
-}
-
-.cat-chip {
-    padding: 4px 10px;
-    border-radius: 20px;
-    font-size: var(--text-caption);
-    font-weight: 500;
-    border: 0.5px solid var(--border);
-    background: var(--bg-secondary);
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all var(--transition);
-    font-family: var(--font);
-}
-
-.cat-chip:hover {
-    border-color: var(--accent);
-    color: var(--accent);
-}
-
-.cat-chip.selected {
-    background: var(--accent);
-    border-color: var(--accent);
-    color: var(--on-accent);
-}
-
 /* ── Trend Category Dropdown ─────────────────────────────────────── */
 .trend-selector {
     position: relative;
