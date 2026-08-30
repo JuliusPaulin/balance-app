@@ -9,7 +9,7 @@ from ``merchant_rules``; ``bank_import`` borrows the staging helpers from
 ``csv_import``.
 """
 
-from routes import (bank_import, categories, csv_import, dashboard,
+from routes import (bank_import, categories, chat, csv_import, dashboard,
                     merchant_rules, net_worth, notes, subscriptions, system,
                     transactions)
 
@@ -24,4 +24,5 @@ ALL = [
     net_worth.bp,
     csv_import.bp,
     bank_import.bp,
+    chat.bp,
 ]

@@ -11,5 +11,8 @@ PyJWT>=2.8
 cryptography>=42.0
 # Investment import: Nordea Omistukset.xlsx parsing (Nordnet CSVs need nothing).
 openpyxl>=3.1
+# AI chat assistant (optional feature). Imported lazily in ai_chat.py, so a
+# build without it still runs — the chat panel just reports itself unconfigured.
+anthropic>=1.0
 # Build tool: packages the desktop app (see Balance.spec).
 pyinstaller>=6.0

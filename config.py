@@ -20,6 +20,8 @@ FLASK_DEBUG
     "1" enables Flask debug mode; anything else (default "0") disables it.
 ENABLE_BANKING_*
     Optional Open Banking import credentials — see the block at the bottom.
+ANTHROPIC_API_KEY, AI_MODEL, AI_EFFORT
+    Optional AI chat assistant settings — see the block at the bottom.
 """
 
 import os
@@ -132,3 +134,31 @@ app's own local address; override only if you run it somewhere else."""
 def enable_banking_configured():
     """True when the EB app id and private key are both present."""
     return bool(ENABLE_BANKING_APP_ID and ENABLE_BANKING_PRIVATE_KEY)
+
+
+# ── AI chat assistant (optional) ─────────────────────────────────────────
+# The chat panel talks to a model through ai_chat.py. Optional in exactly the
+# way Enable Banking is: with nothing configured, ai_configured() is False, the
+# route reports 400 and the UI hides the panel. Nothing else in the app changes.
+#
+# The cloud API is the first backend, not the intended one — see
+# docs/LOCAL_AI_RESEARCH.md. The tool layer is deliberately provider-neutral so
+# a local model can be dropped in behind the same schemas.
+
+ANTHROPIC_API_KEY = os.environ.get("ANTHROPIC_API_KEY", "")
+"""API key for the chat assistant. Empty = the chat feature is off."""
+
+AI_MODEL = os.environ.get("AI_MODEL", "claude-opus-5")
+"""Model the assistant runs on."""
+
+AI_EFFORT = os.environ.get("AI_EFFORT", "medium")
+"""Thinking effort: low | medium | high | xhigh | max.
+
+Defaulted below the API's own default on purpose. The assistant's job is
+choosing between six tools and phrasing one result — a routing task, in a side
+panel where latency is felt. Raise it if answers start feeling shallow."""
+
+
+def ai_configured():
+    """True when the chat assistant has what it needs to answer."""
+    return bool(ANTHROPIC_API_KEY)

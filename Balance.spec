@@ -9,14 +9,14 @@ VERSION = pathlib.Path('VERSION').read_text(encoding='utf-8').strip() or 'dev'
 
 datas = [('templates', 'templates'), ('static', 'static'), ('VERSION', '.')]
 binaries = []
-hiddenimports = ['webview', 'webview.platforms.cocoa', 'flask', 'flask_limiter', 'dateutil', 'db_sqlite', 'database', 'investment_import', 'openpyxl']
+hiddenimports = ['webview', 'webview.platforms.cocoa', 'flask', 'flask_limiter', 'dateutil', 'db_sqlite', 'database', 'investment_import', 'openpyxl', 'ai_tools', 'ai_chat']
 # The routes live in a package now. PyInstaller does follow the static imports in
 # routes/__init__.py, but a miss here only shows up in the packaged app, so the
 # modules are named outright.
 hiddenimports += ['core', 'routes'] + [
     'routes.' + m for m in (
         'bank_import', 'categories', 'csv_import', 'dashboard', 'merchant_rules',
-        'net_worth', 'notes', 'subscriptions', 'system', 'transactions',
+        'chat', 'net_worth', 'notes', 'subscriptions', 'system', 'transactions',
     )
 ]
 tmp_ret = collect_all('webview')

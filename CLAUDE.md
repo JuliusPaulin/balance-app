@@ -29,6 +29,9 @@
   last value, and closing one writes a zero at the closing date rather than hiding
   it, so past months stay true. Never filter `is_archived` in the total queries.
 - `investment_import.py` — Nordnet CSV / Nordea xlsx portfolio parsers (→ holdings + Net Worth)
+- `ai_tools.py` — the six read-only tools the chat assistant may call, each a
+  wrapper over an endpoint the app already serves
+- `ai_chat.py` — the agent loop: system prompt, request, tool-call cycle
 
 **The `routes/` package.** `app.py` held every route until it reached 3,000
 lines; the routes now sit one area per module, and `routes/__init__.py` lists
@@ -46,6 +49,7 @@ the blueprints `app.py` registers — the only place a new area is added.
 | `net_worth.py` | accounts, balances, net worth, holdings, investment import |
 | `csv_import.py` | parse a statement, stage it, confirm it |
 | `bank_import.py` | Open Banking consent, fetch, disconnect |
+| `chat.py` | the AI assistant: availability, and one answered turn |
 
 They lean on each other in **one direction only**, so nothing imports in a
 circle: everything imports `core`; `csv_import` takes the rule rebuilder from
@@ -86,7 +90,7 @@ through `db`: `db.IntegrityError`, `db.DatabaseError`, `db.Json(...)`,
 
 ## Tests
 
-`python3 -m pytest tests/` — 153 tests, all green.
+`python3 -m pytest tests/` — 203 tests, all green.
 
 `conftest.py` points `SQLITE_PATH` at a throwaway file **at import time**, before
 pytest collects any test module. This matters: test modules `import config` /
@@ -400,6 +404,34 @@ part of what you pay each month — so the header reads "737 €/mo · 5 active"
 not 855 € across 10. Transfers and investments are excluded from those totals
 too, for a different reason (they are movements, not consumption).
 
+### AI Chat Assistant
+
+A chat panel that answers questions about your own figures. Optional in exactly
+the way Open Banking is: without `ANTHROPIC_API_KEY` the assistant reports
+itself unconfigured and the UI hides the panel.
+
+**The assistant does not query the database and does not do arithmetic.** It
+picks one of six read-only tools in `ai_tools.py`, each of which dispatches one
+of the app's own GET endpoints in-process — so a number it reports is a number
+the Dashboard would draw, computed by the same SQL through the same
+`_filter_clauses`. Three rules make that hold, and each exists because the
+obvious alternative fails in an app about money:
+
+| Rule | Why |
+|------|-----|
+| No SQL from the model | A plausible query with the join or the sign wrong reports a false number, confidently. Picking one of six functions is a task a small local model can also do. |
+| No arithmetic from the model | Every amount comes back twice — a raw float and a preformatted `_eur` string. The model quotes the string; a rounding it never performs is one it cannot get wrong. |
+| No calendar arithmetic from the model | "Last month" and "since summer" are where small models actually fail. Tools take a `period` name from a fixed list and `resolve_period()` turns it into explicit months, in Python, where it is tested. |
+
+Read-only on purpose — the app has no undo for a hand-edited row.
+
+The loop in `ai_chat.py` is hand-written rather than the SDK's tool runner, and
+`TOOL_SCHEMAS` is provider-neutral JSON Schema, because the intended backend is
+a **local** model (`docs/LOCAL_AI_RESEARCH.md`); the loop is the only piece that
+changes when that swap happens. `MAX_TOOL_ROUNDS` caps the cycle, and the final
+turn withdraws the tools so a stuck conversation ends in a sentence rather than
+a seventh identical lookup.
+
 ### Month Notes
 - Per-month text notes stored in `month_notes`
 - Accessible via `/api/notes/<YYYY-MM>`
@@ -521,6 +553,9 @@ GET        /api/import/bank/connect                302 → bank consent (mints C
 GET        /api/import/bank/callback               consent return; verifies state, upserts session
 POST       /api/import/bank/fetch                  (body: {account_uid, date_from, date_to}) → stages txns
 POST       /api/import/bank/disconnect             drops the user's bank session
+
+GET        /api/chat/status                        whether the assistant is configured
+POST       /api/chat                               (body: {messages:[{role,content}]})
 
 GET/PUT    /api/notes/<YYYY-MM>
 GET        /api/notes
