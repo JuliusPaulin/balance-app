@@ -24,8 +24,6 @@
 - `database.py` — schema DDL + seeding + backups
 - `scripts/migrate_to_local_sqlite.py` — one-time import of an old DB into this schema
 - `recurring.py` — recurring/subscription detection over transaction history
-- `forecast.py` — cash-flow forecast: recurring series rolled forward, plus a
-  typical month's everyday spending
 - `networth.py` — net worth tracking (carry-forward over manual account balances; grouped + holdings).
   Totals come from balances alone: an account you leave out of an update keeps its
   last value, and closing one writes a zero at the closing date rather than hiding
@@ -88,7 +86,7 @@ through `db`: `db.IntegrityError`, `db.DatabaseError`, `db.Json(...)`,
 
 ## Tests
 
-`python3 -m pytest tests/` — 159 tests, all green.
+`python3 -m pytest tests/` — 140 tests, all green.
 
 `conftest.py` points `SQLITE_PATH` at a throwaway file **at import time**, before
 pytest collects any test module. This matters: test modules `import config` /
@@ -259,8 +257,8 @@ JSON: `_bank_failed()` logs the detail and bounces to `/#import?bank=<reason>`
 JSON — `session_expired` (401) and `bank_auth` (502) are separate codes.
 
 ### Dashboard
-Card order: Monthly Overview → Cash Flow Forecast → Expenses by Category →
-Income by Category → Expense Trends → Spending Heatmap → Monthly Summary.
+Card order: Monthly Overview → Expenses by Category → Income by Category →
+Expense Trends → Spending Heatmap → Monthly Summary.
 
 - Monthly expense vs income bar chart
   - No grid lines or y-axis labels; clean look
@@ -280,7 +278,6 @@ Income by Category → Expense Trends → Spending Heatmap → Monthly Summary.
   the breakdown. Category lookup matches on **name and type** — "Other" and
   "Investments" exist on both sides.
   - **Clicking a bar** opens a drill-down modal: all transactions for that category in the same period, sorted largest → smallest
-- **Cash Flow Forecast** — see below.
 - **Monthly Summary** — clicking any row (monthly or yearly view) opens every
   transaction in that month, income and expense, newest first. The note button
   stops propagation so it still opens only the note.
@@ -307,50 +304,6 @@ pick ("income" only when every one of them is), and three things read it: the
 stat card ("Total Earned" vs "Total Spent"), the month chart's title, and the
 colours. Up is red on an expense and green on an income — a rising salary
 painted red reads as a warning about earning more.
-
-### Cash Flow Forecast
-
-`forecast.py` answers "what do the next few months look like", from the data
-already in the app — no new tables, nothing stored. It sits on the Dashboard
-under Monthly Overview, with **its own** 3M/6M/12M buttons: the period controls
-at the top of the page choose which *history* the cards show, and a range
-meaning "the last two years" means nothing to a forecast.
-
-Each month is split in two, and the two halves add back up to the whole:
-
-| Half | Where it comes from |
-|------|--------------------|
-| **Recurring** | every series `recurring.py` detects (plus the hand-added ones), rolled forward on its own cadence to the dates it should land on |
-| **Everyday** | the median of what the last 6 completed months cost once *their* recurring charges are removed |
-
-The same knife cuts both: a transaction counts as recurring only if its store
-belongs to a detected series, and those same transactions are the ones taken out
-of the everyday baseline. Nothing is counted twice and nothing is dropped — Rent,
-which detection skips as a generic name, still reaches the forecast through the
-everyday half. `recurring.py` items carry a `stores` list for exactly this.
-
-Three judgements worth keeping:
-
-- **Transfers count.** `recurring.py` holds Investments and Debt out of its
-  "what I pay per month" total because they are movements, not consumption. A
-  forecast asks whether the money is *there*, and money moved into a fund has
-  left the account like any other, so it is forecast — and removed from the
-  everyday baseline to match.
-- **Stopped series are not forecast**, because a service that ended will not
-  charge again. Their past charges *are* still removed from the baseline: leave
-  them in and a subscription cancelled in March inflates every month before it.
-- **The part-month is scaled by the days left**, not by netting off what the
-  month has already run up. Netting reads better — a salary already paid is not
-  forecast twice — but it cannot tell "not spent yet" from "statement not
-  imported yet", and on the 30th of an unimported month it forecast a whole
-  further month of salary and spending. Scaling is cruder and can only be wrong
-  by the share of the month still to run.
-
-A month with no transactions at all is **skipped** in the baseline rather than
-read as a month of zero spending; it is a statement not imported.
-
-Clicking a row opens what that month expects: every dated charge, then the
-everyday average as its own line, then the net.
 
 ### Subscriptions (recurring detection)
 
@@ -408,8 +361,7 @@ Re-run anytime with `python3 scripts/generate_merchant_rules.py` — clears and 
 - `fmt(amount)` — global currency formatter (fi-FI locale, EUR, **0 decimal places**)
 
 **Every range selector is styled by one rule.** `.horizon-btn`,
-`.forecast-period-btn`, `.trends-period-btn`, `.trends-toptx-btn` and
-`.nw-period-btn` share the
+`.trends-period-btn`, `.trends-toptx-btn` and `.nw-period-btn` share the
 `.active` styling, so the chosen range is marked the same way on every page. A
 new selector that does not join that list toggles a class nothing paints, and
 no button ever looks selected.
@@ -458,7 +410,6 @@ GET        /api/dashboard/category-trends
 GET        /api/dashboard/category-breakdown   ?month, months, year, type
                                                (type = expense | income; default expense)
 GET        /api/dashboard/heatmap          ?year
-GET        /api/dashboard/forecast         ?months  (1–12 full months ahead)
 
 GET        /api/reports/annual
 

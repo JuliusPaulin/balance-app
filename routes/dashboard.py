@@ -3,9 +3,7 @@
 from datetime import datetime
 from flask import Blueprint, request, jsonify
 from database import db_conn
-import core
 from core import current_user_id
-from forecast import build_forecast, DEFAULT_MONTHS_AHEAD
 
 bp = Blueprint("dashboard", __name__)
 
@@ -184,21 +182,6 @@ def category_breakdown():
         """, (uid, txn_type, month)).fetchall()
 
     return jsonify({"type": txn_type, "month": month, "items": [dict(r) for r in rows]})
-
-
-@bp.route("/api/dashboard/forecast")
-def forecast():
-    """Expected cash flow for the months ahead (see forecast.py).
-
-    ``months`` is how many FULL months to project; the rest of the current
-    month is always returned in front of them.
-    """
-    uid = current_user_id()
-    months = request.args.get("months", DEFAULT_MONTHS_AHEAD, type=int)
-    with db_conn() as conn:
-        recurring = core.cached_recurring(conn, uid)
-        return jsonify(build_forecast(conn, uid, months_ahead=months,
-                                      recurring=recurring))
 
 
 @bp.route("/api/dashboard/heatmap")

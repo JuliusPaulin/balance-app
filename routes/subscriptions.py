@@ -2,6 +2,7 @@
 
 from flask import Blueprint, request, jsonify
 from database import db_conn
+from recurring import detect_recurring
 import core
 from core import current_user_id, bump_data_version
 
@@ -22,8 +23,16 @@ def recurring():
     lookback = _int_arg("lookback_months", 18)
     min_occ = _int_arg("min_occurrences", 3)
 
+    key = (uid, lookback, min_occ)
+    cached = core.recurring_cache.get(key)
+    if cached and cached[0] == core.data_version:
+        return jsonify(cached[1])
+
     with db_conn() as conn:
-        return jsonify(core.cached_recurring(conn, uid, lookback, min_occ))
+        result = detect_recurring(conn, uid, lookback_months=lookback,
+                                  min_occurrences=min_occ)
+    core.recurring_cache[key] = (core.data_version, result)
+    return jsonify(result)
 
 
 @bp.route("/api/recurring/dismiss", methods=["POST"])

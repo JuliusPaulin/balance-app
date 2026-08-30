@@ -248,7 +248,6 @@ def _load_manual(conn, user_id) -> list:
             "is_transfer": is_transfer,
             "is_manual": True,
             "manual_id": r["id"],
-            "stores": [r["store"]],
         })
     return out
 
@@ -446,10 +445,6 @@ def detect_recurring(conn, user_id, lookback_months: int = 18,
             "is_transfer": is_transfer,
             "is_manual": False,
             "manual_id": None,
-            # Every original store string that merged into this series. The
-            # cash-flow forecast reads it to tell which past transactions were
-            # already recurring, so it does not count them twice.
-            "stores": sorted(g["stores"]),
         })
 
     # Fold in user-added (manual) subscriptions — ones detection missed.

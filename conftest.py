@@ -63,14 +63,6 @@ def _reset_local_user():
     with db.db_conn() as conn:
         conn.execute("DELETE FROM users WHERE id = %s", (config.LOCAL_USER_ID,))
     database.seed_local_user()
-
-    # Recurring detection is cached in memory against a version counter that
-    # only the write routes bump. Wiping the user behind their back leaves the
-    # previous test's result in that cache under the same key, so bump it here
-    # too — otherwise a forecast or subscriptions test reads the last test's data.
-    import core
-    core.bump_data_version()
-
     return config.LOCAL_USER_ID
 
 
