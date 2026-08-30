@@ -260,19 +260,11 @@ JSON — `session_expired` (401) and `bank_auth` (502) are separate codes.
 Card order: Monthly Overview → Expenses by Category → Income by Category →
 Expense Trends → Spending Heatmap → Monthly Summary.
 
-- Monthly expense vs income bar chart
-  - **Latest month / Period toggle.** The card opens on the latest month with
-    data, on its own, and ignores the period controls at the top of the page
-    while it does — two years of bars is not the first thing you want to read.
-    Switch it to **Period** and it follows those controls like every other card.
-    `monthlyChartRows()` is the one place that decides, and both render paths
-    (`loadDashboard()` and `applyPeriodFilter()`) go through it, so the chart
-    and its buttons cannot disagree. Nothing else on the page changed: the
-    summary cards, breakdowns and table still follow the period picker.
-  - A single month is two bars, pinned to `barThickness: 72`. `maxBarThickness`
-    alone is not enough there — with one category Chart.js measures the slot
-    from the gap between neighbours, has none, and settles on a sliver on the
-    first paint after load.
+- Monthly expense vs income bar chart, over whatever the period controls cover
+  - A single month (one explicit month picked) is two bars, pinned to
+    `barThickness: 72`. `maxBarThickness` alone is not enough there — with one
+    category Chart.js measures the slot from the gap between neighbours, has
+    none to measure, and settles on a sliver on the first paint after load.
   - No grid lines or y-axis labels; clean look
   - Y-axis max = data max × 1.15 (15% headroom for labels)
   - White value label rendered inside each bar near top (hidden if bar too short)
@@ -280,9 +272,16 @@ Expense Trends → Spending Heatmap → Monthly Summary.
 - Expense/income over time line chart
 - Top 5 expense categories trend (last N months)
 - **Expenses by Category** and **Income by Category** — the same bars from one
-  renderer (`renderBreakdownBars`), over the same period. `breakdownPeriodMonths()`
-  is the single answer to "which months are we showing": the explicit month
-  picks if there are any, otherwise **every month the horizon covers**. Both
+  renderer (`renderBreakdownBars`), over the same period. Both open on the
+  **latest month alone** and ignore the period controls at the top of the page
+  while they do; a **Latest month / Period** toggle on each card switches them
+  back to following those controls. One `breakdownScope` for the pair, so either
+  set of buttons moves both — they answer the same question about the same
+  months, and a pair that could disagree is the bug the next paragraph is about.
+  `breakdownPeriodMonths()` is the single answer to "which months are we
+  showing": on `latest`, the latest month there is data for (not the latest
+  month the period covers); otherwise the explicit month picks if there are
+  any, else **every month the horizon covers**. Both
   cards ask it, so they cannot drift from each other or from the rest of the
   page. They once ignored the horizon and always drew the latest single month,
   which put a 3 300 € breakdown beside a 95 616 € total on the same screen —
@@ -373,7 +372,7 @@ Re-run anytime with `python3 scripts/generate_merchant_rules.py` — clears and 
 - `fmt(amount)` — global currency formatter (fi-FI locale, EUR, **0 decimal places**)
 
 **Every range selector is styled by one rule.** `.horizon-btn`,
-`.monthly-scope-btn`, `.trends-period-btn`, `.trends-toptx-btn` and
+`.breakdown-scope-btn`, `.trends-period-btn`, `.trends-toptx-btn` and
 `.nw-period-btn` share the
 `.active` styling, so the chosen range is marked the same way on every page. A
 new selector that does not join that list toggles a class nothing paints, and

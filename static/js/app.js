@@ -2398,7 +2398,7 @@ async function applyPeriodFilter() {
     if (!cachedMonthly.length) { loadDashboard(); return; }
     const filtered = filterData(cachedMonthly);
     renderSummaryCards(filtered);
-    renderMonthlyChart(monthlyChartRows());
+    renderMonthlyChart(filtered);
     if (cachedTopExpenses) drawTrendsFromData(cachedTopExpenses);
     renderSummaryTable(cachedMonthly);
     // Category bars need fresh API call for correct aggregation
@@ -2425,27 +2425,6 @@ function filterData(monthly) {
 
 function filterByHorizon(monthly) { return filterData(monthly); }
 
-// ── Monthly Overview scope ───────────────────────────────────────────
-// The card opens on the latest month alone. The period controls at the top
-// choose what the rest of the page covers, and two years of bars is not the
-// first thing you want to read on the Dashboard. Switch it to Period and the
-// card follows those controls like everything else.
-let monthlyChartScope = "latest";   // "latest" | "period"
-
-function setMonthlyScope(scope) {
-    monthlyChartScope = scope;
-    renderMonthlyChart(monthlyChartRows());
-}
-
-// In "latest" mode this ignores the period controls on purpose: it is the
-// latest month there is data for, not the latest month the period covers.
-function monthlyChartRows() {
-    if (monthlyChartScope === "period") return filterData(cachedMonthly);
-    const months = [...new Set(cachedMonthly.map(r => r.month))].sort();
-    const latest = months[months.length - 1];
-    return cachedMonthly.filter(r => r.month === latest);
-}
-
 async function loadDashboard() {
     const [monthly, topExpenses] = await Promise.all([
         api("/api/dashboard/monthly-summary"),
@@ -2461,7 +2440,7 @@ async function loadDashboard() {
     await loadMonthsWithNotes();
 
     renderSummaryCards(filtered);
-    renderMonthlyChart(monthlyChartRows());
+    renderMonthlyChart(filtered);
     renderCategoryBars(catBreakdown);
     renderTrendsChart(topExpenses);
     renderSummaryTable(monthly);
@@ -2470,11 +2449,29 @@ async function loadDashboard() {
     await loadHeatmap();
 }
 
-// Which months the period controls currently describe: the explicit month
-// picks if there are any, otherwise every month the horizon covers. Empty only
-// before the monthly rows have loaded, where the endpoint's own fallback (the
-// latest month with data) is the best guess available.
+// Both breakdown cards open on the latest month alone, and while they do they
+// ignore the period controls at the top of the page. Switch either to Period
+// and both follow those controls like every other card. One scope for the two
+// of them: they answer the same question about the same months, and a pair that
+// could disagree is the bug this whole function exists to prevent.
+let breakdownScope = "latest";   // "latest" | "period"
+
+async function setBreakdownScope(scope) {
+    breakdownScope = scope;
+    const catBreakdown = await api(expenseBreakdownUrl());
+    renderCategoryBars(catBreakdown);
+    await loadIncomeBreakdown(catBreakdown);
+}
+
+// Which months the two cards currently describe. On "latest", the latest month
+// there is data for — not the latest month the period covers. Otherwise the
+// explicit month picks if there are any, else every month the horizon covers.
+// Empty only before the monthly rows have loaded, where the endpoint's own
+// fallback (the latest month with data) is the best guess available.
 function breakdownPeriodMonths() {
+    if (breakdownScope === "latest") {
+        return [...new Set(cachedMonthly.map(r => r.month))].sort().slice(-1);
+    }
     if (selectedPeriods.size > 0) return [...selectedPeriods].sort();
     if (!cachedMonthly.length) return [];
     return [...new Set(filterData(cachedMonthly).map(r => r.month))].sort();
@@ -2532,8 +2529,6 @@ function renderSummaryCards(monthly) {
 function renderMonthlyChart(monthly) {
     const ctx = document.getElementById("chart-monthly");
     if (charts.monthly) charts.monthly.destroy();
-    document.querySelectorAll(".monthly-scope-btn").forEach(b =>
-        b.classList.toggle("active", b.dataset.scope === monthlyChartScope));
     const theme = chartTheme();
     const onAccent = cssVar("--on-accent");
 
@@ -2660,6 +2655,8 @@ function renderIncomeBars(breakdown)   { renderBreakdownBars("income-bars",   br
 function renderBreakdownBars(containerId, breakdown, type) {
     // Capture which months this breakdown covers so drill-down can match
     breakdownMonths = breakdown.months || (breakdown.month ? [breakdown.month] : []);
+    document.querySelectorAll(".breakdown-scope-btn").forEach(b =>
+        b.classList.toggle("active", b.dataset.scope === breakdownScope));
 
     const container = document.getElementById(containerId);
     if (!container) return;

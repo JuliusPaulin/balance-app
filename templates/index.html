@@ -127,21 +127,33 @@
         <div class="summary-row" id="summary-cards"></div>
         <div class="dashboard-grid">
             <div class="card full-width">
-                <div class="flex items-center" style="justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
-                    <div class="card-title" style="margin:0;white-space:nowrap">Monthly Overview</div>
-                    <div class="btn-group">
-                        <button class="btn btn-secondary btn-sm monthly-scope-btn active" data-scope="latest" onclick="setMonthlyScope('latest')">Latest month</button>
-                        <button class="btn btn-secondary btn-sm monthly-scope-btn" data-scope="period" onclick="setMonthlyScope('period')">Period</button>
-                    </div>
-                </div>
+                <div class="card-title">Monthly Overview</div>
                 <div class="chart-container" style="height:350px"><canvas id="chart-monthly"></canvas></div>
             </div>
             <div class="card full-width">
-                <div class="card-title">Expenses by Category</div>
+                <div class="flex items-center" style="justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+                    <div class="card-title" style="margin:0;white-space:nowrap">Expenses by Category</div>
+                    <!-- One scope for both breakdown cards: either set of
+                         buttons moves the pair, so they cannot describe
+                         different months. -->
+                    <div class="btn-group">
+                        <button class="btn btn-secondary btn-sm breakdown-scope-btn active" data-scope="latest" onclick="setBreakdownScope('latest')">Latest month</button>
+                        <button class="btn btn-secondary btn-sm breakdown-scope-btn" data-scope="period" onclick="setBreakdownScope('period')">Period</button>
+                    </div>
+                </div>
                 <div id="category-bars"></div>
             </div>
             <div class="card full-width">
-                <div class="card-title">Income by Category</div>
+                <div class="flex items-center" style="justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+                    <div class="card-title" style="margin:0;white-space:nowrap">Income by Category</div>
+                    <!-- One scope for both breakdown cards: either set of
+                         buttons moves the pair, so they cannot describe
+                         different months. -->
+                    <div class="btn-group">
+                        <button class="btn btn-secondary btn-sm breakdown-scope-btn active" data-scope="latest" onclick="setBreakdownScope('latest')">Latest month</button>
+                        <button class="btn btn-secondary btn-sm breakdown-scope-btn" data-scope="period" onclick="setBreakdownScope('period')">Period</button>
+                    </div>
+                </div>
                 <div id="income-bars"></div>
             </div>
             <div class="card full-width">
