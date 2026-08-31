@@ -19,34 +19,27 @@ echo "=== Fetching the model runtime ==="
 ./scripts/fetch_runtime.sh
 
 echo "=== Building ${APP_NAME}.app ==="
-# Exclude drivers left over from an old hosted build so PyInstaller neither
-# looks for them nor bundles them.
-python3 -m PyInstaller \
-    --name "${APP_NAME}" \
-    --windowed \
-    --onedir \
-    --icon static/icon.icns \
-    --add-data "templates:templates" \
-    --add-data "static:static" \
-    --add-data "vendor/llama:vendor/llama" \
-    --add-data "licences:licences" \
-    --hidden-import model_runtime \
-    --hidden-import webview \
-    --hidden-import webview.platforms.cocoa \
-    --hidden-import flask \
-    --hidden-import flask_limiter \
-    --hidden-import dateutil \
-    --hidden-import db_sqlite \
-    --hidden-import database \
-    --hidden-import investment_import \
-    --hidden-import openpyxl \
-    --exclude-module psycopg \
-    --exclude-module psycopg_pool \
-    --exclude-module authlib \
-    --collect-all webview \
-    --noconfirm \
-    --clean \
-    main.py
+# From Balance.spec, which is the build. This used to pass the whole
+# configuration on the command line instead, and PyInstaller writes a spec out
+# of whatever it is given — so every local build silently overwrote the real
+# one. That is how the bundle identifier, the plist and `version=VERSION` were
+# lost: a build here, `git add -A`, and the released app no longer knew what
+# version it was. Release CI builds from the spec, so this does too, and there
+# is one definition of the app rather than two that drift.
+python3 -m PyInstaller Balance.spec --noconfirm --clean
+
+echo "=== Checking the bundle ==="
+# The same two things the release workflow checks, so a local build fails here
+# rather than in CI ten minutes later.
+BUILT=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" \
+        "${DIST_DIR}/${APP_NAME}.app/Contents/Info.plist")
+EXPECTED=$(tr -d '[:space:]' < VERSION)
+[ "$BUILT" = "$EXPECTED" ] || {
+    echo "Built app reports ${BUILT}, VERSION says ${EXPECTED}"; exit 1; }
+test -f "${DIST_DIR}/${APP_NAME}.app/Contents/Frameworks/vendor/llama/llama-server" \
+  || test -f "${DIST_DIR}/${APP_NAME}.app/Contents/Resources/vendor/llama/llama-server" \
+  || { echo "No llama-server in the bundle — Balance AI would not run."; exit 1; }
+echo "Version ${BUILT}, runtime present"
 
 echo "=== Creating DMG ==="
 DMG_NAME="${APP_NAME}.dmg"

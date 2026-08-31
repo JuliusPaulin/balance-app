@@ -1,9 +1,30 @@
 # -*- mode: python ; coding: utf-8 -*-
+import pathlib
+
 from PyInstaller.utils.hooks import collect_all
 
-datas = [('templates', 'templates'), ('static', 'static'), ('vendor/llama', 'vendor/llama'), ('licences', 'licences')]
+# VERSION is the single source of truth: it is bundled so the running app can
+# report itself, and stamped into the plist so Finder's Get Info agrees.
+VERSION = pathlib.Path('VERSION').read_text(encoding='utf-8').strip() or 'dev'
+
+datas = [('templates', 'templates'), ('static', 'static'), ('VERSION', '.'),
+         # llama.cpp's server travels in the bundle; the weights do not and
+         # are fetched on first use. scripts/fetch_runtime.sh puts it here.
+         ('vendor/llama', 'vendor/llama'),
+         # Apache 2.0 asks that its terms and the attribution travel with
+         # the model, so they ship and are copied beside the weights.
+         ('licences', 'licences')]
 binaries = []
-hiddenimports = ['model_runtime', 'webview', 'webview.platforms.cocoa', 'flask', 'flask_limiter', 'dateutil', 'db_sqlite', 'database', 'investment_import', 'openpyxl']
+hiddenimports = ['webview', 'webview.platforms.cocoa', 'flask', 'flask_limiter', 'dateutil', 'db_sqlite', 'database', 'investment_import', 'openpyxl', 'ai_tools', 'ai_chat', 'ai_backends', 'model_runtime']
+# The routes live in a package now. PyInstaller does follow the static imports in
+# routes/__init__.py, but a miss here only shows up in the packaged app, so the
+# modules are named outright.
+hiddenimports += ['core', 'routes'] + [
+    'routes.' + m for m in (
+        'bank_import', 'categories', 'csv_import', 'dashboard', 'merchant_rules',
+        'chat', 'net_worth', 'notes', 'subscriptions', 'system', 'transactions',
+    )
+]
 tmp_ret = collect_all('webview')
 datas += tmp_ret[0]; binaries += tmp_ret[1]; hiddenimports += tmp_ret[2]
 
@@ -54,5 +75,11 @@ app = BUNDLE(
     coll,
     name='Balance.app',
     icon='static/icon.icns',
-    bundle_identifier=None,
+    bundle_identifier='com.juliuspaulin.balance',
+    version=VERSION,
+    info_plist={
+        'CFBundleShortVersionString': VERSION,
+        'CFBundleVersion': VERSION,
+        'NSHighResolutionCapable': True,
+    },
 )
