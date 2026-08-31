@@ -40,14 +40,22 @@ class FakeBackend:
         self._turns = list(turns)
         self.requests = []
 
-    def complete(self, system, messages, tools=None):
+    def complete(self, system, messages, tools=None, on_token=None):
         # Snapshot: the loop appends to one history list, so keeping the live
         # reference would make every recorded request read as the final one.
         self.requests.append({"system": system, "messages": list(messages),
                               "tools": tools})
         if not self._turns:
             raise AssertionError("the loop asked for more turns than were scripted")
-        return self._turns.pop(0)
+        turn = self._turns.pop(0)
+        # A real backend hands the answer over in pieces as it writes it. Two
+        # here is enough to prove the loop passes them on rather than the
+        # panel's stream quietly being one lump on arrival.
+        if on_token and turn.text:
+            middle = max(1, len(turn.text) // 2)
+            on_token(turn.text[:middle])
+            on_token(turn.text[middle:])
+        return turn
 
 
 ASK = [{"role": "user", "content": "What did I spend on groceries in May?"}]
@@ -235,3 +243,91 @@ def test_a_model_that_is_not_running_is_reported_as_such(client, monkeypatch):
     assert res.status_code == 503
     assert res.get_json()["code"] == "backend_unavailable"
     assert "Ollama" in res.get_json()["error"]
+
+
+# ── The stream ────────────────────────────────────────────────────────────
+# The same turn, reported while it happens. An answer is two model calls and
+# about five seconds, and every one of those seconds used to look identical
+# from outside.
+
+def _events(response):
+    """The decoded events of an SSE response, in order."""
+    import json as _json
+    return [_json.loads(line[len("data: "):])
+            for line in response.get_data(as_text=True).splitlines()
+            if line.startswith("data: ")]
+
+
+def test_the_stream_reports_each_step_as_it_happens(client, monkeypatch):
+    def _run(messages, on_event=None):
+        on_event({"type": "tool", "tool": "category_breakdown",
+                  "arguments": {"period": "last_month"}})
+        on_event({"type": "looked_up", "tool": "category_breakdown",
+                  "period": "2026-07", "ok": True})
+        for piece in ("You spent ", "421 € on groceries in July."):
+            on_event({"type": "token", "text": piece})
+        return {"reply": "You spent 421 € on groceries in July.", "backend": "local",
+                "tool_calls": [{"tool": "category_breakdown", "period": "2026-07",
+                                "ok": True}],
+                "usage": {"input_tokens": 1, "output_tokens": 2}}
+    monkeypatch.setattr(routes.chat, "run_chat", _run)
+
+    res = client.post("/api/chat/stream", json={"messages": ASK})
+    assert res.status_code == 200
+    assert res.mimetype == "text/event-stream"
+
+    events = _events(res)
+    assert [e["type"] for e in events] == [
+        "tool", "looked_up", "token", "token", "done"]
+    # The lookup is named before it runs, so the panel can say what it is doing
+    # rather than merely that it is doing something.
+    assert events[0]["tool"] == "category_breakdown"
+    # The months it read reach the panel, which is what stops a July figure
+    # reading as a wrong one about August.
+    assert events[1]["period"] == "2026-07"
+    assert "".join(e["text"] for e in events if e["type"] == "token") \
+        == "You spent 421 € on groceries in July."
+    # The last event carries the whole answer, so the panel renders its final
+    # state from one payload rather than from whatever it managed to catch.
+    assert events[-1]["reply"] == "You spent 421 € on groceries in July."
+    assert events[-1]["tool_calls"][0]["period"] == "2026-07"
+
+
+def test_the_stream_refuses_a_bad_conversation_before_it_starts(client):
+    """A 400 stays a 400 — not an error delivered halfway down a stream."""
+    res = client.post("/api/chat/stream", json={"messages": []})
+    assert res.status_code == 400
+    assert res.mimetype == "application/json"
+
+
+def test_a_model_that_is_off_ends_the_stream_with_an_error(client, monkeypatch):
+    def _down(messages, on_event=None):
+        raise ai_backends.BackendUnavailable("No Ollama at http://127.0.0.1:11434")
+    monkeypatch.setattr(routes.chat, "run_chat", _down)
+
+    # The headers are already sent by then, so it cannot be a 503: the failure
+    # has to arrive as the last event instead.
+    events = _events(client.post("/api/chat/stream", json={"messages": ASK}))
+    assert events[-1]["type"] == "error"
+    assert events[-1]["code"] == "backend_unavailable"
+    assert "Ollama" in events[-1]["error"]
+
+
+def test_the_loop_hands_the_answer_over_in_pieces(seeded):
+    """`chat` reports tokens as the backend writes them, not once it is done."""
+    backend = FakeBackend([_calls(("net_worth_summary", {})), _says("All good.")])
+    events = []
+    ai_chat.chat(ASK, backend=backend, on_event=events.append)
+
+    kinds = [e["type"] for e in events]
+    assert kinds.count("tool") == 1
+    assert kinds.count("looked_up") == 1
+    assert kinds.count("token") > 1
+    assert "".join(e["text"] for e in events if e["type"] == "token") == "All good."
+    # Named before it runs and reported after, in that order.
+    assert kinds.index("tool") < kinds.index("looked_up")
+
+
+def test_a_turn_with_no_listener_behaves_exactly_as_before(seeded):
+    backend = FakeBackend([_says("Unchanged.")])
+    assert ai_chat.chat(ASK, backend=backend)["reply"] == "Unchanged."

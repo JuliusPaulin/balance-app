@@ -4,7 +4,11 @@ Thin on purpose: the tools are in ``ai_tools``, the loop is in ``ai_chat``, and
 this module only checks the request and reports what came back.
 """
 
-from flask import Blueprint, request, jsonify
+import json
+import queue
+import threading
+
+from flask import Blueprint, Response, jsonify, request, stream_with_context
 
 import config
 from ai_backends import BackendUnavailable
@@ -36,33 +40,47 @@ def chat_status():
     })
 
 
-@bp.route("/api/chat", methods=["POST"])
-def chat():
-    """Answer one turn. Body: {"messages": [{"role", "content"}, ...]}."""
-    if not config.ai_configured():
-        return jsonify({"error": "The assistant is not configured",
-                        "code": "not_configured"}), 400
+def _read_conversation(body):
+    """Validate the posted conversation. Returns ``(messages, error)``.
 
-    body = request.get_json(silent=True) or {}
+    Shared by both endpoints so the streaming one cannot drift into accepting
+    something the plain one refuses. The check runs before either starts
+    answering, so a bad request is still an ordinary 400 rather than an error
+    delivered halfway down an event stream.
+    """
+    if not config.ai_configured():
+        return None, ({"error": "The assistant is not configured",
+                       "code": "not_configured"}, 400)
+
     messages = body.get("messages")
     if not isinstance(messages, list) or not messages:
-        return jsonify({"error": "messages is required"}), 400
+        return None, ({"error": "messages is required"}, 400)
     if len(messages) > MAX_TURNS * 2:
-        return jsonify({"error": "This conversation is too long — start a new one"}), 400
+        return None, ({"error": "This conversation is too long — start a new one"}, 400)
 
     cleaned = []
     for message in messages:
         if not isinstance(message, dict):
-            return jsonify({"error": "Each message must be an object"}), 400
+            return None, ({"error": "Each message must be an object"}, 400)
         role = message.get("role")
         content = message.get("content")
         if role not in ("user", "assistant") or not isinstance(content, str):
-            return jsonify({"error": "Each message needs a role and text content"}), 400
+            return None, ({"error": "Each message needs a role and text content"}, 400)
         if len(content) > MAX_MESSAGE_CHARS:
-            return jsonify({"error": "That message is too long"}), 400
+            return None, ({"error": "That message is too long"}, 400)
         cleaned.append({"role": role, "content": content})
     if cleaned[-1]["role"] != "user":
-        return jsonify({"error": "The last message must be from the user"}), 400
+        return None, ({"error": "The last message must be from the user"}, 400)
+    return cleaned, None
+
+
+@bp.route("/api/chat", methods=["POST"])
+def chat():
+    """Answer one turn. Body: {"messages": [{"role", "content"}, ...]}."""
+    cleaned, error = _read_conversation(request.get_json(silent=True) or {})
+    if error:
+        payload, status = error
+        return jsonify(payload), status
 
     try:
         result = run_chat(cleaned)
@@ -79,3 +97,64 @@ def chat():
                         "code": "upstream", "detail": str(exc)}), 502
 
     return jsonify(result)
+
+
+def _sse(event):
+    """One server-sent event. Compact, because tokens arrive one at a time."""
+    return f"data: {json.dumps(event, default=str, ensure_ascii=False)}\n\n"
+
+
+@bp.route("/api/chat/stream", methods=["POST"])
+def chat_stream():
+    """The same turn, watchable while it happens.
+
+    An answer is two model calls and about five seconds, and until now all of
+    it looked identical from outside: a dot animation, then everything at once.
+    The events are the same facts the JSON endpoint returns, sent as they
+    become true — which lookup is running, and the answer as it is written.
+
+    The loop runs on a worker thread because it reports through a callback and
+    this has to yield: a queue is the join between the two. Nothing in the loop
+    needs the request context — ``current_user_id`` is a constant here and the
+    tools open their own — so the thread is free to do the work.
+    """
+    cleaned, error = _read_conversation(request.get_json(silent=True) or {})
+    if error:
+        payload, status = error
+        return jsonify(payload), status
+
+    def generate():
+        events = queue.Queue()
+        outcome = {}
+
+        def work():
+            try:
+                outcome["result"] = run_chat(cleaned, on_event=events.put)
+            except BackendUnavailable as exc:
+                outcome["error"] = {"error": str(exc), "code": "backend_unavailable"}
+            except Exception as exc:
+                from core import app as flask_app
+                flask_app.logger.warning("chat stream failed: %s", exc)
+                outcome["error"] = {"error": "The assistant could not be reached",
+                                    "code": "upstream"}
+            finally:
+                events.put(None)
+
+        worker = threading.Thread(target=work, daemon=True)
+        worker.start()
+        while True:
+            event = events.get()
+            if event is None:
+                break
+            yield _sse(event)
+        worker.join()
+
+        # The last event carries the whole answer, so the panel renders from
+        # one authoritative payload rather than from what it managed to catch.
+        yield _sse({"type": "error", **outcome["error"]} if "error" in outcome
+                   else {"type": "done", **outcome["result"]})
+
+    return Response(stream_with_context(generate()),
+                    mimetype="text/event-stream",
+                    headers={"Cache-Control": "no-cache",
+                             "X-Accel-Buffering": "no"})

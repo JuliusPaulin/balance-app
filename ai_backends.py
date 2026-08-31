@@ -151,7 +151,63 @@ class OllamaBackend:
 
     # -- the call ----------------------------------------------------------
 
-    def complete(self, system, messages, tools=None):
+    def _post_stream(self, payload, on_token):
+        """Ollama's streaming reply: one JSON object per line.
+
+        Returns the same shape ``_post`` does, assembled from the chunks, and
+        hands each piece of answer text to ``on_token`` as it lands. That is the
+        whole point — the first word arrives about a second in, where the whole
+        answer takes five.
+        """
+        payload = {**payload, "stream": True}
+        try:
+            response = requests.post(f"{self.host}/api/chat", json=payload,
+                                     stream=True, timeout=config.OLLAMA_TIMEOUT)
+        except requests.RequestException as exc:
+            raise BackendUnavailable(
+                f"No Ollama at {self.host} — is it running? ({exc})") from exc
+
+        if response.status_code == 400 and "think" in response.text.lower() \
+                and payload.get("think") is not None:
+            self._send_think = False
+            payload.pop("think", None)
+            return self._post_stream(payload, on_token)
+        if not response.ok:
+            raise BackendUnavailable(
+                f"Ollama returned {response.status_code}: {response.text[:300]}")
+
+        content, calls, final = [], [], {}
+        # A model that narrates itself must not narrate itself into the panel.
+        # `think` is off by default, so this is a net rather than a mechanism.
+        thinking = False
+        for line in response.iter_lines():
+            if not line:
+                continue
+            try:
+                chunk = json.loads(line)
+            except ValueError:
+                continue
+            message = chunk.get("message") or {}
+            piece = message.get("content") or ""
+            if piece:
+                content.append(piece)
+                joined = "".join(content)
+                if "<think>" in joined and "</think>" not in joined:
+                    thinking = True
+                elif thinking and "</think>" in joined:
+                    thinking = False
+                    piece = ""
+                if on_token and not thinking and piece:
+                    on_token(piece)
+            if message.get("tool_calls"):
+                calls.extend(message["tool_calls"])
+            if chunk.get("done"):
+                final = chunk
+
+        return {**final, "message": {"content": "".join(content),
+                                     "tool_calls": calls}}
+
+    def complete(self, system, messages, tools=None, on_token=None):
         payload = {
             "model": self.model,
             "messages": self._wire_messages(system, messages),
@@ -170,7 +226,7 @@ class OllamaBackend:
             # very little. OLLAMA_THINK=1 turns it back on.
             payload["think"] = config.OLLAMA_THINK
 
-        data = self._post(payload)
+        data = self._post_stream(payload, on_token) if on_token else self._post(payload)
         message = data.get("message") or {}
         text = _THINK_TAGS.sub("", message.get("content") or "").strip()
 
@@ -262,7 +318,7 @@ class AnthropicBackend:
         flush()
         return wire
 
-    def complete(self, system, messages, tools=None):
+    def complete(self, system, messages, tools=None, on_token=None):
         client = self._client()
         request = {
             "model": self.model,
@@ -290,6 +346,10 @@ class AnthropicBackend:
                         or "I can't answer that one.")
 
         text = "".join(b.text for b in response.content if b.type == "text").strip()
+        # The control backend answers in one piece. The panel streams either
+        # way; this one simply arrives all at once.
+        if on_token and text:
+            on_token(text)
         calls = [{"id": b.id, "name": b.name, "input": b.input}
                  for b in response.content if b.type == "tool_use"]
         return Turn(text=text, tool_calls=calls, refusal=None, usage=usage,

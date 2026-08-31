@@ -5276,6 +5276,9 @@ async function loadAppState() {
 let chatMessages = [];      // the conversation, as the API wants it
 let chatBusy = false;
 let chatReady = null;       // null = not probed yet; else the status payload
+// The answer as it arrives: what it is doing now, and what it has written so
+// far. Null when nothing is in flight.
+let chatPending = null;
 
 // The six tools, said in English. The point is not the function name — it is
 // which screen of the app the number came off.
@@ -5286,6 +5289,16 @@ const CHAT_TOOL_NAMES = {
     list_subscriptions: "Read your subscriptions",
     annual_report: "Read the annual report",
     net_worth_summary: "Read your net worth",
+};
+
+// The same six, said as something happening rather than something done.
+const CHAT_TOOL_DOING = {
+    search_transactions: "Reading your transactions",
+    category_breakdown: "Reading the category breakdown",
+    monthly_summary: "Reading the monthly summary",
+    list_subscriptions: "Reading your subscriptions",
+    annual_report: "Reading the annual report",
+    net_worth_summary: "Reading your net worth",
 };
 
 const CHAT_SUGGESTIONS = [
@@ -5343,10 +5356,10 @@ function resetChat() {
 
 // ── Rendering ────────────────────────────────────────────────────────
 
-function renderChatLog(pending = false) {
+function renderChatLog() {
     const log = document.getElementById("chat-log");
 
-    if (!chatMessages.length && !pending) {
+    if (!chatMessages.length && !chatPending) {
         log.innerHTML = chatReady && !chatReady.configured
             ? chatSetupHtml() : chatEmptyHtml();
         updateChatLengthNote();
@@ -5354,12 +5367,42 @@ function renderChatLog(pending = false) {
     }
 
     log.innerHTML = chatMessages.map(chatMessageHtml).join("")
-        + (pending ? `<div class="chat-thinking">
-               <span class="chat-dots"><span></span><span></span><span></span></span>
-               Reading your figures…
-           </div>` : "");
-    log.scrollTop = log.scrollHeight;
+        + (chatPending ? chatPendingHtml() : "");
+    scrollChatToEnd();
     updateChatLengthNote();
+}
+
+function chatPendingHtml() {
+    // The lookups it has already done, then what it is doing now, then what it
+    // has written. The lookups stay up because most of the wait is the model
+    // reading the result back — a second or two of "Reading the category
+    // breakdown · Jul 2026" is the answer's provenance arriving before the
+    // answer, which is the part worth waiting for.
+    const done = chatPending.toolCalls.map(c => {
+        const name = CHAT_TOOL_NAMES[c.tool] || c.tool;
+        const when = c.period ? ` · ${escapeHtml(chatPeriodLabel(c.period))}` : "";
+        return `<div class="chat-step${c.ok === false ? " chat-source-failed" : ""}">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6"><path d="M20 6L9 17l-5-5"/></svg>
+            ${escapeHtml(name)}${when}
+        </div>`;
+    }).join("");
+
+    const status = `<div class="chat-thinking">
+        <span class="chat-dots"><span></span><span></span><span></span></span>
+        ${escapeHtml(chatPending.status)}
+    </div>`;
+    const text = chatPending.text
+        ? `<div class="chat-msg chat-msg-assistant">
+               <div class="chat-bubble" id="chat-live">${chatFormat(chatPending.text)}</div>
+           </div>`
+        : "";
+    // Once words are coming they are the news, so the status drops below them.
+    return done + (chatPending.text ? text + status : status);
+}
+
+function scrollChatToEnd() {
+    const log = document.getElementById("chat-log");
+    log.scrollTop = log.scrollHeight;
 }
 
 function chatEmptyHtml() {
@@ -5519,13 +5562,14 @@ async function sendChat(event) {
     input.value = "";
     autoGrowChatInput();
     setChatBusy(true);
-    renderChatLog(true);
+    chatPending = { status: "Thinking…", text: "", toolCalls: [] };
+    renderChatLog();
 
     try {
         // Only role and content go up; the tool trace is ours to display and
         // the server rejects anything else in a message.
         const payload = chatMessages.map(m => ({ role: m.role, content: m.content }));
-        const result = await api("/api/chat", { method: "POST", body: { messages: payload } });
+        const result = await streamChat(payload);
         chatMessages.push({
             role: "assistant",
             content: result.reply || "The model replied with nothing.",
@@ -5538,11 +5582,100 @@ async function sendChat(event) {
         // A model that is off now was probably on when the panel opened.
         if (e.status === 503 || e.status === 400) chatReady = null;
     } finally {
+        chatPending = null;
         setChatBusy(false);
         renderChatLog();
         input.focus();
     }
     return false;
+}
+
+// Reads /api/chat/stream and moves the panel along as the events land.
+// Resolves with the same payload the plain endpoint returns, because the last
+// event carries it: the final state is rendered from one authoritative object
+// rather than from whatever the stream was caught mid-way through.
+async function streamChat(messages) {
+    const res = await fetch("/api/chat/stream", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ messages }),
+    });
+    // A refused conversation is still an ordinary JSON error with a status.
+    if (!res.ok) throw await apiError(res);
+
+    // Every browser this ships in reads a response as a stream, but the app
+    // runs inside whatever WebKit the Mac happens to have. Without it the whole
+    // answer still arrives — just all at once, as it did before.
+    if (!res.body || typeof res.body.getReader !== "function") {
+        const events = (await res.text()).split("\n\n")
+            .map(part => part.split("\n").find(l => l.startsWith("data: ")))
+            .filter(Boolean)
+            .map(line => { try { return JSON.parse(line.slice(6)); } catch (e) { return null; } })
+            .filter(Boolean);
+        const last = events[events.length - 1];
+        if (!last || last.type === "error") {
+            throw new ApiError((last && last.error) || "The answer stopped halfway.",
+                               503, last && last.code);
+        }
+        return last;
+    }
+
+    const reader = res.body.getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+    let done = null;
+
+    for (;;) {
+        const { value, done: finished } = await reader.read();
+        if (finished) break;
+        buffer += decoder.decode(value, { stream: true });
+
+        // Events are separated by a blank line; the last piece may be partial.
+        const parts = buffer.split("\n\n");
+        buffer = parts.pop();
+        for (const part of parts) {
+            const line = part.split("\n").find(l => l.startsWith("data: "));
+            if (!line) continue;
+            let event;
+            try { event = JSON.parse(line.slice(6)); } catch (e) { continue; }
+            if (event.type === "done" || event.type === "error") done = event;
+            else applyChatEvent(event);
+        }
+    }
+
+    if (!done) throw new ApiError("The answer stopped halfway.", 0, "truncated");
+    if (done.type === "error") {
+        throw new ApiError(done.error || "The assistant could not be reached",
+                           done.code === "backend_unavailable" ? 503 : 502, done.code);
+    }
+    return done;
+}
+
+function applyChatEvent(event) {
+    if (!chatPending) return;
+
+    if (event.type === "tool") {
+        // Anything written before a lookup was a preamble, not the answer.
+        chatPending.text = "";
+        chatPending.status = (CHAT_TOOL_DOING[event.tool] || "Looking that up") + "…";
+        renderChatLog();
+    } else if (event.type === "looked_up") {
+        chatPending.toolCalls.push(event);
+        chatPending.status = "Writing the answer…";
+        renderChatLog();
+    } else if (event.type === "token") {
+        const first = !chatPending.text;
+        chatPending.text += event.text;
+        const live = document.getElementById("chat-live");
+        if (live && !first) {
+            // Patch the one bubble rather than rebuilding the transcript on
+            // every token — that would drop any text the user had selected.
+            live.innerHTML = chatFormat(chatPending.text);
+            scrollChatToEnd();
+        } else {
+            renderChatLog();
+        }
+    }
 }
 
 function setChatBusy(busy) {

@@ -3695,3 +3695,16 @@ body.chat-open .chat-fab {
     transition: transform var(--transition), opacity var(--transition),
                 visibility 0s linear var(--transition);
 }
+
+/* A lookup already done, while the answer is still being written. */
+.chat-step {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    padding: 1px 2px;
+    animation: fadeIn 0.2s ease;
+}
+.chat-step svg { width: 11px; height: 11px; color: var(--accent); flex-shrink: 0; }
+.chat-step.chat-source-failed svg { color: var(--red); }

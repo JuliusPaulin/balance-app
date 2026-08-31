@@ -553,9 +553,29 @@ Three things in it are load-bearing rather than decoration:
 the panel says so itself; blurring out the figures being asked about is the one
 thing that must not happen while it thinks.
 
-Not streaming. The endpoint answers with one JSON body, and adding SSE means
-`ai_chat.chat()` reporting each tool call as it runs — worth doing, and beside
-`api()` rather than through it, since `api()` expects one complete body.
+**The wait is watchable.** `POST /api/chat/stream` sends the same turn as
+server-sent events as it happens: the lookup named before it runs, the months it
+read once it has, then the answer as it is written. `ai_chat.chat()` takes an
+`on_event` callback and is otherwise unchanged, so the plain JSON endpoint and
+every test still go through the same loop. The route runs that loop on a worker
+thread with a queue between them, because a callback pushes and a response has
+to yield; nothing in the loop needs the request context, since
+`current_user_id()` is a constant here and the tools open their own.
+
+It sits beside `api()` rather than going through it — `api()` expects one
+complete body — and falls back to reading the whole stream at once where
+`res.body` cannot be read incrementally, which is a live question inside
+whatever WebKit the Mac happens to have.
+
+What this actually bought is worth being precise about. **Most of the wait is
+prefill, not writing**: about three seconds for the model to choose a tool, then
+three or four more re-reading the result before the first word appears, and the
+answer itself lands in a fraction of a second. So streaming the tokens matters
+less than showing the lookup — "Read the category breakdown · Jul 2026" appears
+about three seconds in and stands there while the rest is written, which is the
+answer's provenance arriving before the answer. Trimming the tool results to
+speed the prefill up was measured and left alone: it saves about 0.4s of 8 and
+costs the model sight of every category below the top dozen.
 
 **The cloud backend is a control, not a destination.** `AI_BACKEND=anthropic`
 runs the same loop over the same tools with a frontier model, which is the only
@@ -701,6 +721,9 @@ POST       /api/import/bank/disconnect             drops the user's bank session
 
 GET        /api/chat/status                        whether the assistant is configured
 POST       /api/chat                               (body: {messages:[{role,content}]})
+POST       /api/chat/stream                        the same turn as server-sent
+                                                   events: each lookup as it runs,
+                                                   then the answer as it is written
 
 GET/PUT    /api/notes/<YYYY-MM>
 GET        /api/notes

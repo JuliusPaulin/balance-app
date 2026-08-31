@@ -109,15 +109,31 @@ def _system_prompt():
             + json.dumps(context_block(), indent=2, ensure_ascii=False))
 
 
-def chat(messages, backend=None):
+def chat(messages, backend=None, on_event=None):
     """Answer the conversation in ``messages``; return the reply and a trace.
 
     ``messages`` is ``[{"role", "content"}, ...]`` with the user's turn last.
     Returns ``{"reply", "tool_calls", "usage", "backend"}``. ``tool_calls`` is
     what the assistant actually looked at, so the panel can show the working
     rather than asking anyone to take a number on trust.
+
+    ``on_event`` makes the same turn watchable while it happens instead of only
+    once it is over. It is called with:
+
+    ``{"type": "tool", ...}``   a lookup starting, named
+    ``{"type": "looked_up", ...}``  that lookup done, with the months it read
+    ``{"type": "token", "text"}``   a piece of the answer
+
+    The wait is five seconds and two model calls, and almost all of it used to
+    be spent showing nothing. The events are advisory: the return value is the
+    same either way, and a caller that passes nothing gets exactly the old
+    behaviour.
     """
     backend = backend or get_backend()
+
+    def emit(event):
+        if on_event:
+            on_event(event)
     system = _system_prompt()
 
     history = [{"role": m["role"], "content": m["content"]} for m in messages]
@@ -132,8 +148,11 @@ def chat(messages, backend=None):
         return {"reply": reply, "tool_calls": trace, "usage": usage,
                 "backend": backend.name}
 
+    def stream_text(piece):
+        emit({"type": "token", "text": piece})
+
     for _ in range(MAX_TOOL_ROUNDS):
-        turn = backend.complete(system, history, TOOL_SCHEMAS)
+        turn = backend.complete(system, history, TOOL_SCHEMAS, on_token=stream_text)
         account(turn)
 
         if turn.refusal:
@@ -144,6 +163,9 @@ def chat(messages, backend=None):
         history.append({"role": "assistant", "content": turn.text,
                         "tool_calls": turn.tool_calls, "raw": turn.raw})
         for call in turn.tool_calls:
+            # Named before it runs, so the panel can say what it is doing
+            # rather than that it is doing something.
+            emit({"type": "tool", "tool": call["name"], "arguments": call["input"]})
             output = run_tool(call["name"], call["input"])
             # The months the tool actually read, not the word the model passed.
             # "last month" is the answer's whole meaning and the model does not
@@ -153,6 +175,7 @@ def chat(messages, backend=None):
             trace.append({"tool": call["name"], "arguments": call["input"],
                           "period": (output or {}).get("period"),
                           "ok": "error" not in output})
+            emit({"type": "looked_up", **trace[-1]})
             history.append({
                 "role": "tool", "id": call["id"], "name": call["name"],
                 "content": json.dumps(output, default=str, ensure_ascii=False),
@@ -166,7 +189,7 @@ def chat(messages, backend=None):
         "content": "Answer now using only what the tools already returned. "
                    "If that is not enough, say what you could not find out.",
     })
-    final = backend.complete(system, history, tools=None)
+    final = backend.complete(system, history, tools=None, on_token=stream_text)
     account(final)
     return done(final.refusal or final.text)
 
