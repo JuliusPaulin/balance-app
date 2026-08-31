@@ -614,6 +614,20 @@ passed as a whole one, `llama-server` could not load it, and the panel said
 "starting up" until somebody gave up. The size must match what was promised, and
 the file has to begin `GGUF`.
 
+**The GPU is asked for, not assumed.** The server was started with
+`--n-gpu-layers 999` and a comment claiming llama.cpp puts back what will not
+fit. It does not; it dies. A 16 GB Air stopped at `ggml-metal-context.m:361:
+GGML_ASSERT(buf_dst) failed`, which reads like running out of memory and is not:
+that line wraps an existing pointer with `newBufferWithBytesNoCopy:`, and Metal
+returns nil there when the pointer is not page-aligned or the length does not
+suit. A precondition failing inside llama.cpp's readback path, on one machine
+and not another.
+
+Nothing passed from here avoids that reliably, so the point is to stop it being
+fatal: a start that dies is retried with a smaller context, and then with the
+model off the GPU altogether, which leaves the failing path unused. Slower, and
+it answers. A machine that needs it settles there for the session.
+
 **Balance runs on more Macs than the assistant does.** The app needs Apple
 silicon, which is macOS 11 and up; the bundled llama.cpp reports `minos 13.3`.
 That leaves a range of machines where everything else works and the model server

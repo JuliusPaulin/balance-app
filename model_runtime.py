@@ -77,6 +77,40 @@ def macos_too_old():
     return parts < MIN_MACOS
 
 
+# How hard to lean on the GPU, from most to least. Every Mac gets the first one
+# and almost every Mac keeps it.
+#
+#   0  all layers on Metal, the configured context — fast, and what a machine
+#      with headroom should do
+#   1  the same, half the context — the KV cache is the part that grows with it
+#   2  nothing on the GPU at all — slower, and it runs
+#
+# This was `--n-gpu-layers 999` and nothing else, with a comment claiming
+# llama.cpp "quietly puts back what will not fit". It does not — it dies.
+#
+# A 16 GB Air stopped at `ggml-metal-context.m:361: GGML_ASSERT(buf_dst)
+# failed`, which is not the shortage of memory it looks like. That line wraps an
+# existing pointer with `newBufferWithBytesNoCopy:`, and Metal returns nil there
+# — not an error — when the pointer is not page-aligned or the length does not
+# suit. It is a precondition failing inside llama.cpp's readback path on one
+# machine and not another, and no argument from here reliably avoids it.
+#
+# What can be done is refuse to let it be fatal. The last level keeps the model
+# off the GPU altogether, which leaves that code path unused: slower, and it
+# answers. A machine that needs it gets it once and keeps it for the session.
+_FIT_LEVELS = 3
+_fit = 0
+
+
+def _fit_args(level):
+    ctx = config.OLLAMA_NUM_CTX
+    if level <= 0:
+        return ["--ctx-size", str(ctx), "--n-gpu-layers", "999"]
+    if level == 1:
+        return ["--ctx-size", str(max(2048, ctx // 2)), "--n-gpu-layers", "999"]
+    return ["--ctx-size", str(max(2048, ctx // 2)), "--n-gpu-layers", "0"]
+
+
 def _bundle_root():
     """Where the app's own files are: the unpacked bundle, or the checkout."""
     return getattr(sys, "_MEIPASS", None) or os.path.dirname(
@@ -269,7 +303,7 @@ def ensure_running():
     Returns True once it responds. Safe to call on every request: the common
     case is one HTTP call to /health against a process already up.
     """
-    global _server
+    global _server, _fit
     if server_responding():
         return True
     binary = server_binary()
@@ -289,10 +323,7 @@ def ensure_running():
                  "--model", config.model_file(),
                  "--host", "127.0.0.1",
                  "--port", str(config.LLAMACPP_PORT),
-                 "--ctx-size", str(config.OLLAMA_NUM_CTX),
-                 # Everything on the GPU it can be. On a Mac that is Metal, and
-                 # llama.cpp quietly puts back what will not fit.
-                 "--n-gpu-layers", "999"],
+                 *_fit_args(_fit)],
                 stdout=log, stderr=subprocess.STDOUT,
                 env={**os.environ,
                      "DYLD_LIBRARY_PATH": os.path.dirname(binary)})
@@ -302,6 +333,11 @@ def ensure_running():
         if server_responding():
             return True
         if _server.poll() is not None:
+            # It died. If there is a less demanding way to run, take it and say
+            # so in the log beside the crash that prompted it.
+            if _fit < _FIT_LEVELS - 1:
+                _fit += 1
+                return ensure_running()
             return False
         time.sleep(0.5)
     return False

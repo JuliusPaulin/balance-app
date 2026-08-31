@@ -318,3 +318,42 @@ def test_an_ordinary_last_line_is_still_used(models_dir):
     """No stack, no known phrase — then the last thing said is the best there is."""
     (models_dir / "server.log").write_text("loading model\nout of memory\n")
     assert model_runtime.server_error() == "out of memory"
+
+
+# ── A server that will not run one way, run another ───────────────────────
+
+def test_a_crashing_server_is_retried_with_less_of_the_gpu(
+        models_dir, runtime_present, monkeypatch):
+    """A 16 GB Air died inside Metal — `GGML_ASSERT(buf_dst) failed` — which is
+    a precondition of `newBufferWithBytesNoCopy:` failing, not a shortage of
+    memory. No argument avoids it reliably, so the last level keeps the model
+    off the GPU and leaves that code path unused."""
+    write_model(models_dir / "model.gguf")
+    monkeypatch.setattr(model_runtime, "_fit", 0)
+    monkeypatch.setattr(model_runtime, "server_responding", lambda host=None: False)
+
+    tried = []
+
+    class Dead:
+        @staticmethod
+        def poll():
+            return 1  # exited immediately, as a crash does
+
+    def spawn(args, **kwargs):
+        tried.append(args)
+        return Dead()
+
+    monkeypatch.setattr(model_runtime.subprocess, "Popen", spawn)
+    assert model_runtime.ensure_running() is False
+
+    # Every level was tried, ending with the model off the GPU entirely.
+    assert len(tried) == model_runtime._FIT_LEVELS
+    assert tried[0][tried[0].index("--n-gpu-layers") + 1] == "999"
+    assert tried[-1][tried[-1].index("--n-gpu-layers") + 1] == "0"
+
+
+def test_the_first_attempt_asks_for_the_whole_gpu(models_dir):
+    """Almost every Mac runs it this way and should keep doing so."""
+    assert model_runtime._fit_args(0) == ["--ctx-size",
+                                          str(config.OLLAMA_NUM_CTX),
+                                          "--n-gpu-layers", "999"]
