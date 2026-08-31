@@ -32,8 +32,11 @@
 - `ai_tools.py` — the seven read-only tools the chat assistant may call, each a
   wrapper over an endpoint the app already serves
 - `ai_chat.py` — the agent loop: system prompt and the tool-call cycle
-- `ai_backends.py` — where the model runs. Ollama (local, the default) and
-  Anthropic (the control), behind one interface
+- `ai_backends.py` — where the model runs. llama.cpp bundled in the app (the
+  default), Ollama (for development), and Anthropic (the control), behind one
+  interface
+- `model_runtime.py` — the model that ships with the app: where the runtime and
+  the weights are, fetching the weights once, and running the server
 - `scripts/ask.py` — ask the assistant from the terminal; prints which tools it
   called, which is how a prompt problem is told apart from a model problem
 
@@ -552,12 +555,62 @@ The app has always been one SQLite file on your own Mac, and a panel that
 posted a transaction history to somebody's API would be the first thing it ever
 did that contradicts that.
 
-Set-up is two commands and the app finds it:
+**There is nothing to set up.** The app carries llama.cpp's own server in its
+bundle and downloads one model file the first time you open the panel: Qwen 3.5
+4B at 4-bit, 2.7 GB, Apache 2.0. Ollama is still a backend and still the quicker
+way to work on this — swapping models is one `ollama pull` rather than a
+rebuild:
 
 ```
-ollama pull qwen3.5:4b          # 3.4 GB; the default, and enough on an 8 GB Mac
+AI_BACKEND=local ollama pull qwen3.5:4b
 python3 scripts/ask.py "what did I spend on groceries last month?"
 ```
+
+**Why llama.cpp and not the Ollama binary.** Both are MIT and both would fit in
+a bundle; Ollama is even what all of this was proved against. But `llama-server`
+is 14 MB against Ollama's 65, it will not collide with an Ollama the user is
+already running, and — the deciding reason — it takes a plain model file. Owning
+the file is what "download it on first launch" needs; driving `ollama pull` or
+writing into its blob store would be worse.
+
+Four things were checked before any of it was written, because all four had to
+hold or the approach was dead: the tool calls come back in the same shape, the
+prompt prefix is cached between the two calls of a turn, the answer streams, and
+the model can be told not to think. That last one is the trap. Qwen reasons by
+default here, llama.cpp's `--reasoning off` only decides where the thoughts are
+*put*, and `enable_thinking: false` through the chat template is the actual
+switch — the difference between a first word at 0.14s and one at 14.4s, and
+invisible until someone wondered why the shipped build felt slower than Ollama.
+
+**Ollama's weights are not portable.** The obvious shortcut — point llama.cpp at
+the GGUF Ollama already downloaded — fails: `qwen35.rope.dimension_sections has
+wrong array length; expected 4, got 3`. Ollama patches llama.cpp, so its blobs
+load in its build and not upstream's. The weights come from Hugging Face, and
+the runtime is pinned to a build (`scripts/fetch_runtime.sh`) for the same
+reason — what this app depends on is not llama.cpp in general but those four
+behaviours of it.
+
+**Six kinds of "not ready", and only one of them is the user's to act on.**
+Ollama had two and both wanted a command typed into a terminal. Owning the
+weights changes the shape of the question, so `/api/chat/status` now carries a
+`state`, and the panel switches on it:
+
+| `state` | The panel shows | Asks for |
+|---------|-----------------|----------|
+| `ready` | the transcript | — |
+| `needs_download` | what it is and how big | a click |
+| `downloading` | a bar, and that it resumes | patience |
+| `download_failed` | what stopped it, nothing lost | a click |
+| `starting` | that it is loading | nothing |
+| `no_runtime` | that this build has no model in it | nothing |
+
+The download streams to a `.part` file and resumes, because 2.7 GB is far too
+much to fetch again because a laptop lid closed. `licences/` travels in the
+bundle and is copied beside the weights when they land — Apache 2.0 permits the
+redistribution and asks that its terms and the attribution go with it, and the
+first version of this fetched them from the model's own repository, which
+declares the licence in its metadata and ships no licence file. It 404'd, and
+the obligation quietly went unmet.
 
 `GET /api/chat/status` live-probes Ollama and reports what is actually
 installed, because "not configured" is a useless thing to tell someone whose
@@ -952,6 +1005,8 @@ POST       /api/import/bank/disconnect             drops the user's bank session
 
 GET        /api/chat/status                        whether the assistant is configured
 POST       /api/chat                               (body: {messages:[{role,content}]})
+POST       /api/chat/download                      fetch the model, once. Returns at
+                                                   once; watch /api/chat/status
 POST       /api/chat/stream                        the same turn as server-sent
                                                    events: each lookup as it runs,
                                                    then the answer as it is written

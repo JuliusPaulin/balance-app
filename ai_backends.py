@@ -356,11 +356,219 @@ class AnthropicBackend:
                     raw=response.content)
 
 
-BACKENDS = {"local": OllamaBackend, "anthropic": AnthropicBackend}
+# ── llama.cpp, bundled with the app ───────────────────────────────────────
+
+class LlamaCppBackend:
+    """The one that ships inside Balance.app.
+
+    Ollama is what this was built and proved against, and it stays: swapping
+    models is one `ollama pull` rather than a rebuild, which is worth a lot
+    while the prompt is still moving. But it is a separate thing to install,
+    and nobody installs a second app to try a side panel. So the shipped
+    default talks to a copy of llama.cpp's own server that travels in the
+    bundle, over its OpenAI-shaped API, against one model file this app
+    downloaded and owns.
+
+    Everything the loop needs was checked before a line of this was written —
+    the tool calls come back in the same shape, the prompt prefix is cached
+    between the two calls of a turn, and the answer streams. One thing did not
+    survive the move and would have gone unnoticed: Qwen thinks by default here,
+    and llama.cpp's `--reasoning off` only decides where the thoughts are put,
+    not whether they happen. `enable_thinking: false` through the chat template
+    is the actual switch, and it is the difference between a first word at
+    0.14s and one at 14.4s.
+    """
+
+    name = "llamacpp"
+
+    def __init__(self, host=None, model_path=None, num_ctx=None, temperature=None):
+        self.host = (host or config.LLAMACPP_HOST).rstrip("/")
+        self.model_path = model_path or config.model_file()
+        self.num_ctx = num_ctx if num_ctx is not None else config.OLLAMA_NUM_CTX
+        self.temperature = (temperature if temperature is not None
+                            else config.OLLAMA_TEMPERATURE)
+
+    # -- readiness ---------------------------------------------------------
+
+    def status(self):
+        """Whether it can answer, and if not, which of the reasons it is.
+
+        There are more of them than Ollama had. The weights are ours to fetch
+        now, so "not ready" splits into never downloaded, downloading, and up
+        but still loading — three different sentences and only one of them asks
+        the user for anything.
+        """
+        from model_runtime import runtime_state
+        return runtime_state(self.host, self.model_path)
+
+    def available(self):
+        return self.status()["configured"]
+
+    # -- wire format -------------------------------------------------------
+
+    @staticmethod
+    def _wire_messages(system, messages):
+        wire = [{"role": "system", "content": system}]
+        for message in messages:
+            role = message["role"]
+            if role == "tool":
+                # OpenAI ties output back to the call by id, where Ollama used
+                # the tool's name.
+                wire.append({"role": "tool", "tool_call_id": message["id"],
+                             "content": message["content"]})
+            elif role == "assistant":
+                entry = {"role": "assistant", "content": message.get("content") or ""}
+                if message.get("tool_calls"):
+                    entry["tool_calls"] = [
+                        {"id": c["id"], "type": "function",
+                         "function": {"name": c["name"],
+                                      "arguments": json.dumps(c["input"])}}
+                        for c in message["tool_calls"]
+                    ]
+                wire.append(entry)
+            else:
+                wire.append({"role": "user", "content": message["content"]})
+        return wire
+
+    @staticmethod
+    def _wire_tools(tools):
+        return [{"type": "function",
+                 "function": {"name": t["name"], "description": t["description"],
+                              "parameters": t["input_schema"]}}
+                for t in (tools or [])]
+
+    @staticmethod
+    def _read_calls(raw_calls):
+        calls = []
+        for index, call in enumerate(raw_calls or []):
+            function = call.get("function") or {}
+            arguments = function.get("arguments")
+            if isinstance(arguments, str):
+                # This server always sends a JSON string, per OpenAI. One we
+                # cannot parse is a failed call, not a crashed turn.
+                try:
+                    arguments = json.loads(arguments)
+                except ValueError:
+                    arguments = {}
+            calls.append({"id": call.get("id") or f"call_{index}",
+                          "name": function.get("name", ""),
+                          "input": arguments or {}})
+        return calls
+
+    # -- the call ----------------------------------------------------------
+
+    def _payload(self, system, messages, tools):
+        return {
+            "messages": self._wire_messages(system, messages),
+            "temperature": self.temperature,
+            # The switch that matters. Without it the model reasons its way to
+            # every answer and the panel waits fourteen seconds for a word.
+            "chat_template_kwargs": {"enable_thinking": config.OLLAMA_THINK},
+            **({"tools": self._wire_tools(tools)} if tools else {}),
+        }
+
+    def complete(self, system, messages, tools=None, on_token=None):
+        # Cheap when the server is already up — one call to /health — and the
+        # difference between an answer and an error when it is not. The app
+        # starts it at launch; this is for every case where that did not happen.
+        from model_runtime import ensure_running
+        if not ensure_running():
+            raise BackendUnavailable(
+                "Balance AI could not start. Its model may still be downloading.")
+        url = f"{self.host}/v1/chat/completions"
+        payload = self._payload(system, messages, tools)
+        try:
+            if on_token:
+                return self._stream(url, payload, on_token)
+            response = requests.post(url, json={**payload, "stream": False},
+                                     timeout=config.OLLAMA_TIMEOUT)
+        except requests.RequestException as exc:
+            raise BackendUnavailable(f"Balance AI is not answering ({exc})") from exc
+        if not response.ok:
+            raise BackendUnavailable(
+                f"Balance AI returned {response.status_code}: {response.text[:300]}")
+
+        data = response.json()
+        message = (data.get("choices") or [{}])[0].get("message") or {}
+        usage = data.get("usage") or {}
+        return Turn(
+            text=(message.get("content") or "").strip(),
+            tool_calls=self._read_calls(message.get("tool_calls")),
+            refusal=None,
+            usage={"input_tokens": usage.get("prompt_tokens", 0),
+                   "output_tokens": usage.get("completion_tokens", 0)},
+            raw=None,
+        )
+
+    def _stream(self, url, payload, on_token):
+        """Server-sent events, assembled back into one Turn.
+
+        Tool calls arrive in pieces here too — a name in one chunk and its
+        arguments across several — so they are stitched by index before being
+        read.
+        """
+        content, usage, calls = [], {}, {}
+        with requests.post(url, json={**payload, "stream": True}, stream=True,
+                           timeout=config.OLLAMA_TIMEOUT) as response:
+            if not response.ok:
+                raise BackendUnavailable(
+                    f"Balance AI returned {response.status_code}: "
+                    f"{response.text[:300]}")
+            for line in response.iter_lines():
+                if not line or not line.startswith(b"data: "):
+                    continue
+                body = line[6:]
+                if body.strip() == b"[DONE]":
+                    break
+                try:
+                    chunk = json.loads(body)
+                except ValueError:
+                    continue
+                usage = chunk.get("usage") or usage
+                choice = (chunk.get("choices") or [{}])[0]
+                delta = choice.get("delta") or {}
+                # `reasoning_content` is the model thinking aloud. It is off,
+                # and if it ever comes back on it is still not an answer.
+                piece = delta.get("content")
+                if piece:
+                    content.append(piece)
+                    on_token(piece)
+                for part in delta.get("tool_calls") or []:
+                    slot = calls.setdefault(part.get("index", 0),
+                                            {"id": None, "name": "", "arguments": ""})
+                    if part.get("id"):
+                        slot["id"] = part["id"]
+                    function = part.get("function") or {}
+                    if function.get("name"):
+                        slot["name"] = function["name"]
+                    if function.get("arguments"):
+                        slot["arguments"] += function["arguments"]
+
+        stitched = [{"id": c["id"], "function": {"name": c["name"],
+                                                 "arguments": c["arguments"]}}
+                    for _, c in sorted(calls.items())]
+        return Turn(
+            text="".join(content).strip(),
+            tool_calls=self._read_calls(stitched),
+            refusal=None,
+            usage={"input_tokens": usage.get("prompt_tokens", 0),
+                   "output_tokens": usage.get("completion_tokens", 0)},
+            raw=None,
+        )
+
+
+BACKENDS = {"bundled": LlamaCppBackend,
+            "local": OllamaBackend,
+            "anthropic": AnthropicBackend}
 
 
 def get_backend(name=None):
-    """The configured backend. ``AI_BACKEND=local`` (the default) means Ollama."""
+    """The configured backend.
+
+    ``bundled`` is llama.cpp travelling inside the app and is what ships.
+    ``local`` is Ollama, kept because swapping models is one `ollama pull`
+    rather than a rebuild. ``anthropic`` is the control.
+    """
     name = (name or config.AI_BACKEND).lower()
     if name not in BACKENDS:
         raise BackendUnavailable(

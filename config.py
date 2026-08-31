@@ -162,8 +162,16 @@ def enable_banking_configured():
 # The cloud backend is kept as a control, not a destination: same loop, same
 # tools, different model, so a bad answer can be blamed on the right thing.
 
-AI_BACKEND = os.environ.get("AI_BACKEND", "local").strip().lower()
-"""Which backend answers: "local" (Ollama, the default) or "anthropic"."""
+AI_BACKEND = os.environ.get("AI_BACKEND", "bundled").strip().lower()
+"""Which backend answers.
+
+"bundled" (the default) is llama.cpp travelling inside the app, against a model
+this app downloads on first use — nothing else to install. "local" is Ollama,
+kept because swapping models is one `ollama pull` rather than a rebuild.
+"anthropic" is the control: the same loop and tools with a frontier model, which
+is the only way to tell a bad answer caused by the model from one caused by the
+prompt.
+"""
 
 OLLAMA_HOST = os.environ.get("OLLAMA_HOST", "http://127.0.0.1:11434").strip()
 """Where the local Ollama server listens."""
@@ -193,6 +201,52 @@ Off by default: the deliberation costs seconds in a side panel and buys little
 when the task is choosing between six tools. Models with no thinking mode
 ignore this — the backend notices the rejection and stops sending it."""
 
+# ── The model that ships with the app ─────────────────────────────────────
+# Ollama is a separate thing to install, and nobody installs a second app to
+# try a side panel. So the shipped default runs a copy of llama.cpp's own
+# server that travels in the bundle, against one model file this app downloads
+# and owns. Ollama stays as a backend because swapping models is one
+# `ollama pull` rather than a rebuild.
+
+LLAMACPP_PORT = int(os.environ.get("LLAMACPP_PORT", 5051))
+"""Port the bundled model server listens on. Next to the app's own 5050, and
+deliberately not Ollama's 11434 — someone may be running that too."""
+
+LLAMACPP_HOST = os.environ.get(
+    "LLAMACPP_HOST", f"http://127.0.0.1:{LLAMACPP_PORT}").strip()
+"""Where the bundled model server listens."""
+
+MODEL_NAME = os.environ.get("MODEL_NAME", "Qwen3.5-4B-Q4_K_M.gguf").strip()
+"""The one model file the app downloads and runs. Qwen 3.5 4B at 4-bit: the
+smallest size that still picks the right tool every time, measured against the
+9B on the same eleven questions."""
+
+MODEL_URL = os.environ.get(
+    "MODEL_URL",
+    "https://huggingface.co/unsloth/Qwen3.5-4B-GGUF/resolve/main/"
+    "Qwen3.5-4B-Q4_K_M.gguf").strip()
+"""Where to fetch it on first launch. Apache 2.0, so it may be redistributed —
+and the terms and attribution travel in `licences/`, copied beside the weights
+when they land. The model's own repository declares the licence in its metadata
+but ships no licence file, so fetching one from there 404s."""
+
+MODEL_BYTES = int(os.environ.get("MODEL_BYTES", 2_740_000_000))
+"""Roughly what to expect, for the progress bar before the server says. The
+download believes the Content-Length it is actually given; this is only so the
+first frame of the bar is not empty."""
+
+
+def model_dir():
+    """Beside the database, for the same reason: out of the read-only bundle."""
+    return os.path.join(os.path.dirname(SQLITE_PATH), "models")
+
+
+def model_file():
+    """The model file this app runs, downloaded or not."""
+    return os.environ.get("MODEL_PATH", "").strip() or os.path.join(
+        model_dir(), MODEL_NAME)
+
+
 OLLAMA_KEEP_ALIVE = os.environ.get("OLLAMA_KEEP_ALIVE", "30m").strip()
 """How long Ollama holds the model in memory after a question.
 
@@ -221,9 +275,17 @@ def ai_configured():
     """True when the assistant has a backend it could use.
 
     Deliberately cheap and offline: it says whether the app is *set up* for
-    chat, not whether the server is up right now. Whether Ollama is actually
-    running is a live question, and /api/chat/status is where it gets asked.
+    chat, not whether it can answer this second. Whether the model is
+    downloaded, loading or running is a live question, and /api/chat/status is
+    where it gets asked.
+
+    The bundled backend is therefore always configured — the runtime ships with
+    the app and the weights are its own to fetch, so there is nothing for anyone
+    to set up. Falling through to the Anthropic key here, as this used to, made
+    the whole panel report itself unconfigured the moment the default changed.
     """
+    if AI_BACKEND == "bundled":
+        return True
     if AI_BACKEND == "local":
         return bool(OLLAMA_HOST and OLLAMA_MODEL)
     return bool(ANTHROPIC_API_KEY)

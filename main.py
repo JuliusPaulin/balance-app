@@ -11,6 +11,20 @@ def start_server():
     app.run(port=SERVER_PORT, use_reloader=False)
 
 
+def _warm_model():
+    """Start the bundled model server if its weights are already here.
+
+    Loading three gigabytes takes a few seconds, and they can pass while the
+    dashboard draws rather than after the first question is asked. Allowed to
+    fail quietly: no model yet is an ordinary first run, and the panel says so.
+    """
+    try:
+        from model_runtime import ensure_running
+        ensure_running()
+    except Exception:
+        pass
+
+
 if __name__ == "__main__":
     # Local SQLite bootstrap: create the schema, take a safety backup of any
     # existing DB, and ensure the single local user + default categories exist.

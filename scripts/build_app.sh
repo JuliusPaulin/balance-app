@@ -12,6 +12,12 @@ BUILD_DIR="build"
 echo "=== Installing build dependencies ==="
 pip3 install pyinstaller --quiet
 
+# The model runtime travels inside the app; the weights do not, and are fetched
+# on first use. 56 MB of compiled binaries are not in git, so they are pulled
+# here — see scripts/fetch_runtime.sh for why the build is pinned.
+echo "=== Fetching the model runtime ==="
+./scripts/fetch_runtime.sh
+
 echo "=== Building ${APP_NAME}.app ==="
 # Exclude drivers left over from an old hosted build so PyInstaller neither
 # looks for them nor bundles them.
@@ -22,6 +28,9 @@ python3 -m PyInstaller \
     --icon static/icon.icns \
     --add-data "templates:templates" \
     --add-data "static:static" \
+    --add-data "vendor/llama:vendor/llama" \
+    --add-data "licences:licences" \
+    --hidden-import model_runtime \
     --hidden-import webview \
     --hidden-import webview.platforms.cocoa \
     --hidden-import flask \

@@ -18,3 +18,7 @@ mockups/import-redesign/
 
 # Stray folder pytest leaves behind when DATABASE_URL is read as a path.
 postgresql:/
+
+# Fetched by scripts/fetch_runtime.sh, not committed: 56 MB of compiled
+# binaries do not belong in a repository.
+vendor/

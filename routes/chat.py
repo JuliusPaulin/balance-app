@@ -40,6 +40,21 @@ def chat_status():
     })
 
 
+@bp.route("/api/chat/download", methods=["POST"])
+def chat_download():
+    """Fetch the model. The one thing the panel can ask for on a first run.
+
+    Returns at once and reports through `/api/chat/status`: 2.7 GB is minutes,
+    not a request. Starting it twice is harmless — the download refuses to run
+    beside itself — so this needs no guard of its own.
+    """
+    if config.AI_BACKEND != "bundled":
+        return jsonify({"error": "This build does not download its own model",
+                        "code": "not_bundled"}), 400
+    from model_runtime import start_download
+    return jsonify(start_download())
+
+
 def _read_conversation(body):
     """Validate the posted conversation. Returns ``(messages, error)``.
 

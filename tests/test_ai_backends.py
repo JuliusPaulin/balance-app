@@ -215,10 +215,29 @@ def test_status_reports_a_dead_server_without_raising(monkeypatch):
 
 # ── Picking one ───────────────────────────────────────────────────────────
 
-def test_local_is_the_default_backend():
+def test_the_bundled_runtime_is_the_default_backend():
+    """What ships: llama.cpp inside the app, against a model it downloads.
+
+    Ollama was the default while this was being built and is still a backend,
+    because swapping models is one `ollama pull` rather than a rebuild. It is
+    not what anyone else should have to install to try a side panel.
+    """
     import config
-    assert config.AI_BACKEND == "local"
-    assert ai_backends.get_backend().name == "local"
+    assert config.AI_BACKEND == "bundled"
+    assert ai_backends.get_backend().name == "llamacpp"
+
+
+def test_the_bundled_backend_needs_nothing_set_up():
+    """The runtime ships and the weights are its own to fetch, so there is
+    nothing for a user to configure. Whether it can answer *now* is a different
+    question, and /api/chat/status is where that one is asked."""
+    import config
+    assert config.ai_configured() is True
+
+
+def test_the_other_backends_are_still_reachable_by_name():
+    assert ai_backends.get_backend("local").name == "local"
+    assert ai_backends.get_backend("anthropic").name == "anthropic"
 
 
 def test_an_unknown_backend_name_is_refused():

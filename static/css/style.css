@@ -3755,3 +3755,24 @@ body.chat-open .chat-fab {
 }
 .chat-step svg { width: 11px; height: 11px; color: var(--accent); flex-shrink: 0; }
 .chat-step.chat-source-failed svg { color: var(--red); }
+
+/* A download that takes minutes, in a panel you can walk away from. */
+.chat-progress {
+    height: 6px;
+    border-radius: 3px;
+    background: var(--bg-tertiary);
+    overflow: hidden;
+    margin-bottom: 6px;
+}
+.chat-progress-bar {
+    height: 100%;
+    background: var(--accent);
+    border-radius: 3px;
+    transition: width 0.4s ease;
+}
+.chat-progress-label {
+    font-size: var(--text-caption);
+    color: var(--text-tertiary);
+    text-align: right;
+    margin-bottom: 12px;
+}

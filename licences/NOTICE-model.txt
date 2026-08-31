@@ -1,0 +1,20 @@
+Balance ships a language model it did not train, and this says whose it is.
+
+    Qwen3.5-4B
+    Copyright Alibaba Cloud and the Qwen team.
+    Licensed under the Apache License, Version 2.0 — see Apache-2.0.txt
+    beside this file.
+
+The weights are the Q4_K_M GGUF conversion published at
+https://huggingface.co/unsloth/Qwen3.5-4B-GGUF, downloaded on first use rather
+than carried in the download, because 2.7 GB does not belong in an application
+bundle.
+
+Apache 2.0 permits redistribution and asks two things in return: that its terms
+travel with the work, and that the attribution above is preserved. Both files
+are copied next to the model when it is fetched. That repository declares the
+licence in its metadata but ships no licence file, so this copy is the model's
+own, taken from the weights as published.
+
+The inference server is llama.cpp (https://github.com/ggml-org/llama.cpp),
+MIT licensed; its notice travels in vendor/llama/ with the binaries.

@@ -17,6 +17,8 @@ let chatReady = null;       // null = not probed yet; else the status payload
 // The answer as it arrives: what it is doing now, and what it has written so
 // far. Null when nothing is in flight.
 let chatPending = null;
+// The download poller, so opening the panel twice does not start two.
+let chatPoll = null;
 
 // The six tools, said in English. The point is not the function name — it is
 // which screen of the app the number came off.
@@ -65,7 +67,8 @@ function openChat() {
     document.getElementById("chat-open-btn").classList.add("active");
     // Probe once per session. The model runs on this machine and can simply be
     // off, so what matters is whether it is answering *now*.
-    if (chatReady === null) loadChatStatus();
+    if (chatReady === null) loadChatStatus().then(resumePollingIfBusy);
+    else resumePollingIfBusy();
     setTimeout(() => document.getElementById("chat-input").focus(), 220);
 }
 
@@ -75,6 +78,22 @@ function closeChat() {
     panel.setAttribute("aria-hidden", "true");
     document.body.classList.remove("chat-open");
     document.getElementById("chat-open-btn").classList.remove("active");
+}
+
+// A download started before the panel was last closed is still going.
+function resumePollingIfBusy() {
+    if (chatPoll || !chatReady) return;
+    if (["downloading", "starting"].includes(chatReady.state)) downloadPoll();
+}
+
+function downloadPoll() {
+    chatPoll = setInterval(async () => {
+        await loadChatStatus();
+        if (!chatReady || !["downloading", "starting"].includes(chatReady.state)) {
+            clearInterval(chatPoll);
+            chatPoll = null;
+        }
+    }, 2000);
 }
 
 async function loadChatStatus() {
@@ -163,15 +182,61 @@ function chatEmptyHtml() {
 // "Unavailable" tells someone with Ollama running and a different model pulled
 // exactly nothing. The status endpoint knows which of the two it is, so say it,
 // and give the command.
+// Not ready yet, and there are several of those now. Ollama had two — not
+// running, model not pulled — and both wanted the same thing: a command typed
+// into a terminal. Owning the weights changes that. A first run asks permission
+// for a 2.7 GB download, a download in flight asks for patience, and a server
+// still loading asks for nothing at all. Only one of these is the user's to act
+// on, so only one gets a button.
 function chatSetupHtml() {
     const s = chatReady || {};
-    // The server always reports the model it is configured for, reachable or
-    // not, so this never has to guess a name — and a name is the whole use of
-    // this card. It is the only place in the panel a model is mentioned: which
-    // one answers is a setting, not the brand.
+    const p = s.progress || {};
+
+    if (s.state === "downloading") {
+        const done = p.bytes || 0, total = p.total || 1;
+        const pct = Math.min(100, Math.round((done / total) * 100));
+        return `<div class="chat-setup">
+            <h4>Getting Balance AI ready</h4>
+            <p>Downloading the model — ${gb(done)} of ${gb(total)}. This happens
+               once. You can keep using the rest of the app, and it picks up
+               where it left off if it is interrupted.</p>
+            <div class="chat-progress"><div class="chat-progress-bar" style="width:${pct}%"></div></div>
+            <div class="chat-progress-label">${pct}%</div>
+        </div>`;
+    }
+
+    if (s.state === "needs_download") {
+        return `<div class="chat-setup">
+            <h4>Balance AI needs its model</h4>
+            <p>${escapeHtml(s.detail || "")} It runs on this Mac afterwards —
+               nothing you ask it leaves the machine, and it works offline.</p>
+            <button class="btn btn-primary btn-sm" onclick="downloadModel()">Download</button>
+        </div>`;
+    }
+
+    if (s.state === "download_failed") {
+        return `<div class="chat-setup">
+            <h4>The download stopped</h4>
+            <p>${escapeHtml(s.detail || "")}</p>
+            <p>Nothing already fetched is lost — starting again picks up from
+               where it stopped.</p>
+            <button class="btn btn-primary btn-sm" onclick="downloadModel()">Try again</button>
+        </div>`;
+    }
+
+    if (s.state === "starting") {
+        return `<div class="chat-setup">
+            <h4>Starting up</h4>
+            <p>Balance AI is loading its model. This takes a few seconds the
+               first time after opening the app.</p>
+        </div>`;
+    }
+
+    // Ollama, or a build with no runtime in it: the old two, still true and
+    // still fixed the same way.
     const model = s.model;
     let what, how;
-    if (s.reachable === false) {
+    if (s.reachable === false && s.state !== "no_runtime") {
         what = "Ollama isn't running on this Mac.";
         how = "ollama serve";
     } else if (s.model_installed === false && model) {
@@ -192,6 +257,27 @@ function chatSetupHtml() {
            machine, so it needs one installed.</p>
         <button class="btn btn-secondary btn-sm" onclick="chatReady=null;loadChatStatus()">Check again</button>
     </div>`;
+}
+
+function gb(bytes) {
+    return `${(bytes / 1e9).toFixed(1)} GB`;
+}
+
+// Start the download, then keep asking how it is going. Polling rather than a
+// second event stream: it is one small request every two seconds against a
+// thing that takes minutes, and it survives the panel being closed and reopened
+// halfway through, which a stream would not.
+async function downloadModel() {
+    try {
+        await api("/api/chat/download", { method: "POST" });
+    } catch (e) {
+        if (!(e instanceof ApiError)) throw e;
+        toast(e.message);
+        return;
+    }
+    if (chatPoll) { clearInterval(chatPoll); chatPoll = null; }
+    downloadPoll();
+    loadChatStatus();
 }
 
 function chatMessageHtml(m) {
