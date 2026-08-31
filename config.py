@@ -177,6 +177,16 @@ Off by default: the deliberation costs seconds in a side panel and buys little
 when the task is choosing between six tools. Models with no thinking mode
 ignore this — the backend notices the rejection and stops sending it."""
 
+OLLAMA_KEEP_ALIVE = os.environ.get("OLLAMA_KEEP_ALIVE", "30m").strip()
+"""How long Ollama holds the model in memory after a question.
+
+Its own default is five minutes, after which the next question pays to read
+several gigabytes off disk again — which is most of the difference between an
+answer in eight seconds and one in fifteen. Someone dipping into a side panel
+while they look at their spending is exactly the person who waits longer than
+five minutes between questions. Set "0" to hand the memory back at once.
+"""
+
 OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", 180))
 """Seconds to wait for a local reply. The first call after a cold start pays
 for loading several gigabytes off disk, which is slow and not a failure."""

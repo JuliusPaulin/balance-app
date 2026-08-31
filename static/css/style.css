@@ -3661,3 +3661,37 @@ body.fs-active { overflow: hidden; }
     padding: 0 18px 8px;
     text-align: center;
 }
+
+/* ── Ask: the floating button ─────────────────────────────────────────
+   Bottom right, over the page. It steps aside when the panel it opens is
+   already open rather than sitting on top of it. */
+.chat-fab {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 890;
+    width: 52px;
+    height: 52px;
+    display: grid;
+    place-items: center;
+    border: none;
+    border-radius: 50%;
+    background: var(--accent);
+    color: var(--on-accent);
+    cursor: pointer;
+    box-shadow: 0 6px 20px rgba(16, 24, 40, 0.18), 0 0 0 0.5px rgba(0, 0, 0, 0.04);
+    transition: transform var(--transition-spring), opacity var(--transition),
+                background var(--transition), visibility var(--transition-spring);
+}
+.chat-fab:hover { background: var(--accent-hover); transform: translateY(-2px); }
+.chat-fab svg { width: 22px; height: 22px; }
+
+/* Out of the way while the panel is open — same switch as the panel itself, so
+   it cannot be tabbed to from behind. */
+body.chat-open .chat-fab {
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(8px) scale(0.9);
+    transition: transform var(--transition), opacity var(--transition),
+                visibility 0s linear var(--transition);
+}

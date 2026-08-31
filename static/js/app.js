@@ -5304,6 +5304,8 @@ function openChat() {
     const panel = document.getElementById("chat-panel");
     panel.classList.add("open");
     panel.setAttribute("aria-hidden", "false");
+    // The floating button steps aside rather than sitting over its own panel.
+    document.body.classList.add("chat-open");
     document.getElementById("chat-open-btn").classList.add("active");
     // Probe once per session. The model runs on this machine and can simply be
     // off, so what matters is whether it is answering *now*.
@@ -5315,6 +5317,7 @@ function closeChat() {
     const panel = document.getElementById("chat-panel");
     panel.classList.remove("open");
     panel.setAttribute("aria-hidden", "true");
+    document.body.classList.remove("chat-open");
     document.getElementById("chat-open-btn").classList.remove("active");
 }
 
@@ -5440,7 +5443,13 @@ function chatSourcesHtml(m) {
             ${args ? `<span class="chat-source-args">${escapeHtml(args)}</span>` : ""}
         </div>`;
     }).join("");
-    const label = calls.length === 1 ? "1 lookup" : `${calls.length} lookups`;
+    // The months read, on the summary line rather than inside the fold. The
+    // model is asked to name them and mostly does, but this is the one fact
+    // that decides whether an answer is right, so it should not depend on that.
+    const periods = [...new Set(calls.map(c => c.period).filter(Boolean))];
+    const when = periods.length === 1 ? chatPeriodLabel(periods[0]) : null;
+    const count = calls.length === 1 ? "1 lookup" : `${calls.length} lookups`;
+    const label = when ? `${escapeHtml(when)} · ${count}` : count;
     return `<details class="chat-sources">
         <summary>
             <svg class="chev" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M9 18l6-6-6-6"/></svg>
@@ -5450,9 +5459,17 @@ function chatSourcesHtml(m) {
     </details>`;
 }
 
+// "2026-07" → "Jul 2026"; "2026-06 to 2026-08" → "Jun 2026 to Aug 2026". A
+// label the tools already computed, said the way the rest of the app says it.
+function chatPeriodLabel(period) {
+    if (!period) return "";
+    return String(period).replace(/\d{4}-\d{2}/g, m => fmtMonthLabel(m));
+}
+
 function chatArgSummary(args) {
     if (!args || typeof args !== "object") return "";
     return Object.entries(args)
+        .filter(([k]) => k !== "period" && k !== "months")
         .filter(([, v]) => v !== null && v !== undefined && v !== "")
         .map(([k, v]) => `${k}: ${Array.isArray(v) ? v.join(", ") : v}`)
         .join(" · ");

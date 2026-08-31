@@ -522,7 +522,8 @@ four — small models circle more readily than large ones — and the final turn
 withdraws the tools so a stuck conversation ends in a sentence rather than a
 fifth identical lookup.
 
-**The panel.** "Ask" in the sidebar (or ⌘K) slides a column in from the right.
+**The panel.** A round button at the bottom right, "Ask" in the sidebar, or ⌘K,
+slides a column in from the right.
 A column and not a modal: the assistant answers about the figures on the page,
 so covering them would defeat it. Below 1024px there is no beside and it takes
 the width.
@@ -537,6 +538,12 @@ Three things in it are load-bearing rather than decoration:
 - **An answer with a figure and no lookup behind it is called out**, in orange,
   under the reply. Not every toolless answer — "I can't delete anything" reads
   nothing and needs no warning — so the flag follows the digits.
+- **The months read are on the summary line**, not folded away: "Jul 2026 · 1
+  lookup". Asked what he spent on groceries last month the assistant answered
+  "421 €" with no month on it, beside a Dashboard reading 338 € for August —
+  a right figure about July that looked like a wrong one about now. The trace
+  carries the period each tool resolved, so the answer's meaning does not
+  depend on the model remembering to say it. It is asked to as well.
 - **Errors land in the transcript, not in a toast.** `api()` throws and the
   global handler would float the message over a panel still showing the
   question hanging unanswered, so `sendChat()` catches its own.
@@ -554,6 +561,15 @@ Not streaming. The endpoint answers with one JSON body, and adding SSE means
 runs the same loop over the same tools with a frontier model, which is the only
 way to tell a bad answer caused by the model apart from one caused by the
 prompt or the tools.
+
+**Speed.** A question took about fifteen seconds; it now takes five. Almost all
+of that was Ollama dropping the model after its own five-minute idle default and
+reading 3.4 GB back off disk — and someone dipping into a side panel while they
+read their spending is exactly the person who pauses longer than five minutes.
+`OLLAMA_KEEP_ALIVE` (30m) keeps it resident. What is left is two model calls per
+answer: one to choose the tool, one to write the sentence once the result is
+back, at roughly three and four seconds. Cutting further means streaming, not
+tuning.
 
 Local-model specifics that are load-bearing: `temperature` 0.1 (this is
 routing, and creativity here shows up as invented category names); `think` off

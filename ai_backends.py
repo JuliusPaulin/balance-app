@@ -157,6 +157,10 @@ class OllamaBackend:
             "messages": self._wire_messages(system, messages),
             "stream": False,
             "options": {"temperature": self.temperature, "num_ctx": self.num_ctx},
+            # Keep the weights resident between questions. Ollama drops them
+            # after five minutes, and reloading them is the slowest thing that
+            # happens in this whole feature.
+            "keep_alive": config.OLLAMA_KEEP_ALIVE,
         }
         if tools:
             payload["tools"] = self._wire_tools(tools)

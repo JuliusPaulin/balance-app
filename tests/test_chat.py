@@ -79,8 +79,12 @@ def test_a_tool_call_is_executed_and_fed_back(seeded):
     result = ai_chat.chat(ASK, backend=backend)
 
     assert result["reply"] == "Groceries came to 61 €."
+    # The trace carries the months the tool actually read, not the word the
+    # model passed: "last month" is the whole meaning of the answer, and a
+    # figure for July shown beside a page reading August looks like a wrong one.
     assert result["tool_calls"] == [
-        {"tool": "category_breakdown", "arguments": {"month": "2026-05"}, "ok": True}
+        {"tool": "category_breakdown", "arguments": {"month": "2026-05"},
+         "period": "2026-05", "ok": True}
     ]
 
     # The second turn carried the real result back, and it holds the real money.
