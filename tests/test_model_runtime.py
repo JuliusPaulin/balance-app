@@ -15,6 +15,18 @@ import config
 import model_runtime
 
 
+def write_model(path):
+    """A file that passes for a model: the GGUF magic and a plausible size.
+
+    Sparse, so it costs no disk. The size matters because a truncated download
+    used to pass as a whole one — see the download tests below.
+    """
+    with open(path, "wb") as handle:
+        handle.write(b"GGUF")
+        handle.seek(model_runtime._MIN_MODEL_BYTES)
+        handle.write(b"\0")
+
+
 @pytest.fixture
 def models_dir(tmp_path, monkeypatch):
     """A throwaway model directory, and no download in flight."""
@@ -43,7 +55,7 @@ def runtime_present(monkeypatch, tmp_path):
 def test_a_running_server_with_its_model_on_disk_is_ready(
         models_dir, runtime_present, monkeypatch):
     """Both, and that is the point — see the outliving-its-file test below."""
-    (models_dir / "model.gguf").write_bytes(b"GGUF" + b"\0" * 100)
+    write_model(models_dir / "model.gguf")
     monkeypatch.setattr(model_runtime, "server_responding", lambda host=None: True)
     state = model_runtime.runtime_state()
     assert state["state"] == "ready"
@@ -69,7 +81,7 @@ def test_a_present_model_with_no_server_yet_is_merely_starting(
         models_dir, runtime_present, no_server):
     """Three gigabytes take a few seconds off a cold disk, and that asks nothing
     of anyone — it must not read as a failure or as a second download."""
-    (models_dir / "model.gguf").write_bytes(b"GGUF" + b"\0" * 100)
+    write_model(models_dir / "model.gguf")
     state = model_runtime.runtime_state()
     assert state["state"] == "starting"
     assert state["configured"] is False
@@ -178,7 +190,7 @@ def test_a_starting_state_has_something_starting_behind_it(
     poll answered "starting" and nothing acted on it.
     """
     model_runtime._starting = False
-    (models_dir / "model.gguf").write_bytes(b"GGUF" + b"\0" * 100)
+    write_model(models_dir / "model.gguf")
     started = []
     monkeypatch.setattr(model_runtime, "ensure_running",
                         lambda: started.append(True))
@@ -196,10 +208,54 @@ def test_a_starting_state_has_something_starting_behind_it(
 def test_a_start_already_in_flight_is_not_started_again(
         models_dir, runtime_present, no_server, monkeypatch):
     """The panel polls every two seconds; that must not queue a spawn a poll."""
-    (models_dir / "model.gguf").write_bytes(b"GGUF" + b"\0" * 100)
+    write_model(models_dir / "model.gguf")
     monkeypatch.setattr(model_runtime, "_starting", True)
     started = []
     monkeypatch.setattr(model_runtime, "ensure_running",
                         lambda: started.append(True))
     model_runtime.nudge()
     assert started == []
+
+
+# ── A download that stopped early ─────────────────────────────────────────
+
+def test_a_truncated_file_is_not_a_model(models_dir):
+    """The failure a user actually hit.
+
+    A stream can end early without raising — a dropped connection, a server
+    closing mid-file — and this used to ask only whether the file existed and
+    was non-empty. So half a model passed as a whole one, `llama-server` could
+    not load it, and the panel said "starting up" for ever.
+    """
+    (models_dir / "model.gguf").write_bytes(b"GGUF" + b"\0" * 1000)
+    assert model_runtime.model_present() is False
+
+
+def test_a_file_that_is_not_a_gguf_is_not_a_model(models_dir):
+    """An error page saved under the model's name is not a model."""
+    with open(models_dir / "model.gguf", "wb") as handle:
+        handle.write(b"<html>404</html>")
+        handle.seek(model_runtime._MIN_MODEL_BYTES)
+        handle.write(b"\0")
+    assert model_runtime.model_present() is False
+
+
+# ── A start that keeps failing ────────────────────────────────────────────
+
+def test_a_server_that_will_not_start_stops_saying_it_is_starting(
+        models_dir, runtime_present, no_server, monkeypatch):
+    """"Starting up" for ever is the least useful thing a screen can say."""
+    write_model(models_dir / "model.gguf")
+    monkeypatch.setattr(model_runtime, "_failed_starts",
+                        model_runtime.MAX_START_ATTEMPTS)
+    state = model_runtime.runtime_state()
+    assert state["state"] == "start_failed"
+    assert "could not start" in state["detail"]
+
+
+def test_a_first_failure_is_still_just_starting(
+        models_dir, runtime_present, no_server, monkeypatch):
+    """A cold disk or a machine busy from launch deserves a second try."""
+    write_model(models_dir / "model.gguf")
+    monkeypatch.setattr(model_runtime, "_failed_starts", 1)
+    assert model_runtime.runtime_state()["state"] == "starting"

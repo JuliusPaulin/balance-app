@@ -34,8 +34,16 @@ import config
 _server = None
 _download = {"state": "idle", "bytes": 0, "total": 0, "error": None}
 # Whether a start is already in flight, so a panel polling every two seconds
-# does not queue up a spawn per poll.
+# does not queue up a spawn per poll, and how many have failed in a row.
 _starting = False
+_failed_starts = 0
+
+# How many attempts before the panel stops saying "starting up" and says what
+# went wrong. Two, because the first failure can be a cold disk or a machine
+# still busy from launch, and a third try helps nobody: a server that will not
+# start does not start on the fifth attempt either, and "starting up" for ever
+# is the least useful thing a screen can say.
+MAX_START_ATTEMPTS = 2
 _lock = threading.Lock()
 
 # How long to let the server boot before calling it stuck. Loading three
@@ -74,10 +82,27 @@ def server_binary():
     return candidate
 
 
+# Smaller than any real quantisation of this model, and enough to reject a
+# truncation that happened to land on a byte boundary.
+_MIN_MODEL_BYTES = 100_000_000
+
+
 def model_present():
-    """Whether the whole model is on disk. A part-file is not a model."""
+    """Whether a usable model is on disk.
+
+    A part-file is not a model, and neither is a truncated one. This asked only
+    whether the file existed and was non-empty, so a download that stopped
+    early — which can happen without any error being raised — passed as a whole
+    model and left the panel starting up for ever.
+    """
     path = config.model_file()
-    return os.path.isfile(path) and os.path.getsize(path) > 0
+    try:
+        if not os.path.isfile(path) or os.path.getsize(path) < _MIN_MODEL_BYTES:
+            return False
+        with open(path, "rb") as handle:
+            return handle.read(4) == b"GGUF"
+    except OSError:
+        return False
 
 
 # ── Fetching it once ──────────────────────────────────────────────────────
@@ -133,7 +158,17 @@ def _download_worker():
                         with _lock:
                             _download["bytes"] = done
 
-        _check_room(0)
+        # A stream can end early without raising — a dropped connection, a
+        # server closing mid-file — and the half a model that leaves behind
+        # looks exactly like a whole one to anything that only checks the size
+        # is above zero. It gets renamed, `llama-server` cannot load it, and the
+        # panel says "starting up" until somebody gives up.
+        expected = _download.get("total") or 0
+        actual = os.path.getsize(part)
+        if expected and actual < expected:
+            raise RuntimeError(
+                f"the download stopped early — {actual / 1e9:.2f} GB of "
+                f"{expected / 1e9:.2f} GB. Trying again resumes from here.")
         os.replace(part, path)
         _place_licence()
         with _lock:
@@ -248,6 +283,15 @@ def ensure_running():
     return False
 
 
+def server_log_tail(lines=12):
+    """The last of what the model server said, for when it will not start."""
+    try:
+        with open(os.path.join(config.model_dir(), "server.log")) as handle:
+            return "".join(handle.readlines()[-lines:]).strip()
+    except OSError:
+        return ""
+
+
 def nudge():
     """Start the server in the background if it should be running.
 
@@ -266,9 +310,12 @@ def nudge():
     _starting = True
 
     def run():
-        global _starting
+        global _starting, _failed_starts
         try:
-            ensure_running()
+            if ensure_running():
+                _failed_starts = 0
+            else:
+                _failed_starts += 1
         finally:
             _starting = False
 
@@ -321,6 +368,14 @@ def runtime_state(host=None, model_path=None):
         return _state("needs_download", path, progress=progress, detail=(
             "Balance AI needs a one-off "
             f"{config.MODEL_BYTES / 1e9:.1f} GB download to run on this Mac."))
+    if _failed_starts >= MAX_START_ATTEMPTS:
+        # It has been tried and it is not coming up. Saying "starting up" past
+        # this point is not optimism, it is a screen that never changes.
+        last = server_log_tail(3)
+        return _state("start_failed", path, progress=progress, detail=(
+            "Balance AI could not start."
+            + (f" It said: {last.splitlines()[-1]}" if last else "")))
+
     # The file is there and the server is not answering: it is still loading,
     # which on a cold disk takes a while and asks nothing of anyone.
     return _state("starting", path, detail="Balance AI is starting up…",

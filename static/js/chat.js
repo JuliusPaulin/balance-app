@@ -224,6 +224,17 @@ function chatSetupHtml() {
         </div>`;
     }
 
+    if (s.state === "start_failed") {
+        return `<div class="chat-setup">
+            <h4>Balance AI could not start</h4>
+            <p>${escapeHtml(s.detail || "")}</p>
+            <p>The most common cause is a model file that did not finish
+               downloading. Fetching it again picks up from where it stopped.</p>
+            <button class="btn btn-primary btn-sm" onclick="downloadModel()">Download it again</button>
+            <button class="btn btn-secondary btn-sm" onclick="chatReady=null;loadChatStatus()">Try again</button>
+        </div>`;
+    }
+
     if (s.state === "starting") {
         return `<div class="chat-setup">
             <h4>Starting up</h4>

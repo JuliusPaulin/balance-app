@@ -602,10 +602,22 @@ weights changes the shape of the question, so `/api/chat/status` now carries a
 | `downloading` | a bar, and that it resumes | patience |
 | `download_failed` | what stopped it, nothing lost | a click |
 | `starting` | that it is loading | nothing |
+| `start_failed` | what the server said, and an offer to fetch the model again | a click |
 | `no_runtime` | that this build has no model in it | nothing |
 
 The download streams to a `.part` file and resumes, because 2.7 GB is far too
-much to fetch again because a laptop lid closed. `licences/` travels in the
+much to fetch again because a laptop lid closed. **It also checks that it
+finished**: a stream can end early without raising anything, and `model_present`
+used to ask only whether the file existed and was non-empty — so half a model
+passed as a whole one, `llama-server` could not load it, and the panel said
+"starting up" until somebody gave up. The size must match what was promised, and
+the file has to begin `GGUF`.
+
+**And a start that keeps failing says so.** Every poll nudged another attempt,
+each one failed, and the screen never changed. After two tries the state becomes
+`start_failed` and carries the last line the server printed, which is the whole
+reason its output is kept. "Starting up" for ever is the least useful thing a
+screen can say. `licences/` travels in the
 bundle and is copied beside the weights when they land — Apache 2.0 permits the
 redistribution and asks that its terms and the attribution go with it, and the
 first version of this fetched them from the model's own repository, which
