@@ -352,11 +352,18 @@ def test_a_crashing_server_is_retried_with_less_of_the_gpu(
     assert tried[-1][tried[-1].index("--n-gpu-layers") + 1] == "0"
 
 
-def test_the_first_attempt_asks_for_the_whole_gpu(models_dir):
-    """Almost every Mac runs it this way and should keep doing so."""
-    assert model_runtime._fit_args(0) == ["--ctx-size",
-                                          str(config.OLLAMA_NUM_CTX),
-                                          "--n-gpu-layers", "999"]
+def test_the_first_attempt_is_the_one_that_works_everywhere(models_dir):
+    """The GPU, with the model read in rather than mapped.
+
+    Mapping it is what Metal objects to, and that used to be the default with
+    this as the fallback — which put a crash between an affected Mac and a
+    working assistant. One never got past it and ran on its CPU at 26 tokens a
+    second, while the same binary with these flags started on its GPU in
+    seconds. So the crash is not on the path any more.
+    """
+    args = model_runtime._fit_args(0)
+    assert "--load-mode" in args and args[args.index("--load-mode") + 1] == "none"
+    assert args[args.index("--n-gpu-layers") + 1] == "999"
 
 
 def test_no_fallback_ever_starves_the_context(models_dir):
@@ -381,17 +388,16 @@ def test_only_the_gpu_is_negotiable(models_dir):
     assert len(sizes) == 1
 
 
-def test_the_gpu_is_kept_before_it_is_given_up(models_dir):
-    """The step before the CPU keeps the GPU and drops the memory map instead.
+def test_the_model_is_never_memory_mapped(models_dir):
+    """Not at any level. It is the one thing that crashes Metal here."""
+    for level in range(model_runtime._FIT_LEVELS):
+        args = model_runtime._fit_args(level)
+        assert args[args.index("--load-mode") + 1] == "none"
 
-    A 16 GB Air fell straight to the CPU and managed 26 tokens a second against
-    310 on the GPU — a simple question took over two minutes, and a month's
-    analysis could not finish inside the request timeout at all. What sent it
-    there was Metal refusing a pointer from a memory-mapped model; reading the
-    model into memory gives back an aligned one and keeps the GPU.
-    """
+
+def test_the_cpu_is_the_last_resort_and_only_that(models_dir):
+    """26 tokens a second against 310 — slow enough is the same as broken."""
     on_gpu = [l for l in range(model_runtime._FIT_LEVELS)
               if "999" in model_runtime._fit_args(l)]
-    assert on_gpu == [0, 1], "the CPU must be the last resort, not the second"
-    assert "--load-mode" in model_runtime._fit_args(1)
-    assert "--load-mode" not in model_runtime._fit_args(0)
+    assert on_gpu == [0]
+    assert model_runtime._fit_args(model_runtime._FIT_LEVELS - 1)[-1] == "0"

@@ -623,15 +623,23 @@ returns nil there when the pointer is not page-aligned or the length does not
 suit. A precondition failing inside llama.cpp's readback path, on one machine
 and not another.
 
-**And the memory map is what triggers it.** `newBufferWithBytesNoCopy:` returns
+**So the model is never memory-mapped.** That is what triggers it, and it is
+not worth having on the path at all: `newBufferWithBytesNoCopy:` returns
 nil when the pointer is not page-aligned, and a memory-mapped model hands out
 tensor pointers at arbitrary offsets into the mapping. `--load-mode none` reads
 the model into memory instead, gives back aligned pointers, and keeps the GPU.
-That is the step between full speed and the CPU, and it is there because of what
-the CPU costs: that Air managed **26 tokens a second against 310 on the GPU** —
-a simple question took over two minutes, and a month's analysis could not finish
-inside the request timeout at all. Slow enough is the same as broken, so the CPU
-is the last resort and not the second.
+
+This began as a fallback, with the memory map as the default — which put a crash
+between every affected Mac and a working assistant, and one of them never got
+past it. That Air ran on its CPU at **26 tokens a second against 310 on the
+GPU**: a simple question took over two minutes, and a month's analysis could not
+finish inside the request timeout at all. The same binary, handed these flags by
+hand on the same Mac, started on its GPU in seconds.
+
+So the configuration that works on every machine tested is the one to start
+with, and the crash is not on the path any more. Reading 2.7 GB rather than
+mapping it costs about twenty seconds at launch, once. The CPU stays as the last
+resort, because slow enough is the same as broken.
 
 **Only the GPU is negotiable.** The first version of that step-down also halved
 the context to 4 096 to save memory, and that is under the floor: a turn carries

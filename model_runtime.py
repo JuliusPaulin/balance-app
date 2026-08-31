@@ -106,36 +106,32 @@ def macos_too_old():
 # crash for silence, which is worse, because a crash says something.
 MIN_CTX = 8192
 
-# Three ways to run, fastest first.
+# Two ways to run, and the memory map is not one of them.
 #
-#   0  the GPU, model memory-mapped — what almost every Mac does
-#   1  the GPU, model read into memory instead — same speed, and it steps
-#      around the Metal failure below
-#   2  the CPU — the last resort, and a poor one
+#   0  the GPU, model read into memory
+#   1  the CPU, same — the last resort, and a poor one
 #
-# Level 1 exists because of level 2's cost. A 16 GB Air fell all the way to the
-# CPU and managed 26 tokens a second against this machine's 310: a simple
-# question took over two minutes and a month's analysis could not finish inside
-# the request timeout at all. Slow enough is the same as broken.
+# Memory-mapping the model is what Metal objects to:
+# `newBufferWithBytesNoCopy:` returns nil — not an error — when the pointer is
+# not page-aligned, and a mapped model hands out tensor pointers at arbitrary
+# offsets into the mapping. `GGML_ASSERT(buf_dst) failed`, and the process dies.
 #
-# What sends it there is `GGML_ASSERT(buf_dst) failed` inside Metal, where
-# llama.cpp wraps an existing pointer with `newBufferWithBytesNoCopy:`. That
-# call returns nil — not an error — when the pointer is not page-aligned, and a
-# memory-mapped model hands out tensor pointers at arbitrary offsets into the
-# mapping. Reading the model into memory instead gives back aligned pointers,
-# and the GPU is kept.
-_FIT_LEVELS = 3
+# It was the default here, with reading the model in as the fallback. That put a
+# crash between every affected Mac and a working assistant, and one of them
+# never got past it: an M2 Air on Ventura ran the assistant on its CPU at 26
+# tokens a second, while the very same binary, given these flags by hand,
+# started on its GPU in seconds. So the configuration that works on every
+# machine tested is the one to start with, and the crash is not on the path at
+# all. Reading 2.7 GB rather than mapping it costs about two seconds at launch,
+# once, and is measured against answers that took over two minutes.
+_FIT_LEVELS = 2
 _fit = 0
 
 
 def _fit_args(level):
     ctx = max(config.OLLAMA_NUM_CTX, MIN_CTX)
-    args = ["--ctx-size", str(ctx)]
-    if level <= 0:
-        return args + ["--n-gpu-layers", "999"]
-    if level == 1:
-        return args + ["--n-gpu-layers", "999", "--load-mode", "none"]
-    return args + ["--n-gpu-layers", "0", "--load-mode", "none"]
+    return ["--ctx-size", str(ctx), "--load-mode", "none",
+            "--n-gpu-layers", "999" if level <= 0 else "0"]
 
 
 def _bundle_root():
@@ -344,7 +340,13 @@ def ensure_running():
             # Kept, not discarded. When this failed to start there was nothing
             # anywhere to say why — the panel said "starting up" and the only
             # way to learn otherwise was to run the binary by hand.
-            log = open(os.path.join(config.model_dir(), "server.log"), "w")
+            # Appended, not truncated. Opening this "w" meant each attempt
+            # erased the one before it, so the log held the fallback and never
+            # the crash that caused the fallback — which is the half worth
+            # having.
+            log = open(os.path.join(config.model_dir(), "server.log"), "a")
+            log.write(f"\n=== starting: {' '.join(_fit_args(_fit))} ===\n")
+            log.flush()
             _server = subprocess.Popen(
                 [binary,
                  "--model", config.model_file(),
