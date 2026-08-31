@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Look 03 — Warm Ink</title>
+<style>
+:root{
+  color-scheme:dark;
+  --canvas:#191817; --surface:#211f1e; --surface-2:#2a2725; --line:#332f2d;
+  --ink:#f2ece2; --ink-2:#b0a79b; --ink-3:#7c746b;
+  --sage:#8fc0a9; --amber:#e8b04b; --clay:#d8705c;
+  --font:"Inter",-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font);background:var(--canvas);color:var(--ink);font-size:14px;
+  -webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums;letter-spacing:-0.015em}
+.app{display:grid;grid-template-columns:212px 1fr;min-height:100vh}
+aside{padding:24px 14px;border-right:1px solid var(--line);position:sticky;top:0;height:100vh}
+.mark{font-size:17px;font-weight:600;letter-spacing:-0.02em;padding:0 10px 22px}
+.mark i{color:var(--sage);font-style:normal}
+.nav a{display:flex;align-items:center;gap:11px;padding:8px 10px;border-radius:9px;color:var(--ink-2);
+  text-decoration:none;font-size:13.5px;cursor:pointer}
+.nav a:hover{background:var(--surface)}
+.nav a.on{background:var(--surface-2);color:var(--ink);font-weight:550}
+.nav svg{width:17px;height:17px;fill:none;stroke:currentColor;stroke-width:1.6}
+main{padding:28px 34px 80px;max-width:1160px}
+.top{display:flex;align-items:flex-end;justify-content:space-between;margin-bottom:24px}
+h1{font-size:27px;font-weight:600;letter-spacing:-0.03em}
+h1 span{color:var(--ink-3);font-weight:400}
+.seg{display:flex;gap:2px;background:var(--surface);padding:3px;border-radius:10px}
+.seg b{font-size:12.5px;font-weight:500;padding:6px 12px;border-radius:8px;color:var(--ink-2);cursor:pointer}
+.seg b.on{background:var(--surface-2);color:var(--ink)}
+
+.hero{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:20px 22px}
+.tile .k{font-size:12px;color:var(--ink-3);letter-spacing:.02em}
+.tile .v{font-size:30px;font-weight:600;margin-top:9px;letter-spacing:-0.035em}
+.tile .d{font-size:12.5px;margin-top:6px;color:var(--ink-2)}
+.tile .d em{font-style:normal;font-weight:600}
+.up{color:var(--clay)} .down{color:var(--sage)}
+
+.grid{display:grid;grid-template-columns:1.4fr 1fr;gap:14px;margin-top:14px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:18px;padding:20px 22px}
+.card.wide{grid-column:1/-1}
+.ch{display:flex;justify-content:space-between;align-items:center;margin-bottom:20px}
+.ch h2{font-size:14.5px;font-weight:600}
+.ch .hint{font-size:12px;color:var(--ink-3)}
+
+.bars{display:flex;gap:26px;align-items:flex-end;height:180px}
+.mo{flex:1;display:flex;flex-direction:column;align-items:center;height:100%}
+.pair{display:flex;gap:6px;align-items:flex-end;height:100%;width:100%;justify-content:center}
+.b{width:22px;border-radius:6px 6px 2px 2px}
+.b.inc{background:linear-gradient(180deg,var(--sage),#5d8a76)}
+.b.exp{background:linear-gradient(180deg,#6a625c,#443f3b)}
+.mo.now .b.exp{background:linear-gradient(180deg,var(--amber),#a97a25)}
+.mo .lab{font-size:11.5px;color:var(--ink-3);margin-top:11px}
+.mo.now .lab{color:var(--ink)}
+
+.crow{display:grid;grid-template-columns:104px 1fr 74px;gap:12px;align-items:center;padding:8px 0}
+.crow+.crow{border-top:1px solid #2b2826}
+.crow .n{font-size:13px;color:var(--ink-2)}
+.tr{position:relative;height:9px;border-radius:5px;background:#2c2926}
+.fl{position:absolute;top:0;bottom:0;left:0;border-radius:5px;background:var(--sage)}
+.fl.warm{background:var(--amber)}
+.fl.hot{background:var(--clay)}
+.tk{position:absolute;top:-3px;bottom:-3px;width:1.5px;background:var(--ink-2);opacity:.7}
+.crow .a{text-align:right;font-size:13px;font-weight:600}
+.legend{margin-top:16px;font-size:11.5px;color:var(--ink-3);display:flex;gap:16px;flex-wrap:wrap}
+.legend i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+.sub{display:flex;justify-content:space-between;padding:9px 0;font-size:13px;border-top:1px solid #2b2826}
+.sub:first-of-type{border-top:0}
+.sub .s{color:var(--ink-2)}
+.tag{font-size:10.5px;padding:2px 7px;border-radius:999px;margin-left:8px;font-weight:600}
+.tag.due{background:rgba(232,176,75,.16);color:var(--amber)}
+.tag.chg{background:rgba(216,112,92,.16);color:var(--clay)}
+.note{margin-top:18px;font-size:12.5px;color:var(--ink-3);line-height:1.6}
+</style></head><body>
+<div class="app">
+  <aside>
+    <div class="mark">Balance<i>.</i></div>
+    <nav class="nav">
+      <a class="on"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</a>
+      <a><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Transactions</a>
+      <a><svg viewBox="0 0 24 24"><path d="M12 4v12m0 0l-4-4m4 4l4-4M4 18v2h16v-2"/></svg>Import</a>
+      <a><svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Trends</a>
+      <a><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>Subscriptions</a>
+      <a><svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>Net worth</a>
+    </nav>
+  </aside>
+  <main>
+    <div class="top">
+      <h1>May <span>2026</span></h1>
+      <div class="seg"><b>6M</b><b class="on">YTD</b><b>1Y</b><b>2Y</b><b>All</b></div>
+    </div>
+
+    <div class="hero">
+      <div class="tile"><div class="k">Earned</div><div class="v num">4 100 €</div>
+        <div class="d">Same as April</div></div>
+      <div class="tile"><div class="k">Spent</div><div class="v num">2 074 €</div>
+        <div class="d"><em class="up">10 % above</em> your usual month</div></div>
+      <div class="tile"><div class="k">Kept</div><div class="v num" style="color:var(--sage)">2 026 €</div>
+        <div class="d"><em class="down">49 %</em> of what came in</div></div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="ch"><h2>In and out</h2><span class="hint">six months</span></div>
+        <div class="bars" id="bars"></div>
+      </div>
+      <div class="card">
+        <div class="ch"><h2>Subscriptions</h2><span class="hint">737 €/mo · 5 active</span></div>
+        <div id="subs"></div>
+        <div class="note">Two more were found and left out of the total: they stopped charging months ago,
+          and a service that ended is not part of what you pay each month.</div>
+      </div>
+      <div class="card wide">
+        <div class="ch"><h2>Where May went</h2><span class="hint">tick marks the usual month</span></div>
+        <div id="cats" style="columns:2;column-gap:44px"></div>
+        <div class="legend">
+          <span><i style="background:var(--sage)"></i>At or under normal</span>
+          <span><i style="background:var(--amber)"></i>Above normal</span>
+          <span><i style="background:var(--clay)"></i>Half again or more</span>
+        </div>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+const MONTHS=[['Dec',4100,2510],['Jan',4100,2180],['Feb',4100,1990],['Mar',4360,2340],['Apr',4100,1875],['May',4100,2074]];
+const CATS=[['Rent',980,980],['Groceries',420,372],['Restaurant',210,96],['Gas',140,128],['Going out',130,145],['Utilities',95,92],['Exercise',60,60],['Telecom',39,39]];
+const SUBS=[['Rent','1st','980 €',''],['Insurance','8th','96 €','due'],['Spotify','12th','12 €',''],['HSL','20th','63 €',''],['Gym','28th','60 €','chg']];
+const fmt=n=>new Intl.NumberFormat('fi-FI',{maximumFractionDigits:0}).format(Math.abs(n))+' €';
+
+const topv=Math.max(...MONTHS.flatMap(m=>[m[1],m[2]]))*1.12;
+document.getElementById('bars').innerHTML=MONTHS.map((m,i)=>`
+  <div class="mo${i===5?' now':''}"><div class="pair">
+    <div class="b inc" style="height:${m[1]/topv*100}%"></div>
+    <div class="b exp" style="height:${m[2]/topv*100}%"></div>
+  </div><div class="lab">${m[0]}</div></div>`).join('');
+
+const scale=CATS[0][1]*1.05;
+document.getElementById('cats').innerHTML=CATS.map(([n,a,med])=>{
+  const r=a/med, cls=r>=1.5?'hot':r>1.1?'warm':'';
+  return `<div class="crow"><div class="n">${n}</div>
+    <div class="tr"><div class="fl ${cls}" style="width:${a/scale*100}%"></div>
+      <div class="tk" style="left:${med/scale*100}%"></div></div>
+    <div class="a num">${fmt(a)}</div></div>`}).join('');
+
+document.getElementById('subs').innerHTML=SUBS.map(([n,d,a,t])=>`
+  <div class="sub"><span class="s">${n}${t?`<span class="tag ${t}">${t==='due'?'due in 4 days':'price up 8 %'}</span>`:''}</span>
+    <span class="num" style="font-weight:600">${a}</span></div>`).join('');
+</script></body></html>

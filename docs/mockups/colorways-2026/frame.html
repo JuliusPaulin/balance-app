@@ -1,0 +1,175 @@
+<!DOCTYPE html>
+<html lang="en" data-cw="evergreen" data-theme="light">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Balance. — colourway preview</title>
+<!-- The real stylesheet. Nothing below overrides anything but the colour
+     tokens, so what you see is the app's own layout and spacing. -->
+<link rel="stylesheet" href="../../../static/css/style.css">
+<style id="cw-tokens"></style>
+<style>
+  /* Preview-only: the frame has no scroll chrome of its own. */
+  body { overflow-x: hidden; }
+  .mock-bars { display:flex; align-items:flex-end; gap:26px; height:300px; padding:8px 4px 0; }
+  .mock-mo { flex:1; display:flex; flex-direction:column; align-items:center; height:100%; }
+  .mock-pair { display:flex; gap:7px; align-items:flex-end; height:100%; width:100%; justify-content:center; position:relative; }
+  .mock-b { width:46px; white-space:nowrap; border-radius:6px; display:flex; align-items:flex-start; justify-content:center;
+            padding-top:6px; font-size:10px; font-weight:600; color:var(--on-accent); }
+  .mock-b.inc { background:color-mix(in srgb, var(--accent) 85%, transparent); }
+  .mock-b.exp { background:color-mix(in srgb, var(--red) 85%, transparent); color:#fff; }
+  .mock-x { font-size:11px; color:var(--text-tertiary); margin-top:10px; }
+  .mock-diff { position:absolute; top:-22px; left:50%; transform:translateX(-50%); font-size:11px;
+               font-weight:700; padding:2px 8px; border-radius:999px; white-space:nowrap; }
+  .mock-diff.pos { background:color-mix(in srgb, var(--green) 15%, transparent); color:var(--green); }
+  .mock-diff.neg { background:color-mix(in srgb, var(--red) 15%, transparent); color:var(--red); }
+</style>
+</head>
+<body>
+
+<aside class="sidebar">
+  <div class="sidebar-logo">Balance<span>.</span></div>
+  <nav class="sidebar-nav">
+    <button class="nav-item active"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</button>
+    <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2"/><path d="M9 14l2 2 4-4"/></svg>Transactions</button>
+    <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 4v12m0 0l-4-4m4 4l4-4"/></svg>Import</button>
+    <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M7 7h.01M7 3h5a1.99 1.99 0 011.414.586l7 7a2 2 0 010 2.828l-7 7a2 2 0 01-2.828 0l-7-7A1.99 1.99 0 013 12V7a4 4 0 014-4z"/></svg>Categories</button>
+    <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Trends</button>
+    <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>Subscriptions</button>
+    <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 19v-6a2 2 0 00-2-2H5a2 2 0 00-2 2v6a2 2 0 002 2h2a2 2 0 002-2zm0 0V9a2 2 0 012-2h2a2 2 0 012 2v10m-6 0a2 2 0 002 2h2a2 2 0 002-2m0 0V5a2 2 0 012-2h2a2 2 0 012 2v14a2 2 0 01-2 2h-2a2 2 0 01-2-2z"/></svg>Reports</button>
+    <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>Net Worth</button>
+    <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 01-2.83 2.83l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>Settings</button>
+  </nav>
+  <div style="padding:8px 12px;border-top:0.5px solid var(--separator)">
+    <button class="nav-item"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z"/></svg><span id="theme-word">Dark mode</span></button>
+    <button class="nav-item" style="color:var(--red)"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M9 21H5a2 2 0 01-2-2V5a2 2 0 012-2h4"/><polyline points="16 17 21 12 16 7"/><line x1="21" y1="12" x2="9" y2="12"/></svg>Quit</button>
+  </div>
+</aside>
+
+<main class="main">
+  <div class="page active">
+    <div class="page-header">
+      <h1 class="page-title">Dashboard</h1>
+      <div class="header-controls">
+        <div class="btn-group">
+          <button class="btn btn-secondary btn-sm horizon-btn">6M</button>
+          <button class="btn btn-secondary btn-sm horizon-btn active">YTD</button>
+          <button class="btn btn-secondary btn-sm horizon-btn">1Y</button>
+          <button class="btn btn-secondary btn-sm horizon-btn">2Y</button>
+          <button class="btn btn-secondary btn-sm horizon-btn">All</button>
+        </div>
+        <button class="btn btn-secondary btn-sm">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="4" width="18" height="18" rx="2"/><path d="M16 2v4M8 2v4M3 10h18"/></svg>
+          Pick period
+          <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M6 9l6 6 6-6"/></svg>
+        </button>
+        <button class="btn btn-primary btn-sm">+ Add</button>
+      </div>
+    </div>
+
+    <div class="summary-row" id="summary"></div>
+
+    <div class="dashboard-grid">
+      <div class="card full-width">
+        <div class="card-title">Monthly Overview</div>
+        <div class="mock-bars" id="bars"></div>
+      </div>
+
+      <div class="card full-width">
+        <div class="flex items-center" style="justify-content:space-between;margin-bottom:14px;flex-wrap:wrap;gap:8px">
+          <div class="card-title" style="margin:0;white-space:nowrap">Expenses by Category</div>
+          <div class="btn-group">
+            <button class="btn btn-secondary btn-sm breakdown-scope-btn active">Latest month</button>
+            <button class="btn btn-secondary btn-sm breakdown-scope-btn">Period</button>
+          </div>
+        </div>
+        <div id="cats"></div>
+      </div>
+
+      <div class="card full-width">
+        <div class="card-title">Monthly Summary</div>
+        <table>
+          <thead><tr><th>Month</th><th>Income</th><th>Expenses</th><th>Net</th><th>Note</th></tr></thead>
+          <tbody id="rows"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</main>
+
+<script src="palettes.js"></script>
+<script>
+const MONTHS=[["Dec 2025",4100,2510],["Jan 2026",4100,2180],["Feb 2026",4100,1990],["Mar 2026",4360,2340],["Apr 2026",4100,1875],["May 2026",4100,2074]];
+// name, this month, median of the six before, category dot colour (vibrant palette)
+const CATS=[["Rent",980,980,"#10b981"],["Groceries",420,320,"#06b6d4"],["Restaurant",210,96,"#3b82f6"],
+            ["Gas",140,128,"#6366f1"],["Going out",130,190,"#8b5cf6"],["Utilities",95,92,"#ec4899"],
+            ["Exercise",60,60,"#f43f5e"],["Telecom",39,39,"#f59e0b"]];
+const fmt=n=>new Intl.NumberFormat("fi-FI",{maximumFractionDigits:0}).format(Math.round(n))+" €";
+const QUIET_BAND=0.25, OUTLIER_BAND=0.50;
+
+function applyColourway(key, theme){
+  document.documentElement.setAttribute("data-cw", key);
+  document.documentElement.setAttribute("data-theme", theme);
+  document.getElementById("cw-tokens").textContent =
+    `:root[data-cw]{${tokenBlock(key,"light")}}\n` +
+    `:root[data-cw][data-theme="dark"]{${tokenBlock(key,"dark")}\n` +
+    `  --shadow-sm:none;--shadow-md:none;--shadow-lg:0 10px 30px rgba(0,0,0,.45);--shadow-card:none;}`;
+  document.getElementById("theme-word").textContent = theme === "dark" ? "Light mode" : "Dark mode";
+}
+
+// The dashboard's own numbers, drawn with the app's own classes.
+const income=4100, expense=2074, net=income-expense;
+document.getElementById("summary").innerHTML=`
+  <div class="summary-card"><div class="label">Total Income</div><div class="value income">+${fmt(24860)}</div></div>
+  <div class="summary-card"><div class="label">Total Expenses</div><div class="value expense">${fmt(12969)}</div></div>
+  <div class="summary-card"><div class="label">Net</div><div class="value net positive">+${fmt(11891)}</div></div>
+  <div class="summary-card"><div class="label">Savings Rate</div><div class="value positive">48%</div></div>
+  <div class="summary-card"><div class="label">Avg. Monthly Expense</div><div class="value expense">${fmt(2162)}</div></div>`;
+
+const yMax=Math.max(...MONTHS.flatMap(m=>[m[1],m[2]]))*1.15;
+document.getElementById("bars").innerHTML=MONTHS.map(([mo,i,e])=>{
+  const d=i-e;
+  return `<div class="mock-mo"><div class="mock-pair">
+    <div class="mock-diff ${d>=0?"pos":"neg"}">${d>=0?"+":"−"}${fmt(d)}</div>
+    <div class="mock-b inc" style="height:${i/yMax*100}%">${fmt(i)}</div>
+    <div class="mock-b exp" style="height:${e/yMax*100}%">${fmt(e)}</div>
+  </div><div class="mock-x">${mo.split(" ")[0]}</div></div>`}).join("");
+
+const total=CATS.reduce((s,c)=>s+c[1],0);
+const max=Math.max(...CATS.map(c=>Math.max(c[1],c[2])));
+document.getElementById("cats").innerHTML=CATS.map(([n,a,med,dot])=>{
+  const width=Math.max(2,a/max*100).toFixed(1);
+  const pct=(a/total*100).toFixed(1);
+  const ratio=a/med, change=ratio-1;
+  const quiet=Math.abs(change)<QUIET_BAND;
+  const hot=change>OUTLIER_BAND;
+  const tone=quiet?"flat":change<0?"down":"up";
+  const text=quiet?"as usual":ratio>=4?`${Math.round(ratio)}× usual`:`${change>0?"+":""}${Math.round(change*100)}%`;
+  const fill=hot?"":`;background:color-mix(in srgb, var(--accent) 55%, transparent)`;
+  return `<div class="cat-bar-row" style="cursor:pointer">
+    <div class="cat-bar-label"><span class="cat-dot" style="background:${dot}"></span>${n}</div>
+    <div class="cat-bar-track">
+      <div class="cat-bar-fill${hot?" over":""}" style="width:${width}%${fill}"></div>
+      <div class="cat-bar-tick" style="left:${(med/max*100).toFixed(1)}%"></div>
+    </div>
+    <div class="cat-bar-amount">${fmt(a)} <span class="cat-bar-pct-inline">· ${pct}%</span>
+      <span class="cat-bar-delta ${tone}">${text}</span></div>
+  </div>`}).join("");
+
+document.getElementById("rows").innerHTML=MONTHS.slice().reverse().map(([mo,i,e])=>{
+  const d=i-e;
+  return `<tr><td>${mo}</td>
+    <td style="color:var(--green)">+${fmt(i)}</td>
+    <td>${fmt(e)}</td>
+    <td style="color:${d>=0?"var(--green)":"var(--red)"};font-weight:600">${d>=0?"+":"−"}${fmt(d)}</td>
+    <td style="color:var(--text-tertiary)">—</td></tr>`}).join("");
+
+// The shell drives the colourway; the query string is the fallback for opening
+// this file on its own.
+const q=new URLSearchParams(location.search);
+applyColourway(PALETTES[q.get("cw")]?q.get("cw"):"evergreen", q.get("theme")==="dark"?"dark":"light");
+addEventListener("message", e => {
+  if (e.data && e.data.cw) applyColourway(e.data.cw, e.data.theme);
+});
+</script>
+</body></html>

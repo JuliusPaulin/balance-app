@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Look 01 — Quiet Ledger</title>
+<style>
+:root{
+  color-scheme:light;
+  --paper:#ffffff; --canvas:#ffffff; --rule:#e7e7e4; --rule-strong:#111;
+  --ink:#111214; --ink-2:#63656b; --ink-3:#9b9da3;
+  --over:#b3261e; --under:#0f7a52;
+  --font:"Inter",-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font);background:var(--canvas);color:var(--ink);
+  -webkit-font-smoothing:antialiased;font-size:14px;line-height:1.45}
+.num{font-variant-numeric:tabular-nums;letter-spacing:-0.01em}
+
+/* ── shell ─────────────────────────────────────────────── */
+.app{display:grid;grid-template-columns:196px 1fr;min-height:100vh}
+.rail{padding:34px 0 34px 34px;position:sticky;top:0;height:100vh}
+.mark{font-size:16px;font-weight:600;letter-spacing:-0.02em;margin-bottom:38px}
+.mark i{color:var(--under);font-style:normal}
+.rail a{display:block;padding:5px 0;color:var(--ink-3);text-decoration:none;font-size:13.5px}
+.rail a:hover{color:var(--ink-2)}
+.rail a.on{color:var(--ink);font-weight:550}
+.rail .grp{margin-top:26px;font-size:11px;text-transform:uppercase;letter-spacing:.1em;color:#c4c6cb}
+.sheet{padding:34px 44px 90px;max-width:960px}
+
+/* ── page head ─────────────────────────────────────────── */
+.head{display:flex;align-items:baseline;justify-content:space-between;
+  padding-bottom:14px;border-bottom:1px solid var(--rule-strong)}
+h1{font-size:22px;font-weight:600;letter-spacing:-0.02em}
+.periods{display:flex;gap:16px;font-size:12.5px;color:var(--ink-3)}
+.periods span{cursor:pointer}
+.periods span.on{color:var(--ink);border-bottom:1px solid var(--ink);padding-bottom:2px}
+
+/* ── the standfirst: the one sentence ──────────────────── */
+.stand{padding:30px 0 34px;border-bottom:1px solid var(--rule)}
+.stand .big{font-size:44px;font-weight:600;letter-spacing:-0.035em}
+.stand .said{font-size:15px;color:var(--ink-2);margin-top:8px;max-width:52ch}
+.stand .said b{color:var(--over);font-weight:550}
+
+/* ── figures row: no cards, just columns ───────────────── */
+.figs{display:grid;grid-template-columns:repeat(4,1fr);border-bottom:1px solid var(--rule)}
+.fig{padding:22px 22px 22px 0}
+.fig+.fig{padding-left:22px;border-left:1px solid var(--rule)}
+.fig .k{font-size:11.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3)}
+.fig .v{font-size:24px;font-weight:550;margin-top:7px;letter-spacing:-0.025em}
+.fig .d{font-size:12.5px;color:var(--ink-2);margin-top:3px}
+
+/* ── section ───────────────────────────────────────────── */
+section{padding:34px 0;border-bottom:1px solid var(--rule)}
+h2{font-size:12px;text-transform:uppercase;letter-spacing:.1em;color:var(--ink-3);
+  font-weight:600;margin-bottom:20px}
+
+/* ── monthly bars, hairline style ──────────────────────── */
+.months{display:flex;gap:38px;align-items:flex-end;height:150px;padding-left:2px}
+.mo{flex:1;display:flex;flex-direction:column;justify-content:flex-end;height:100%;gap:0}
+.pair{display:flex;gap:5px;align-items:flex-end;height:100%}
+.bar{flex:1;background:var(--ink);border-radius:1px}
+.bar.inc{background:#dcdcd8}
+.mo .lab{font-size:11.5px;color:var(--ink-3);margin-top:9px;text-align:center}
+.mo.now .lab{color:var(--ink);font-weight:550}
+.legend{display:flex;gap:18px;font-size:11.5px;color:var(--ink-3);margin-top:16px}
+.legend i{display:inline-block;width:9px;height:9px;background:var(--ink);margin-right:6px}
+.legend i.inc{background:#dcdcd8}
+
+/* ── category ledger: rules, not cards ─────────────────── */
+table{width:100%;border-collapse:collapse}
+tr{border-bottom:1px solid var(--rule)}
+tr:last-child{border-bottom:0}
+td{padding:11px 0;vertical-align:middle}
+td.name{font-size:14px;width:150px}
+td.track{width:auto;padding-right:26px}
+td.amt{text-align:right;width:96px;font-weight:550}
+td.vs{text-align:right;width:118px;font-size:12.5px;color:var(--ink-2)}
+td.vs.over{color:var(--over);font-weight:550}
+td.vs.flat{color:var(--ink-3)}
+.rail-track{position:relative;height:7px;background:#f2f2ef}
+.rail-fill{position:absolute;inset:0 auto 0 0;background:var(--ink)}
+.rail-fill.over{background:var(--over)}
+.tick{position:absolute;top:-4px;bottom:-4px;width:1px;background:var(--ink-3)}
+
+/* ── transactions, same ledger idiom ───────────────────── */
+.tx td{padding:10px 0;font-size:13.5px}
+.tx td.d{width:78px;color:var(--ink-3)}
+.tx td.c{color:var(--ink-2);width:170px}
+.tx td.a{text-align:right;font-weight:550}
+.tx td.a.in{color:var(--under)}
+.foot{padding-top:26px;font-size:12.5px;color:var(--ink-3)}
+</style></head><body>
+<div class="app">
+  <nav class="rail">
+    <div class="mark">Balance<i>.</i></div>
+    <a class="on">Dashboard</a><a>Transactions</a><a>Trends</a><a>Reports</a>
+    <div class="grp">Money in</div><a>Import</a><a>Net worth</a>
+    <div class="grp">Set up</div><a>Categories</a><a>Subscriptions</a><a>Settings</a>
+  </nav>
+  <main class="sheet">
+    <div class="head"><h1>May 2026</h1>
+      <div class="periods"><span>6M</span><span class="on">YTD</span><span>1Y</span><span>2Y</span><span>All</span></div>
+    </div>
+
+    <div class="stand">
+      <div class="big num" id="stand-net"></div>
+      <div class="said">Left over in May. You spent <span id="stand-exp"></span> against a usual month of 2 100 € —
+        the difference is almost all <b>Restaurant, at more than twice normal</b>.</div>
+    </div>
+
+    <div class="figs" id="figs"></div>
+
+    <section>
+      <h2>Six months</h2>
+      <div class="months" id="months"></div>
+      <div class="legend"><span><i></i>Spent</span><span><i class="inc"></i>Earned</span></div>
+    </section>
+
+    <section>
+      <h2>Where it went · May against your usual month</h2>
+      <table id="cats"></table>
+    </section>
+
+    <section style="border-bottom:0">
+      <h2>Latest</h2>
+      <table class="tx" id="tx"></table>
+      <div class="foot">No boxes, no shadows, no tinted panels. Rules and space do the grouping, so a number
+        never has to compete with the container it sits in.</div>
+    </section>
+  </main>
+</div>
+<script>
+const MONTHS=[['Dec',4100,2510],['Jan',4100,2180],['Feb',4100,1990],['Mar',4360,2340],['Apr',4100,1875],['May',4100,2074]];
+const CATS=[['Rent',980,980,'fixed'],['Groceries',420,372,'up'],['Restaurant',210,96,'out'],['Gas',140,128,'up'],['Going out',130,145,'down'],['Utilities',95,92,'fixed'],['Exercise',60,60,'fixed'],['Telecom',39,39,'fixed']];
+const TX=[['30 May','K-Market','Groceries',-42],['29 May','Neste','Gas',-68],['28 May','Spotify','Telecom',-12],['27 May','Salary','Job',4100],['26 May','Trattoria','Restaurant',-54],['25 May','Clas Ohlson','Home maintenance',-29]];
+const fmt=n=>new Intl.NumberFormat('fi-FI',{maximumFractionDigits:0}).format(Math.abs(n))+' €';
+
+const inc=4100, exp=2074;
+document.getElementById('stand-net').textContent='+ '+fmt(inc-exp);
+document.getElementById('stand-exp').textContent=fmt(exp);
+
+document.getElementById('figs').innerHTML=[
+  ['Earned',fmt(inc),'same as April'],
+  ['Spent',fmt(exp),'+ 199 € on April'],
+  ['Saved',fmt(inc-exp),'49% of what you earned'],
+  ['Subscriptions','737 €','5 active, 2 stopped']
+].map(f=>`<div class="fig"><div class="k">${f[0]}</div><div class="v num">${f[1]}</div><div class="d">${f[2]}</div></div>`).join('');
+
+const topv=Math.max(...MONTHS.flatMap(m=>[m[1],m[2]]))*1.1;
+document.getElementById('months').innerHTML=MONTHS.map((m,i)=>`
+  <div class="mo${i===5?' now':''}">
+    <div class="pair">
+      <div class="bar inc" style="height:${m[1]/topv*100}%"></div>
+      <div class="bar" style="height:${m[2]/topv*100}%"></div>
+    </div><div class="lab">${m[0]}</div></div>`).join('');
+
+const maxc=CATS[0][1];
+document.getElementById('cats').innerHTML=CATS.map(([n,a,med,st])=>{
+  const pct=Math.round((a-med)/med*100);
+  const cls=st==='out'?'over':st==='fixed'?'flat':'';
+  const say=st==='fixed'?'as usual':st==='out'?`${(a/med).toFixed(1)}× usual`:(pct>0?'+':'')+pct+'% on usual';
+  return `<tr><td class="name">${n}</td>
+    <td class="track"><div class="rail-track">
+      <div class="rail-fill${st==='out'?' over':''}" style="width:${a/maxc*100}%"></div>
+      <div class="tick" style="left:${med/maxc*100}%"></div></div></td>
+    <td class="amt num">${fmt(a)}</td><td class="vs ${cls}">${say}</td></tr>`}).join('');
+
+document.getElementById('tx').innerHTML=TX.map(([d,s,c,a])=>`<tr>
+  <td class="d">${d}</td><td>${s}</td><td class="c">${c}</td>
+  <td class="a num${a>0?' in':''}">${a>0?'+ ':'− '}${fmt(a)}</td></tr>`).join('');
+</script></body></html>

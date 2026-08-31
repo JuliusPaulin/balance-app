@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Balance — ten colourways</title>
+<style>
+:root{
+  color-scheme:light dark;
+  --shell:#101317; --shell-2:#191d23; --shell-line:#272d35;
+  --shell-ink:#eceff3; --shell-ink-2:#98a1ad; --shell-ink-3:#6b7480;
+  --font:"Inter",-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+  --mono:"SF Mono",ui-monospace,Menlo,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font);background:var(--shell);color:var(--shell-ink);
+  -webkit-font-smoothing:antialiased;font-size:14px}
+
+.bar{position:sticky;top:0;z-index:10;background:var(--shell);border-bottom:1px solid var(--shell-line);
+  padding:14px 20px 0}
+.title{display:flex;align-items:baseline;gap:14px;flex-wrap:wrap}
+h1{font-size:17px;font-weight:600;letter-spacing:-0.02em}
+.title p{font-size:13px;color:var(--shell-ink-3);line-height:1.5}
+.chips{display:flex;gap:8px;margin-top:13px;padding-bottom:13px;overflow-x:auto;align-items:center}
+.chip{flex:0 0 auto;display:flex;align-items:center;gap:9px;background:var(--shell-2);
+  border:1px solid var(--shell-line);border-radius:10px;padding:7px 11px 7px 8px;cursor:pointer;
+  color:var(--shell-ink-2);font-size:13px;font-weight:500;font-family:inherit;white-space:nowrap}
+.chip:hover{border-color:#3a424d;color:var(--shell-ink)}
+.chip.on{background:#232932;border-color:#4b5561;color:var(--shell-ink);font-weight:600}
+.sw{display:flex;border-radius:6px;overflow:hidden;box-shadow:0 0 0 1px rgba(255,255,255,.10)}
+.sw i{width:11px;height:20px;display:block}
+.tools{display:flex;gap:8px;margin-left:auto;flex:0 0 auto}
+.tool{background:var(--shell-2);border:1px solid var(--shell-line);border-radius:10px;padding:8px 13px;
+  color:var(--shell-ink-2);font-size:13px;font-family:inherit;cursor:pointer;font-weight:500}
+.tool:hover{color:var(--shell-ink);border-color:#3a424d}
+.tool.on{background:#232932;color:var(--shell-ink);border-color:#4b5561}
+
+.note{padding:11px 20px;font-size:13px;color:var(--shell-ink-2);border-bottom:1px solid var(--shell-line);
+  display:flex;gap:10px;align-items:baseline}
+.note b{color:var(--shell-ink);font-weight:600}
+
+.stage{padding:0}
+iframe{width:100%;height:calc(100vh - 168px);border:0;display:block;background:#fff}
+
+.css{display:none;padding:18px 20px 40px;background:#0c0f13;border-top:1px solid var(--shell-line)}
+.css.show{display:block}
+.css h2{font-size:12px;text-transform:uppercase;letter-spacing:.08em;color:var(--shell-ink-3);font-weight:650}
+.css p{font-size:13px;color:var(--shell-ink-2);margin:8px 0 14px;line-height:1.6;max-width:80ch}
+.css p code{font-family:var(--mono);font-size:12px;color:var(--shell-ink);background:#1a1f26;padding:1px 5px;border-radius:4px}
+pre{background:#151a20;border:1px solid var(--shell-line);border-radius:10px;padding:16px 18px;
+  overflow:auto;font-family:var(--mono);font-size:12px;line-height:1.6;color:#cfd6de;max-height:420px}
+.copy{margin-top:10px}
+</style></head><body>
+
+<div class="bar">
+  <div class="title">
+    <h1>Ten colourways</h1>
+    <p>Same layout, same stylesheet, same numbers — only the token block changes.</p>
+  </div>
+  <div class="chips" id="chips"></div>
+</div>
+
+<div class="note">
+  <span id="note-text"></span>
+</div>
+
+<div class="stage"><iframe id="frame" src="frame.html"></iframe></div>
+
+<div class="css" id="cssbox">
+  <h2>The whole change</h2>
+  <p>This replaces the <code>:root</code> and <code>:root[data-theme="dark"]</code> blocks at the top of
+     <code>static/css/style.css</code>. Every tint the app paints — <code>--accent-soft</code>, the row hover,
+     the heatmap ramp — is derived from the accent here, so no rgba() of the old green can be left behind.</p>
+  <pre id="csstext"></pre>
+  <button class="tool copy" id="copy">Copy</button>
+</div>
+
+<script src="palettes.js"></script>
+<script>
+let current = "evergreen", theme = "light";
+const frame = document.getElementById("frame");
+
+document.getElementById("chips").innerHTML =
+  Object.entries(PALETTES).map(([k, p]) => `
+    <button class="chip${k === current ? " on" : ""}" data-cw="${k}">
+      <span class="sw">
+        <i style="background:${p.light.canvas}"></i>
+        <i style="background:${p.light.accent}"></i>
+        <i style="background:${p.dark.canvas}"></i>
+        <i style="background:${p.dark.accent}"></i>
+      </span>${p.name}</button>`).join("")
+  + `<span class="tools">
+       <button class="tool" id="theme">Dark</button>
+       <button class="tool" id="showcss">Show the CSS</button>
+     </span>`;
+
+function paint() {
+  document.querySelectorAll(".chip").forEach(c => c.classList.toggle("on", c.dataset.cw === current));
+  document.getElementById("theme").textContent = theme === "dark" ? "Light" : "Dark";
+  document.getElementById("theme").classList.toggle("on", theme === "dark");
+  document.getElementById("note-text").innerHTML =
+    `<b>${PALETTES[current].name}.</b> ${PALETTES[current].note}`;
+  document.getElementById("csstext").textContent = styleSheetFor(current);
+  frame.contentWindow.postMessage({ cw: current, theme }, "*");
+}
+
+document.getElementById("chips").addEventListener("click", e => {
+  const chip = e.target.closest(".chip");
+  if (!chip) return;
+  current = chip.dataset.cw;
+  paint();
+});
+document.getElementById("theme").onclick = () => { theme = theme === "dark" ? "light" : "dark"; paint(); };
+document.getElementById("showcss").onclick = e => {
+  const box = document.getElementById("cssbox");
+  box.classList.toggle("show");
+  e.target.classList.toggle("on", box.classList.contains("show"));
+  if (box.classList.contains("show")) box.scrollIntoView({ behavior: "smooth" });
+};
+document.getElementById("copy").onclick = async e => {
+  try { await navigator.clipboard.writeText(styleSheetFor(current)); e.target.textContent = "Copied"; }
+  catch { e.target.textContent = "Select the block above and copy"; }
+  setTimeout(() => e.target.textContent = "Copy", 1600);
+};
+
+// Arrow keys walk the ten, so you can flick through them and watch one card.
+addEventListener("keydown", e => {
+  const keys = Object.keys(PALETTES);
+  const i = keys.indexOf(current);
+  if (e.key === "ArrowRight") { current = keys[(i + 1) % keys.length]; paint(); }
+  if (e.key === "ArrowLeft")  { current = keys[(i - 1 + keys.length) % keys.length]; paint(); }
+  if (e.key.toLowerCase() === "d") { theme = theme === "dark" ? "light" : "dark"; paint(); }
+});
+
+frame.addEventListener("load", paint);
+</script>
+</body></html>

@@ -1,0 +1,146 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Look 05 — Glance</title>
+<style>
+:root{
+  color-scheme:light;
+  --canvas:#eceeea; --surface:#ffffff; --line:#e2e5e0;
+  --ink:#12161a; --ink-2:#5f6871; --ink-3:#98a0a8;
+  --green:#00875a; --green-soft:#e3f2ec;
+  --red:#c8402f; --red-soft:#fae9e6;
+  --seg-1:#12161a; --seg-2:#3d4a55; --seg-3:#c8402f; --seg-4:#6b7883; --seg-5:#8b969f; --seg-rest:#c9cfd3;
+  --seg-fg-1:#fff; --seg-fg-2:#fff; --seg-fg-3:#fff; --seg-fg-4:#fff; --seg-fg-5:#fff;
+  --font:-apple-system,BlinkMacSystemFont,"SF Pro Display","Inter","Helvetica Neue",Arial,sans-serif;
+}
+@media (prefers-color-scheme:dark){
+  :root:not([data-theme="light"]){
+    color-scheme:dark;
+    --canvas:#0f1113; --surface:#181b1e; --line:#252a2e;
+    --ink:#f0f2f4; --ink-2:#a3acb5; --ink-3:#6d767e;
+    --green:#2fd39b; --green-soft:rgba(47,211,155,.13);
+    --red:#ff6f5b; --red-soft:rgba(255,111,91,.13);
+    --seg-1:#e8ecef; --seg-2:#8f9aa4; --seg-3:#ff6f5b; --seg-4:#5d686f; --seg-5:#454e55; --seg-rest:#2c3237;
+    --seg-fg-1:#12161a; --seg-fg-2:#12161a; --seg-fg-3:#2a0f0a; --seg-fg-4:#f0f2f4; --seg-fg-5:#f0f2f4;
+  }
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font);background:var(--canvas);color:var(--ink);
+  -webkit-font-smoothing:antialiased;font-size:15px}
+.num{font-variant-numeric:tabular-nums;letter-spacing:-0.04em}
+.app{display:grid;grid-template-columns:236px 1fr;min-height:100vh}
+aside{padding:26px 16px;position:sticky;top:0;height:100vh}
+.mark{font-size:18px;font-weight:600;letter-spacing:-0.025em;padding:0 12px 26px}
+.mark i{color:var(--green);font-style:normal}
+nav a{display:flex;align-items:center;gap:12px;padding:10px 12px;border-radius:11px;color:var(--ink-2);
+  text-decoration:none;font-size:14.5px;cursor:pointer}
+nav a.on{background:var(--surface);color:var(--ink);font-weight:600;box-shadow:0 1px 2px rgba(0,0,0,.12)}
+nav svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.7}
+main{padding:26px 30px 90px;max-width:1080px}
+
+/* ── the one number ── */
+.hero{background:var(--surface);border-radius:26px;padding:38px 40px 34px;
+  box-shadow:0 1px 2px rgba(16,22,26,.05),0 10px 34px rgba(16,22,26,.05)}
+.hero .lead{font-size:14px;color:var(--ink-3);font-weight:550;letter-spacing:.01em}
+.hero .big{font-size:82px;font-weight:640;line-height:1;margin:14px 0 0;letter-spacing:-0.05em}
+.hero .under{display:flex;align-items:center;gap:12px;margin-top:16px;flex-wrap:wrap}
+.badge{display:inline-flex;align-items:center;gap:6px;padding:6px 12px;border-radius:999px;
+  font-size:13.5px;font-weight:600}
+.badge.up{background:var(--red-soft);color:var(--red)}
+.badge.dn{background:var(--green-soft);color:var(--green)}
+.hero .said{color:var(--ink-2);font-size:15px;line-height:1.5}
+
+/* the month as a single stacked bar — where the money sat */
+.stack{display:flex;gap:3px;margin-top:30px;height:46px}
+.stack div{border-radius:5px;display:flex;align-items:center;justify-content:center;
+  font-size:12px;font-weight:600;color:#fff;overflow:hidden;white-space:nowrap}
+.stack .rest{background:var(--seg-rest);color:var(--ink-2)}
+.slabels{display:flex;gap:18px;margin-top:14px;font-size:12.5px;color:var(--ink-3);flex-wrap:wrap}
+.slabels i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:7px;vertical-align:-1px}
+
+/* ── the two follow-ups, deliberately smaller ── */
+.two{display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-top:16px}
+.card{background:var(--surface);border-radius:22px;padding:24px 26px;
+  box-shadow:0 1px 2px rgba(16,22,26,.05),0 8px 26px rgba(16,22,26,.04)}
+.card h2{font-size:13px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);font-weight:650}
+.card .mid{font-size:36px;font-weight:620;margin-top:12px;letter-spacing:-0.04em}
+.card .sub{font-size:14px;color:var(--ink-2);margin-top:6px;line-height:1.5}
+.spark{display:flex;gap:5px;align-items:flex-end;height:56px;margin-top:20px}
+.spark i{flex:1;border-radius:4px;background:var(--line)}
+.spark i.now{background:var(--ink)}
+.rows{margin-top:18px}
+.r{display:flex;align-items:center;justify-content:space-between;padding:10px 0}
+.r+.r{border-top:1px solid var(--line)}
+.r .n{font-size:15px}
+.r .n small{display:block;color:var(--ink-3);font-size:12.5px;margin-top:2px}
+.r .a{font-size:16px;font-weight:600;font-variant-numeric:tabular-nums}
+.more{margin-top:18px;font-size:14px;color:var(--green);font-weight:600;cursor:pointer}
+.note{margin-top:22px;font-size:13px;color:var(--ink-3);line-height:1.6;max-width:76ch}
+</style></head><body>
+<div class="app">
+  <aside>
+    <div class="mark">Balance<i>.</i></div>
+    <nav>
+      <a class="on"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg>Dashboard</a>
+      <a><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg>Transactions</a>
+      <a><svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Trends</a>
+      <a><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg>Subscriptions</a>
+      <a><svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg>Net worth</a>
+      <a><svg viewBox="0 0 24 24"><path d="M12 4v12m0 0l-4-4m4 4l4-4M4 18v2h16v-2"/></svg>Import</a>
+    </nav>
+  </aside>
+  <main>
+    <div class="hero">
+      <div class="lead">You kept, in May</div>
+      <div class="big num">2 026 €</div>
+      <div class="under">
+        <span class="badge dn">49 % of what you earned</span>
+        <span class="badge up">spending 10 % above usual</span>
+        <span class="said">— best month since February.</span>
+      </div>
+      <div class="stack" id="stack"></div>
+      <div class="slabels" id="slabels"></div>
+    </div>
+
+    <div class="two">
+      <div class="card">
+        <h2>Six months</h2>
+        <div class="mid num">2 162 €<span style="font-size:16px;font-weight:500;color:var(--ink-3)"> avg spend</span></div>
+        <div class="sub">May came in 88 € under that.</div>
+        <div class="spark" id="spark"></div>
+      </div>
+      <div class="card">
+        <h2>Worth a look</h2>
+        <div class="rows" id="flags"></div>
+        <div class="more">See all 34 categories →</div>
+      </div>
+    </div>
+
+    <p class="note">One number owns the screen; everything else is sized by how much it matters.
+      The card that used to list thirty-four categories now lists the three that are not behaving,
+      and the rest are one click away.</p>
+  </main>
+</div>
+<script>
+const MONTHS=[['Dec',2510],['Jan',2180],['Feb',1990],['Mar',2340],['Apr',1875],['May',2074]];
+const SEG=[['Rent',980,'--seg-1','#12161a'],['Groceries',420,'--seg-2','#f2f4f6'],['Restaurant',210,'--seg-3','#fff'],['Gas',140,'--seg-4','#fff'],['Going out',130,'--seg-5','#fff']];
+const FLAGS=[['Restaurant','2.2× your usual month','210 €','up'],
+             ['Groceries','13 % above usual','420 €','up'],
+             ['Going out','10 % under usual','130 €','dn']];
+const fmt=n=>new Intl.NumberFormat('fi-FI',{maximumFractionDigits:0}).format(Math.abs(n))+' €';
+
+const total=2074, rest=total-SEG.reduce((s,x)=>s+x[1],0);
+document.getElementById('stack').innerHTML=
+  SEG.map(([n,v,c,fg])=>`<div style="flex:${v};background:var(${c});color:var(--seg-fg-${c.slice(-1)},${fg})">${v>150?n:''}</div>`).join('')
+  +`<div class="rest" style="flex:${rest}">Other</div>`;
+document.getElementById('slabels').innerHTML=
+  SEG.map(([n,v,c])=>`<span><i style="background:var(${c})"></i>${n} ${fmt(v)}</span>`).join('')
+  +`<span><i style="background:var(--seg-rest)"></i>Other ${fmt(rest)}</span>`;
+
+const topv=Math.max(...MONTHS.map(m=>m[1]));
+document.getElementById('spark').innerHTML=MONTHS.map((m,i)=>
+  `<i class="${i===5?'now':''}" style="height:${m[1]/topv*100}%"></i>`).join('');
+
+document.getElementById('flags').innerHTML=FLAGS.map(([n,d,a,k])=>`
+  <div class="r"><div class="n">${n}<small>${d}</small></div>
+    <div class="a" style="color:${k==='up'?'var(--red)':'var(--green)'}">${a}</div></div>`).join('');
+</script></body></html>

@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Look 02 — Baseline First</title>
+<style>
+:root{
+  color-scheme:light;
+  --canvas:#f4f5f3; --card:#ffffff; --line:#e4e6e2;
+  --ink:#14181c; --ink-2:#5d6570; --ink-3:#949ba5;
+  --normal:#c9cec7;
+  --over:#c8402f; --over-soft:#fbe9e6;
+  --under:#0e8f5f; --under-soft:#e5f5ee;
+  --font:"Inter",-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font);background:var(--canvas);color:var(--ink);font-size:14px;
+  -webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums;letter-spacing:-0.015em}
+.app{display:grid;grid-template-columns:60px 1fr;min-height:100vh}
+.rail{background:var(--card);border-right:1px solid var(--line);display:flex;flex-direction:column;
+  align-items:center;padding:16px 0;gap:6px;position:sticky;top:0;height:100vh}
+.rail .m{width:28px;height:28px;border-radius:8px;background:var(--ink);color:#fff;display:grid;
+  place-items:center;font-weight:700;font-size:14px;margin-bottom:14px}
+.rail b{width:36px;height:36px;border-radius:10px;display:grid;place-items:center;color:var(--ink-3);cursor:pointer}
+.rail b.on{background:var(--canvas);color:var(--ink)}
+.rail svg{width:18px;height:18px;fill:none;stroke:currentColor;stroke-width:1.6}
+main{padding:26px 30px 80px;max-width:1120px}
+.verdict{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:22px 24px;
+  display:grid;grid-template-columns:1fr 300px;gap:30px;align-items:center}
+.verdict h1{font-size:26px;font-weight:600;letter-spacing:-0.03em;line-height:1.25}
+.verdict h1 em{font-style:normal;color:var(--over)}
+.verdict p{color:var(--ink-2);margin-top:9px;font-size:14px;line-height:1.55;max-width:56ch}
+.gauge{position:relative}
+.gauge .lab{display:flex;justify-content:space-between;font-size:11px;color:var(--ink-3);margin-bottom:8px}
+.gauge .bar{position:relative;height:30px;border-radius:8px;background:#f0f1ee}
+.gauge .fill{position:absolute;top:0;bottom:0;left:0;background:var(--over);opacity:.85;border-radius:8px}
+.gauge .norm{position:absolute;top:-6px;bottom:-6px;width:2px;background:var(--ink)}
+.gauge .cap{margin-top:9px;font-size:11.5px;color:var(--ink-2);text-align:right}
+.grid{display:grid;grid-template-columns:1.55fr 1fr;gap:16px;margin-top:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:16px;padding:20px 22px}
+.ct{display:flex;justify-content:space-between;align-items:center;margin-bottom:18px}
+.ct h2{font-size:14.5px;font-weight:600;letter-spacing:-0.01em}
+.ct .hint{font-size:12px;color:var(--ink-3)}
+.seg{display:flex;background:var(--canvas);border-radius:9px;padding:2px}
+.seg span{font-size:12px;padding:5px 11px;border-radius:7px;color:var(--ink-2);cursor:pointer}
+.seg span.on{background:var(--card);color:var(--ink);font-weight:550;box-shadow:0 1px 2px rgba(0,0,0,.07)}
+.row{display:grid;grid-template-columns:112px 1fr 78px 96px;gap:14px;align-items:center;padding:9px 0}
+.row+.row{border-top:1px solid #f0f1ee}
+.row .n{font-size:13.5px}
+.row .n small{display:block;color:var(--ink-3);font-size:11px;margin-top:1px}
+.track{position:relative;height:22px;border-radius:6px;background:#f4f5f2}
+.norm-fill{position:absolute;top:0;bottom:0;left:0;background:var(--normal);border-radius:6px}
+.act{position:absolute;top:4px;bottom:4px;left:0;background:var(--ink);border-radius:4px}
+.act.over{background:var(--over)}
+.act.fixed{background:#9aa3ad}
+.norm-tick{position:absolute;top:-4px;bottom:-4px;width:2px;background:var(--ink);opacity:.55}
+.amt{text-align:right;font-weight:600;font-size:13.5px}
+.vs{text-align:right}
+.pill{display:inline-block;padding:3px 8px;border-radius:999px;font-size:11.5px;font-weight:600}
+.pill.over{background:var(--over-soft);color:var(--over)}
+.pill.under{background:var(--under-soft);color:var(--under)}
+.pill.flat{background:#f0f1ee;color:var(--ink-3)}
+.mrow{display:flex;align-items:center;justify-content:space-between;padding:8px 0;font-size:13px;border-top:1px solid #f0f1ee}
+.mrow:first-child{border-top:0}
+.mrow b{font-weight:600;font-variant-numeric:tabular-nums}
+.key{margin-top:16px;font-size:11.5px;color:var(--ink-3);display:flex;gap:16px;flex-wrap:wrap}
+.key i{display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:6px;vertical-align:-1px}
+</style></head><body>
+<div class="app">
+  <nav class="rail">
+    <div class="m">B</div>
+    <b class="on"><svg viewBox="0 0 24 24"><rect x="3" y="3" width="7" height="7" rx="1"/><rect x="14" y="3" width="7" height="7" rx="1"/><rect x="3" y="14" width="7" height="7" rx="1"/><rect x="14" y="14" width="7" height="7" rx="1"/></svg></b>
+    <b><svg viewBox="0 0 24 24"><path d="M4 6h16M4 12h16M4 18h10"/></svg></b>
+    <b><svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg></b>
+    <b><svg viewBox="0 0 24 24"><rect x="2" y="5" width="20" height="14" rx="2"/><path d="M2 10h20"/></svg></b>
+    <b><svg viewBox="0 0 24 24"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/></svg></b>
+  </nav>
+  <main>
+    <div class="verdict">
+      <div>
+        <h1>May cost <span class="num">2 074 €</span> — <em>199 € above your usual month</em>.</h1>
+        <p>Six categories landed where they always do. One did not: eating out ran at 2.2× normal,
+          and that alone is more than the whole overspend.</p>
+      </div>
+      <div class="gauge">
+        <div class="lab"><span>0 €</span><span>usual 2 100 €</span></div>
+        <div class="bar"><div class="fill" style="width:84%"></div><div class="norm" style="left:76%"></div></div>
+        <div class="cap">10 % above normal · still 2 026 € saved</div>
+      </div>
+    </div>
+
+    <div class="grid">
+      <div class="card">
+        <div class="ct"><h2>Every category against its normal</h2>
+          <div class="seg"><span class="on">Latest month</span><span>Period</span></div></div>
+        <div id="cats"></div>
+        <div class="key">
+          <span><i style="background:var(--normal)"></i>What it usually costs</span>
+          <span><i style="background:var(--ink)"></i>May</span>
+          <span><i style="background:var(--over)"></i>Past half again as much</span>
+        </div>
+      </div>
+
+      <div class="card">
+        <div class="ct"><h2>Six months</h2><span class="hint">spend</span></div>
+        <div id="mlist"></div>
+        <div class="ct" style="margin:22px 0 12px"><h2>Fixed vs chosen</h2></div>
+        <div class="track" style="height:26px;background:#f4f5f2">
+          <div class="act fixed" style="left:0;width:55%"></div>
+          <div class="act" style="left:57%;width:31%"></div>
+        </div>
+        <div class="key" style="margin-top:10px">
+          <span><i style="background:#9aa3ad"></i>Fixed 1 174 €</span>
+          <span><i style="background:var(--ink)"></i>Chosen 900 €</span>
+        </div>
+        <p style="margin-top:18px;font-size:12.5px;color:var(--ink-3);line-height:1.55">
+          Rent, insurance and telecom never move, so they never get to look like news.
+          Only what you decide each month can.</p>
+      </div>
+    </div>
+  </main>
+</div>
+<script>
+const MONTHS=[['Dec',4100,2510],['Jan',4100,2180],['Feb',4100,1990],['Mar',4360,2340],['Apr',4100,1875],['May',4100,2074]];
+const CATS=[['Rent',980,980,'fixed'],['Groceries',420,372,'up'],['Restaurant',210,96,'out'],['Gas',140,128,'up'],['Going out',130,145,'down'],['Utilities',95,92,'fixed'],['Exercise',60,60,'fixed'],['Telecom',39,39,'fixed']];
+const fmt=n=>new Intl.NumberFormat('fi-FI',{maximumFractionDigits:0}).format(Math.abs(n))+' €';
+
+const scale=Math.max(...CATS.map(c=>Math.max(c[1],c[2])))*1.06;
+document.getElementById('cats').innerHTML=CATS.map(([n,a,med,st])=>{
+  const pct=Math.round((a-med)/med*100);
+  const say=st==='fixed'?['flat','as usual']
+    :st==='out'?['over',(a/med).toFixed(1)+'× usual']
+    :[pct>0?'over':'under',(pct>0?'+':'')+pct+'%'];
+  const note=st==='fixed'?'<small>fixed</small>':'';
+  return `<div class="row">
+    <div class="n">${n}${note}</div>
+    <div class="track">
+      <div class="norm-fill" style="width:${med/scale*100}%"></div>
+      <div class="act ${st==='out'?'over':st==='fixed'?'fixed':''}" style="width:${a/scale*100}%"></div>
+      <div class="norm-tick" style="left:${med/scale*100}%"></div>
+    </div>
+    <div class="amt num">${fmt(a)}</div>
+    <div class="vs"><span class="pill ${say[0]}">${say[1]}</span></div>
+  </div>`}).join('');
+
+const topv=Math.max(...MONTHS.map(m=>m[2]));
+document.getElementById('mlist').innerHTML=MONTHS.map((m,i)=>`
+  <div class="mrow"><span style="width:34px;color:${i===5?'var(--ink)':'var(--ink-2)'}">${m[0]}</span>
+    <span style="flex:1;margin:0 14px;height:8px;border-radius:4px;background:#f0f1ee;overflow:hidden">
+      <span style="display:block;height:8px;border-radius:4px;background:${i===5?'var(--ink)':'#dfe2dd'};width:${m[2]/topv*100}%"></span></span>
+    <b>${fmt(m[2])}</b></div>`).join('');
+</script></body></html>

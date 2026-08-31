@@ -1,0 +1,171 @@
+<!DOCTYPE html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Look 04 — Command Canvas</title>
+<style>
+:root{
+  color-scheme:light;
+  --canvas:#fbfbfa; --surface:#ffffff; --line:#e8e8e5; --line-2:#f1f1ee;
+  --ink:#101113; --ink-2:#5b6169; --ink-3:#9aa0a8;
+  --accent:#00875a; --accent-soft:#e6f4ee;
+  --red:#c8402f; --red-soft:#fbeae7;
+  --font:"Inter",-apple-system,BlinkMacSystemFont,"Helvetica Neue",Arial,sans-serif;
+  --mono:"SF Mono",ui-monospace,"JetBrains Mono",Menlo,monospace;
+}
+*{margin:0;padding:0;box-sizing:border-box}
+body{font-family:var(--font);background:var(--canvas);color:var(--ink);font-size:13.5px;
+  -webkit-font-smoothing:antialiased}
+.num{font-variant-numeric:tabular-nums;letter-spacing:-0.01em}
+
+/* ── one bar, no sidebar: the window is all canvas ── */
+.bar{position:sticky;top:0;z-index:20;background:rgba(251,251,250,.86);
+  -webkit-backdrop-filter:saturate(180%) blur(14px);backdrop-filter:saturate(180%) blur(14px);
+  border-bottom:1px solid var(--line);display:flex;align-items:center;gap:18px;padding:0 20px;height:46px}
+.bar .m{font-size:14px;font-weight:600;letter-spacing:-0.02em}
+.bar .m i{color:var(--accent);font-style:normal}
+.tabs{display:flex;gap:1px}
+.tabs a{padding:6px 11px;border-radius:8px;color:var(--ink-2);text-decoration:none;font-size:13px;cursor:pointer}
+.tabs a:hover{background:#f1f1ee}
+.tabs a.on{background:var(--ink);color:#fff;font-weight:550}
+.spacer{flex:1}
+.k{display:flex;align-items:center;gap:8px;border:1px solid var(--line);background:var(--surface);
+  border-radius:9px;padding:6px 10px;color:var(--ink-3);font-size:12.5px;min-width:250px;cursor:pointer}
+.kbd{font-family:var(--mono);font-size:10.5px;border:1px solid var(--line);border-radius:5px;
+  padding:1px 5px;color:var(--ink-3);background:#f7f7f5;margin-left:auto}
+
+/* ── scope line: the filter is a sentence, always visible ── */
+.scope{display:flex;align-items:center;gap:8px;padding:12px 20px;border-bottom:1px solid var(--line);
+  font-size:12.5px;color:var(--ink-2);flex-wrap:wrap}
+.chip{display:inline-flex;align-items:center;gap:6px;background:var(--surface);border:1px solid var(--line);
+  border-radius:7px;padding:4px 8px;color:var(--ink)}
+.chip b{font-weight:600}
+.chip x{color:var(--ink-3);cursor:pointer;font-style:normal}
+.chip.acc{background:var(--accent-soft);border-color:#cfe8dd;color:#04654a}
+
+/* ── data, edge to edge ── */
+.wrap{padding:18px 20px 70px}
+.strip{display:grid;grid-template-columns:repeat(5,1fr);border:1px solid var(--line);border-radius:12px;
+  overflow:hidden;background:var(--surface)}
+.cell{padding:13px 15px;border-right:1px solid var(--line-2)}
+.cell:last-child{border-right:0}
+.cell .k2{font-size:11px;color:var(--ink-3);text-transform:uppercase;letter-spacing:.07em}
+.cell .v{font-size:19px;font-weight:600;margin-top:5px;letter-spacing:-0.025em}
+.cell .d{font-size:11.5px;color:var(--ink-2);margin-top:2px}
+.d .up{color:var(--red);font-weight:600} .d .dn{color:var(--accent);font-weight:600}
+
+.two{display:grid;grid-template-columns:1fr 360px;gap:14px;margin-top:14px}
+.panel{background:var(--surface);border:1px solid var(--line);border-radius:12px}
+.ph{display:flex;align-items:center;justify-content:space-between;padding:11px 15px;border-bottom:1px solid var(--line-2)}
+.ph h2{font-size:13px;font-weight:600}
+.ph .hint{font-size:11.5px;color:var(--ink-3)}
+table{width:100%;border-collapse:collapse}
+th{font-size:10.5px;text-transform:uppercase;letter-spacing:.07em;color:var(--ink-3);font-weight:600;
+  text-align:left;padding:8px 15px;border-bottom:1px solid var(--line-2)}
+th.r,td.r{text-align:right}
+td{padding:7px 15px;border-bottom:1px solid var(--line-2);font-size:13px}
+tr:last-child td{border-bottom:0}
+tr:hover td{background:#fafaf8}
+td.mono{font-family:var(--mono);font-size:12px;color:var(--ink-2);white-space:nowrap}
+td.amt{font-weight:600;font-variant-numeric:tabular-nums}
+td.amt.in{color:var(--accent)}
+.mini{display:inline-flex;gap:2px;align-items:flex-end;height:16px;vertical-align:-3px}
+.mini i{width:3px;background:#d9dbd6;border-radius:1px}
+.mini i.now{background:var(--ink)}
+.badge{font-size:10.5px;font-weight:600;padding:2px 6px;border-radius:5px}
+.badge.up{background:var(--red-soft);color:var(--red)}
+.badge.flat{background:#f2f2ef;color:var(--ink-3)}
+.badge.dn{background:var(--accent-soft);color:#04654a}
+.rowbar{position:relative;height:6px;border-radius:3px;background:#f0f0ec;margin-top:5px}
+.rowbar i{position:absolute;top:0;bottom:0;left:0;border-radius:3px;background:var(--ink)}
+.rowbar i.over{background:var(--red)}
+.rowbar u{position:absolute;top:-3px;bottom:-3px;width:1.5px;background:var(--ink-3);text-decoration:none}
+
+/* ── the palette, open ── */
+.scrim{position:fixed;inset:0;background:rgba(16,17,19,.14);z-index:30}
+.pal{position:fixed;left:50%;top:76px;transform:translateX(-50%);width:min(560px,92vw);z-index:40;
+  background:var(--surface);border:1px solid #dcdcd8;border-radius:14px;
+  box-shadow:0 24px 60px rgba(16,17,19,.18),0 2px 6px rgba(16,17,19,.06);overflow:hidden}
+.pal input{width:100%;border:0;outline:0;padding:15px 17px;font-size:15px;font-family:inherit;color:var(--ink)}
+.pal .sec{font-size:10.5px;text-transform:uppercase;letter-spacing:.08em;color:var(--ink-3);
+  padding:8px 17px 5px;border-top:1px solid var(--line-2);font-weight:600}
+.pal .it{display:flex;align-items:center;gap:11px;padding:8px 17px;font-size:13.5px;color:var(--ink-2);cursor:pointer}
+.pal .it.on{background:#f4f6f4;color:var(--ink)}
+.pal .it .kb{margin-left:auto;font-family:var(--mono);font-size:10.5px;color:var(--ink-3)}
+.pal .it svg{width:15px;height:15px;fill:none;stroke:currentColor;stroke-width:1.7}
+.foot{margin-top:16px;font-size:12px;color:var(--ink-3);line-height:1.6;max-width:78ch}
+</style></head><body>
+<div class="bar">
+  <div class="m">Balance<i>.</i></div>
+  <nav class="tabs"><a class="on">Dashboard</a><a>Transactions</a><a>Trends</a><a>Subscriptions</a><a>Net worth</a><a>Import</a></nav>
+  <div class="spacer"></div>
+  <div class="k">Search or jump to…<span class="kbd">⌘K</span></div>
+</div>
+
+<div class="scope">
+  Showing
+  <span class="chip acc"><b>May 2026</b><x>×</x></span>
+  <span class="chip">Expenses<x>×</x></span>
+  <span class="chip">All 34 categories<x>×</x></span>
+  <span style="color:var(--ink-3)">· 84 transactions · 2 074 €</span>
+</div>
+
+<div class="wrap">
+  <div class="strip" id="strip"></div>
+
+  <div class="two">
+    <div class="panel">
+      <div class="ph"><h2>Categories</h2><span class="hint">bar shows May, tick shows the usual month</span></div>
+      <table id="cats"><thead><tr><th>Category</th><th>This month</th><th class="r">Amount</th><th class="r">vs usual</th><th class="r">6-month shape</th></tr></thead><tbody></tbody></table>
+    </div>
+    <div class="panel">
+      <div class="ph"><h2>Latest</h2><span class="hint">84 this month</span></div>
+      <table id="tx"><tbody></tbody></table>
+    </div>
+  </div>
+
+  <p class="foot">No sidebar: navigation is six words in a 46-pixel bar, and everything below it is the data.
+    The filter reads as a sentence you can dismantle one chip at a time, and ⌘K goes anywhere —
+    a category, a month, a merchant, an import — without moving the mouse.</p>
+</div>
+
+<div class="scrim"></div>
+<div class="pal">
+  <input value="rest" spellcheck="false">
+  <div class="sec">Jump to</div>
+  <div class="it on"><svg viewBox="0 0 24 24"><path d="M7 7h.01M7 3h5l8 8-7 7-8-8V7a4 4 0 014-4z"/></svg>Category · Restaurant<span class="kb">↵</span></div>
+  <div class="it"><svg viewBox="0 0 24 24"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>Trend · Restaurant, 12 months</div>
+  <div class="sec">Do</div>
+  <div class="it"><svg viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></svg>New transaction<span class="kb">N</span></div>
+  <div class="it"><svg viewBox="0 0 24 24"><path d="M12 4v12m0 0l-4-4m4 4l4-4M4 18v2h16v-2"/></svg>Import a statement<span class="kb">I</span></div>
+</div>
+
+<script>
+const MONTHS=[['Dec',2510],['Jan',2180],['Feb',1990],['Mar',2340],['Apr',1875],['May',2074]];
+const CATS=[['Rent',980,980,'fixed'],['Groceries',420,372,'up'],['Restaurant',210,96,'out'],['Gas',140,128,'up'],['Going out',130,145,'down'],['Utilities',95,92,'fixed'],['Exercise',60,60,'fixed'],['Telecom',39,39,'fixed']];
+const TX=[['30 May','K-Market','Groceries',-42],['29 May','Neste','Gas',-68],['28 May','Spotify','Telecom',-12],['27 May','Salary','Job',4100],['26 May','Trattoria','Restaurant',-54],['25 May','Clas Ohlson','Home',-29],['24 May','Alepa','Groceries',-18],['23 May','HSL','Public transport',-63]];
+const fmt=n=>new Intl.NumberFormat('fi-FI',{maximumFractionDigits:0}).format(Math.abs(n))+' €';
+
+document.getElementById('strip').innerHTML=[
+  ['Earned','4 100 €','same as April'],
+  ['Spent','2 074 €','<span class="up">+10 %</span> on your usual month'],
+  ['Kept','2 026 €','<span class="dn">49 %</span> of income'],
+  ['Fixed','1 174 €','57 % of spending'],
+  ['Subscriptions','737 €','5 active · 1 due soon']
+].map(c=>`<div class="cell"><div class="k2">${c[0]}</div><div class="v num">${c[1]}</div><div class="d">${c[2]}</div></div>`).join('');
+
+const maxc=CATS[0][1]*1.04, maxm=Math.max(...MONTHS.map(m=>m[1]));
+document.querySelector('#cats tbody').innerHTML=CATS.map(([n,a,med,st])=>{
+  const pct=Math.round((a-med)/med*100);
+  const b=st==='fixed'?['flat','as usual']:st==='out'?['up',(a/med).toFixed(1)+'× usual']
+    :[pct>0?'up':'dn',(pct>0?'+':'')+pct+' %'];
+  return `<tr><td>${n}</td>
+    <td style="width:38%"><div class="rowbar"><i class="${st==='out'?'over':''}" style="width:${a/maxc*100}%"></i>
+      <u style="left:${med/maxc*100}%"></u></div></td>
+    <td class="r amt">${fmt(a)}</td>
+    <td class="r"><span class="badge ${b[0]}">${b[1]}</span></td>
+    <td class="r"><span class="mini">${MONTHS.map((m,i)=>`<i class="${i===5?'now':''}" style="height:${Math.max(3,m[1]/maxm*16)}px"></i>`).join('')}</span></td></tr>`}).join('');
+
+document.querySelector('#tx tbody').innerHTML=TX.map(([d,s,c,a])=>`<tr>
+  <td class="mono" style="width:62px">${d}</td>
+  <td>${s}<div style="font-size:11.5px;color:var(--ink-3)">${c}</div></td>
+  <td class="r amt${a>0?' in':''}">${a>0?'+':'−'}${fmt(a)}</td></tr>`).join('');
+</script></body></html>
