@@ -482,3 +482,105 @@ def test_ordinary_movement_reads_as_usual(client):
                if c["category"] == "Groceries")
     assert row["direction"] == "above"
     assert row["reads_as"] == "as usual"
+
+
+# ── Month names ───────────────────────────────────────────────────────────
+
+def test_the_context_resolves_month_names_so_the_model_does_not(seeded):
+    """"June" is calendar arithmetic, and that is what goes wrong.
+
+    Asked what it spent in June the model never passed 2026-06 at all: it tried
+    last_3_months, then last_6_months, then this_year, and reported a
+    three-month total as one month's.
+    """
+    names = ai_tools.context_block()["months_by_name"]
+    today = date.today()
+    this_month = f"{today.year:04d}-{today.month:02d}"
+
+    assert len(names) == 13
+    # Newest first, so reading down finds the most recent one that has been.
+    assert list(names.values())[0] == this_month
+    assert all(len(key) == 7 and key[4] == "-" for key in names.values())
+    # A label a person would type, mapped to what the tools want.
+    label, key = next(iter(names.items()))
+    assert key == this_month and label.endswith(str(today.year))
+
+
+# ── The items inside a category ───────────────────────────────────────────
+
+def test_a_single_month_carries_the_top_items_of_its_largest_categories(seeded):
+    """"My biggest category and the top 3 things in it" is one lookup.
+
+    As two it went wrong in a way that read as right: the model searched the
+    whole month rather than inside the category, and listed the month's biggest
+    charges under its biggest category's name.
+    """
+    result = ai_tools.category_breakdown(month="2026-05")
+    top = result["categories"][0]
+
+    assert top["category"] == "Groceries"
+    assert [i["store"] for i in top["top_items"]] == ["K-Market", "S-Market"]
+    assert top["top_items"][0]["amount_eur"] == "61\xa0€"
+
+
+def test_a_period_carries_no_top_items(seeded):
+    """They belong to a month. Over a range there is no usual month either."""
+    result = ai_tools.category_breakdown(period="last_12_months")
+    assert all("top_items" not in c for c in result["categories"])
+
+
+# ── Reading a whole month ─────────────────────────────────────────────────
+
+@pytest.fixture
+def two_months(client):
+    """One category over two months, moving in opposite directions."""
+    groceries = cat_id(client, "Groceries")
+    job = cat_id(client, "Job", "income")
+    add_tx(client, "2026-04-10", "K-Market", groceries, 300.0)
+    add_tx(client, "2026-05-10", "K-Market", groceries, 100.0)
+    add_tx(client, "2026-05-11", "S-Market", groceries, 50.0)
+    add_tx(client, "2026-05-25", "Payroll", job, 3000.0, "income")
+    return client
+
+
+def test_a_month_is_read_in_one_call(two_months):
+    """The whole picture, so the model never has to decide what to fetch."""
+    result = ai_tools.analyse_month(month="2026-05")
+
+    assert result["month"] == "2026-05"
+    assert result["compared_with"] == "2026-04"
+    assert result["totals"]["expense_eur"] == "150\xa0€"
+    assert result["totals"]["income_eur"] == "3\xa0000\xa0€"
+    # Against the month before, with the direction already decided.
+    assert result["totals"]["expense_vs_last_month"]["last_month_eur"] == "300\xa0€"
+    assert result["totals"]["expense_vs_last_month"]["direction"] == "down"
+    assert result["biggest_charges"][0]["store"] == "K-Market"
+
+
+def test_each_category_says_which_way_it_moved_against_each_thing(two_months):
+    """Two comparisons that disagree, and the model must not merge them.
+
+    Given only the figures it did: Medical at 74 € against 335 € the month
+    before came back as "spiked to 74 €, up from 335 €".
+    """
+    result = ai_tools.analyse_month(month="2026-05")
+    row = next(c for c in result["categories"] if c["category"] == "Groceries")
+
+    assert row["last_month_eur"] == "300\xa0€"
+    assert row["vs_last_month_direction"] == "down"
+    # Named, so neither direction can be attached to the wrong comparison.
+    assert "direction" not in row
+    assert "vs_usual_direction" in row or "usual_month_eur" not in row
+
+
+def test_the_month_read_defaults_to_the_latest_one_holding_data(two_months):
+    """Not this month: a month can be a day old and nearly empty."""
+    assert ai_tools.analyse_month()["month"] == "2026-05"
+
+
+def test_reading_a_month_drops_the_raw_floats(two_months):
+    """It is the longest thing the model reads back, and the rules forbid it to
+    do arithmetic on them anyway."""
+    result = ai_tools.analyse_month(month="2026-05")
+    for row in result["categories"] + result["biggest_charges"]:
+        assert not {"total", "amount", "usual_month", "vs_usual"} & set(row)

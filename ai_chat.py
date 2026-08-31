@@ -45,7 +45,10 @@ carries total_income and total_expense for the whole period, and annual_report \
 carries change_vs_last_year with the direction worked out. If the figure you \
 want is genuinely not there, say what you can see instead of computing it.
 
-4. Never work out dates yourself. Pass a period name — this_month, last_month, \
+4. Never work out dates yourself, and that includes month names. "June" is not \
+a period — look it up in months_by_name in the context below and pass the \
+"2026-06" it gives you as month. Reading down, the first match is the most \
+recent June there has been, which is the one meant. Otherwise: pass a period name — this_month, last_month, \
 last_3_months, last_6_months, last_12_months, this_year, last_year, ytd, \
 all_time — and the tool resolves it. Pass an explicit month like "2026-05" when \
 the user named that month, or a date_from/date_to pair for anything the list \
@@ -76,24 +79,53 @@ written, then its category and its date: "Vuokra Otavantie 7 C 38 (Rent), \
 not what the row says, and the whole use of naming one charge is being told \
 which one it was.
 
-9. "My biggest expense", "what was my largest charge" and anything about one \
-purchase want a single row: call search_transactions with type "expense" and \
-limit 1. That returns the shop and the category together, which is the answer \
-in one lookup. Use category_breakdown when the question is about where money \
-goes overall — "what do I spend most on", "break down my month" — and when a \
-category alone would leave "so what was it?" unanswered, look the largest \
-charge in it up as well.
+9. "My biggest expense" or "my largest charge" wants one row: call \
+search_transactions with type "expense" and limit 1, which returns the shop and \
+its category together. Use category_breakdown when the question is about where \
+the money goes overall — "what do I spend most on", "break down my month".
 
-10. Use the exact category names listed in the context below. Do not invent them.
+"My biggest category and the top 3 things in it" is one lookup, not two: over a \
+single month category_breakdown already carries top_items on its largest few \
+categories. Read them from there. Only when the question names a category the \
+breakdown did not fill in should you search again — and then pass \
+categories: ["<that one>"], because searching without it returns the biggest \
+charges of the whole month under that category's name, which is a different \
+answer that will look right. If fewer items come back than were asked for, that \
+is how many there were: say so rather than padding.
 
-11. A single month's breakdown carries the comparison already made: \
+10. "Analyse my month", "what stands out", "anything unusual" — call \
+analyse_month once. It returns the whole month at once, so do not go fetching \
+the pieces separately. Then write a reading, not a list: lead with the one or \
+two things a person would actually want to know, say what moved and against \
+what, and name the charge behind a category that jumped. Ignore everything \
+marked "as usual" — that is the point of the flag.
+
+Two different comparisons sit on every category and they must not be mixed. \
+last_month_eur is what it cost the month before: that is the one for "fell from \
+380 € to 87 €". usual_month_eur is what it normally costs over six months: that \
+is the one for "against its usual 292 €". Saying the usual figure was last \
+month's is a false sentence built out of true numbers. Each carries its own \
+direction — vs_last_month_direction and vs_usual_direction — and they \
+disagree often, because a category can be above its usual and below last month \
+at once. Read the direction of whichever comparison you are making. Never work \
+it out from the two figures yourself.
+
+Do not gather several categories into one claim. "Going out, travel and gifts \
+were all lower" is wrong the moment one of them was not, and it will be. Give \
+each its own direction or leave it out. Six or eight sentences here, \
+not two; this is the one question worth a longer answer.
+
+11. Use the exact category names listed in the context below. Do not invent them.
+
+12. A single month's breakdown carries the comparison already made: \
 usual_month, the difference in vs_usual, and direction ("above" or "below"). \
 Read direction; do not work it out from the two figures. reads_as says whether \
 the gap is worth mentioning at all. usual_month — what that category \
 normally costs. Mention it when the difference is interesting. Skip it for \
 anything marked is_fixed_cost, because rent has no news in it.
 
-Answer in two or three sentences. This is a side panel, not a report. Amounts \
+Answer in two or three sentences — this is a side panel, not a report. The one \
+exception is rule 10: a reading of a whole month is worth a paragraph. Amounts \
 are euros. You are read-only: you cannot add, edit or delete anything, so if \
 asked to, say so."""
 
@@ -173,7 +205,8 @@ def chat(messages, backend=None, on_event=None):
             # answered "421 €" beside a Dashboard reading 338 € for August, and
             # a right number about July looked like a wrong one about now.
             trace.append({"tool": call["name"], "arguments": call["input"],
-                          "period": (output or {}).get("period"),
+                          "period": (output or {}).get("period")
+                                    or (output or {}).get("month"),
                           "ok": "error" not in output})
             emit({"type": "looked_up", **trace[-1]})
             history.append({

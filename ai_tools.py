@@ -11,7 +11,7 @@ alternative fails in an app about money:
 **No SQL from the model.** Handing a model the schema and letting it write
 queries is where small models fall off a cliff: a plausible query with the join
 or the sign wrong reports a number that is simply false, confidently. Picking
-one of six functions and filling two parameters is a much easier task, and it
+one of seven functions and filling two parameters is a much easier task, and it
 is the task that has to survive being run against a 4B model on the user's own
 machine later.
 
@@ -259,6 +259,19 @@ def search_transactions(period=None, month=None, date_from=None, date_to=None,
     }
 
 
+def _top_items_in(month, category, kind, limit=3):
+    """The largest few charges inside one category, in one month."""
+    ids, _ = _category_ids([category])
+    if not ids:
+        return []
+    data = _call_api("/api/transactions", {
+        "months": month, "category_ids": ",".join(ids), "type": kind,
+        "sort": "amount", "dir": "desc", "per_page": limit,
+    }) or {}
+    return [{"date": t["date"], "store": t["store"], "amount_eur": _eur(t["amount"])}
+            for t in data.get("items", [])]
+
+
 def category_breakdown(period=None, month=None, type="expense"):
     """Totals per category, with the baseline that says whether it is a lot.
 
@@ -307,6 +320,17 @@ def category_breakdown(period=None, month=None, type="expense"):
                 else f"{row['direction']} usual"
             )
         out.append(row)
+
+    # The largest few carry what actually made them up. "My biggest category and
+    # the top 3 things in it" is one of the commonest questions asked here and
+    # it used to need two lookups — which the model got wrong in a way that read
+    # as right, searching the whole month rather than inside the category and
+    # listing the month's biggest charges under its biggest category's name.
+    # Three deep and three wide keeps this to a couple of hundred tokens.
+    if len(window["months"]) == 1:
+        for row in out[:3]:
+            row["top_items"] = _top_items_in(window["months"][0], row["category"],
+                                             params["type"])
 
     return {
         "period": window["label"],
@@ -561,6 +585,141 @@ def net_worth_summary():
     }
 
 
+# The raw companions to the `_eur` strings. Every tool sends both, so the model
+# can rank and compare without doing arithmetic on the strings it quotes. In one
+# result that is a fair trade and in this one it is not: this is the longest
+# thing the model ever reads back.
+_RAW_FIELDS = ("total", "usual_month", "vs_usual", "amount")
+
+
+def _without_raw(row):
+    return {k: v for k, v in row.items() if k not in _RAW_FIELDS}
+
+
+def _named_directions(row):
+    """Say which comparison `direction` is about.
+
+    There are two here — against last month and against the usual month — and
+    they disagree often. A field called plain `direction` sitting beside both is
+    an invitation to attach it to the wrong one.
+    """
+    if "direction" not in row:
+        return row
+    renamed = {("vs_usual_direction" if k == "direction" else k): v
+               for k, v in row.items()}
+    return renamed
+
+
+def analyse_month(month=None):
+    """Everything about one month, gathered in a single call.
+
+    The other five tools answer a question. This one is handed a month and
+    returns the whole picture of it, because "tell me what stands out" is not a
+    question with a lookup behind it — it is a reading, and a small model cannot
+    do the reading if it has to decide what to fetch four times first.
+
+    So the fetching is decided here, in Python: the totals against the month
+    before, every category against its own usual month, the largest charges,
+    what moved most in each direction, and what the subscriptions came to. The
+    model's job is to notice which of those is worth saying, which is a thing it
+    is good at once the numbers are in front of it.
+
+    Kept deliberately lean. This is the largest result any tool returns and the
+    model re-reads all of it before writing a word, so every field in here has
+    to earn the wait: preformatted strings, no raw floats the rules forbid it to
+    do arithmetic on anyway, and both lists capped.
+    """
+    window = resolve_period(month=month) if month else None
+    target = window["months"][0] if window else None
+    if not target:
+        # No month named: the latest one that actually holds data, which is not
+        # necessarily this one — a month can be a day old and nearly empty.
+        target = context_block()["last_month_with_data"]
+    previous = _month_add(target, -1)
+
+    summary = monthly_summary(months=[previous, target])
+    by_month = {m["month"]: m for m in summary["months"]}
+    this, before = by_month.get(target, {}), by_month.get(previous, {})
+
+    def against(key):
+        """This month's figure beside last month's, with the direction made."""
+        now, then = this.get(key), before.get(key)
+        if now is None or then is None:
+            return None
+        change = round(now - then, 2)
+        return {"last_month_eur": _eur(then), "change_eur": _eur(change),
+                "direction": ("up" if change > 0 else
+                              "down" if change < 0 else "flat")}
+
+    breakdown = category_breakdown(month=target)
+    categories = breakdown["categories"]
+
+    # What each category cost the month before. Without it the only comparison
+    # on a row was against its usual month, and the model narrated that as
+    # month-on-month: "Exercise fell from 292 € to 87 €", where 292 € was the
+    # six-month usual and July was really 380 €. Two false sentences from true
+    # numbers. Giving it the figure is better than forbidding the phrasing.
+    previous_totals = {c["category"]: c["total"]
+                       for c in category_breakdown(month=previous)["categories"]}
+    for row in categories:
+        then = previous_totals.get(row["category"], 0.0)
+        row["last_month_eur"] = _eur(then)
+        # The direction, decided here. Given only the two figures the model
+        # inferred it, and inferred it wrong: Medical at 74 € against 335 € in
+        # July came back as "spiked to 74 €, up from 335 €". It is the same
+        # lesson as the usual-month comparison — reading a number is a small
+        # model's strength and comparing two is not.
+        row["vs_last_month_direction"] = ("up" if row["total"] > then
+                                          else "down" if row["total"] < then
+                                          else "flat")
+
+    # What actually moved, which is the news. `reads_as` already decides what
+    # counts as movement worth mentioning, using the Dashboard's own band.
+    moved = [c for c in categories
+             if c.get("reads_as") and c["reads_as"] != "as usual"]
+    charges = search_transactions(month=target, type="expense", limit=8)
+
+    subscriptions = list_subscriptions()
+    changed = [s for s in subscriptions.get("subscriptions", [])
+               if s.get("status") == "price_changed"]
+
+    return {
+        "month": target,
+        "compared_with": previous,
+        "totals": {
+            "income_eur": this.get("income_eur"),
+            "expense_eur": this.get("expense_eur"),
+            "net_eur": this.get("net_eur"),
+            "expense_vs_last_month": against("expense"),
+            "income_vs_last_month": against("income"),
+        },
+        # Largest first, each already carrying what it usually costs and
+        # whether this month was unusual for it. The raw floats come out here:
+        # this is much the biggest thing the model is asked to read back, the
+        # rows are already sorted so ranking needs no arithmetic, and `direction`
+        # has made every comparison the rules would let it make anyway.
+        "categories": [_named_directions(_without_raw(c)) for c in categories],
+        "moved_most": [
+            {"category": c["category"], "total_eur": c["total_eur"],
+             "last_month_eur": c.get("last_month_eur"),
+             "vs_last_month_direction": c.get("vs_last_month_direction"),
+             "usual_month_eur": c.get("usual_month_eur"),
+             "vs_usual_eur": c.get("vs_usual_eur"),
+             "vs_usual_direction": c.get("direction")}
+            for c in sorted(moved, key=lambda c: abs(c.get("vs_usual") or 0),
+                            reverse=True)[:6]
+        ],
+        "biggest_charges": [_without_raw(c) for c in charges["transactions"][:8]],
+        "subscriptions": {
+            "monthly_total_eur": subscriptions.get("monthly_total_eur"),
+            "counted": subscriptions.get("counted_in_total"),
+            "price_changed": [{"merchant": s["merchant"],
+                               "monthly_cost_eur": s["monthly_cost_eur"]}
+                              for s in changed],
+        },
+    }
+
+
 # ── What the model is told it can call ────────────────────────────────────
 #
 # One schema list, provider-neutral JSON Schema. Anthropic takes it as
@@ -572,7 +731,23 @@ _PERIOD_SCHEMA = {
     "type": "string",
     "enum": list(PERIODS),
     "description": "A relative period. Use this for anything like 'last month' "
-                   "or 'this year' — never work the dates out yourself.",
+                   "or 'this year' — never work the dates out yourself. It "
+                   "cannot express a named month: use `month` for those.",
+}
+
+# `month` used to read "An explicit month, YYYY-MM." beside that, and the model
+# duly reached for the period every time. Asked what it spent most on in June it
+# tried last_3_months, this_month, last_6_months and this_year in turn, and
+# reported a three-month total as June's. The two descriptions have to pull with
+# the same weight.
+_MONTH_SCHEMA = {
+    "type": "string",
+    "description": "One named month, as YYYY-MM. Use this — not `period` — "
+                   "whenever the question names a month ('June', 'in May', "
+                   "'March 2025'). Do not work the number out: look the name up "
+                   "in months_by_name in the context and pass what it gives, "
+                   "e.g. '2026-06'. A single month is also the only way to get "
+                   "each category's usual month and its top items.",
 }
 
 TOOL_SCHEMAS = [
@@ -585,7 +760,7 @@ TOOL_SCHEMAS = [
             "type": "object",
             "properties": {
                 "period": _PERIOD_SCHEMA,
-                "month": {"type": "string", "description": "An explicit month, YYYY-MM. Use only when the user named one."},
+                "month": _MONTH_SCHEMA,
                 "date_from": {"type": "string", "description": "YYYY-MM-DD."},
                 "date_to": {"type": "string", "description": "YYYY-MM-DD."},
                 "categories": {"type": "array", "items": {"type": "string"},
@@ -609,7 +784,7 @@ TOOL_SCHEMAS = [
             "type": "object",
             "properties": {
                 "period": _PERIOD_SCHEMA,
-                "month": {"type": "string", "description": "An explicit month, YYYY-MM."},
+                "month": _MONTH_SCHEMA,
                 "type": {"type": "string", "enum": ["expense", "income"], "default": "expense"},
             },
             "required": [],
@@ -654,6 +829,25 @@ TOOL_SCHEMAS = [
         },
     },
     {
+        "name": "analyse_month",
+        "description": "The whole picture of one month in a single call: totals "
+                       "against the month before, every category against its own "
+                       "usual month, the largest charges, what moved most, and "
+                       "what the subscriptions came to. Use this for anything "
+                       "open-ended — 'analyse my month', 'what stands out', "
+                       "'how did I do', 'anything unusual' — rather than "
+                       "fetching the pieces one at a time.",
+        "input_schema": {
+            "type": "object",
+            "properties": {
+                "month": {"type": "string",
+                          "description": "YYYY-MM. Defaults to the latest month "
+                                         "that holds data."},
+            },
+            "required": [],
+        },
+    },
+    {
         "name": "net_worth_summary",
         "description": "Current net worth: assets, liabilities and the latest total.",
         "input_schema": {"type": "object", "properties": {}, "required": []},
@@ -667,6 +861,7 @@ TOOLS = {
     "list_subscriptions": list_subscriptions,
     "annual_report": annual_report,
     "net_worth_summary": net_worth_summary,
+    "analyse_month": analyse_month,
 }
 
 
@@ -706,10 +901,25 @@ def context_block():
             "SELECT DISTINCT name FROM categories WHERE user_id = %s ORDER BY name",
             (uid,)
         ).fetchall()
+    # "June" is calendar arithmetic, and this whole module exists because small
+    # models get calendar arithmetic wrong. Asked what it spent in June the
+    # model never passed 2026-06 at all: it tried last_3_months, then
+    # last_6_months, then this_month, and reported a three-month total as one
+    # month's. So the names are resolved here and handed over as a lookup.
+    this_month = date.today().strftime("%Y-%m")
+    by_name = {}
+    for back in range(13):
+        key = _month_add(this_month, -back)
+        label = f"{_MONTH_NAMES[int(key[5:7]) - 1]} {key[:4]}"
+        by_name[label] = key
+
     return {
         "today": date.today().isoformat(),
-        "current_month": date.today().strftime("%Y-%m"),
+        "current_month": this_month,
         "first_month_with_data": span["first"] if span else None,
         "last_month_with_data": span["last"] if span else None,
+        # Newest first: a bare month name means the most recent one that has
+        # been, which is the first match reading down.
+        "months_by_name": by_name,
         "categories": [r["name"] for r in names],
     }

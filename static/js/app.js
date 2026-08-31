@@ -5289,6 +5289,7 @@ const CHAT_TOOL_NAMES = {
     list_subscriptions: "Read your subscriptions",
     annual_report: "Read the annual report",
     net_worth_summary: "Read your net worth",
+    analyse_month: "Read the whole month",
 };
 
 // The same six, said as something happening rather than something done.
@@ -5299,13 +5300,17 @@ const CHAT_TOOL_DOING = {
     list_subscriptions: "Reading your subscriptions",
     annual_report: "Reading the annual report",
     net_worth_summary: "Reading your net worth",
+    analyse_month: "Going through the whole month",
 };
 
+// All about the month just gone, because that is the one a person can still do
+// something about. The analysis is first: it is the question you would not
+// think to ask, and the only one worth waiting twenty seconds for.
 const CHAT_SUGGESTIONS = [
-    "What did I spend on groceries last month?",
-    "Did I spend more in July than in June?",
+    "Make a trend analysis of my latest month",
+    "What was my largest spending category last month, and the top 3 items in it?",
+    "How did last month compare to my usual?",
     "What are my subscriptions costing me?",
-    "How is this year going compared to last year?",
 ];
 
 function toggleChat() {
@@ -5342,9 +5347,8 @@ async function loadChatStatus() {
         // which is more use than a toast over an empty transcript.
         chatReady = { configured: false, detail: "Could not reach the app's own server." };
     }
-    const label = document.getElementById("chat-model");
-    label.textContent = chatReady.configured && chatReady.model
-        ? `${chatReady.model} · on this Mac` : "on this Mac";
+    // Which model is answering is a setting, not a brand. It stays on the
+    // set-up card, where it is the thing you have to type, and nowhere else.
     renderChatLog();
 }
 
@@ -5408,8 +5412,8 @@ function scrollChatToEnd() {
 function chatEmptyHtml() {
     return `<div class="chat-empty">
         <div class="chat-empty-title">Ask about your money</div>
-        <div class="chat-empty-sub">Runs on a model on this Mac. Nothing leaves the
-            machine, and every answer says which screen it read.</div>
+        <div class="chat-empty-sub">Runs on this Mac. Nothing leaves the machine,
+            and every answer says which screen it read.</div>
         <div class="chat-suggestions">
             ${CHAT_SUGGESTIONS.map(q => `
                 <button class="chat-suggestion" onclick="askChat(this.textContent.trim())">${escapeHtml(q)}</button>
@@ -5423,26 +5427,30 @@ function chatEmptyHtml() {
 // and give the command.
 function chatSetupHtml() {
     const s = chatReady || {};
-    const model = s.model || "qwen3.5:4b";
+    // The server always reports the model it is configured for, reachable or
+    // not, so this never has to guess a name — and a name is the whole use of
+    // this card. It is the only place in the panel a model is mentioned: which
+    // one answers is a setting, not the brand.
+    const model = s.model;
     let what, how;
     if (s.reachable === false) {
         what = "Ollama isn't running on this Mac.";
         how = "ollama serve";
-    } else if (s.model_installed === false) {
+    } else if (s.model_installed === false && model) {
         what = `Ollama is running, but <strong>${escapeHtml(model)}</strong> isn't installed.`;
         how = `ollama pull ${model}`;
         if (s.installed_models && s.installed_models.length) {
             what += ` You have: ${s.installed_models.map(escapeHtml).join(", ")}.`;
         }
     } else {
-        what = escapeHtml(s.detail || "The assistant isn't set up yet.");
-        how = `ollama pull ${model}`;
+        what = escapeHtml(s.detail || "Balance AI isn't set up yet.");
+        how = model ? `ollama pull ${model}` : "ollama serve";
     }
     return `<div class="chat-setup">
         <h4>Not ready yet</h4>
         <p>${what}</p>
         <code>${escapeHtml(how)}</code>
-        <p>The assistant answers from your own database using a model on this
+        <p>Balance AI answers from your own database using a model on this
            machine, so it needs one installed.</p>
         <button class="btn btn-secondary btn-sm" onclick="chatReady=null;loadChatStatus()">Check again</button>
     </div>`;

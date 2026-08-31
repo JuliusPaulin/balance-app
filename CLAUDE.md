@@ -29,7 +29,7 @@
   last value, and closing one writes a zero at the closing date rather than hiding
   it, so past months stay true. Never filter `is_archived` in the total queries.
 - `investment_import.py` — Nordnet CSV / Nordea xlsx portfolio parsers (→ holdings + Net Worth)
-- `ai_tools.py` — the six read-only tools the chat assistant may call, each a
+- `ai_tools.py` — the seven read-only tools the chat assistant may call, each a
   wrapper over an endpoint the app already serves
 - `ai_chat.py` — the agent loop: system prompt and the tool-call cycle
 - `ai_backends.py` — where the model runs. Ollama (local, the default) and
@@ -442,7 +442,7 @@ what it spent last month it passed `period=last_month` and `month=2026-08`
 together and answered for the wrong month, which is the calendar arithmetic the
 tools exist to take away from it. It also tried to call a `delete_transaction`
 tool that does not exist. Nothing was written, because the dispatcher only
-knows six functions and refuses everything else — but the model reaching for it
+knows seven functions and refuses everything else — but the model reaching for it
 is the argument for keeping the assistant read-only, not a reason to relax it.
 
 Note that a `month` argument still overrides a `period` when both are passed, on
@@ -451,7 +451,7 @@ written for a user naming a month; 2b was the first model confused enough to
 name a contradictory one, and 4b and 9b never do. It is left as it is.
 
 **The assistant does not query the database and does not do arithmetic.** It
-picks one of six read-only tools in `ai_tools.py`, each of which dispatches one
+picks one of seven read-only tools in `ai_tools.py`, each of which dispatches one
 of the app's own GET endpoints in-process — so a number it reports is a number
 the Dashboard would draw, computed by the same SQL through the same
 `_filter_clauses`. Three rules make that hold, and each exists because the
@@ -459,9 +459,9 @@ obvious alternative fails in an app about money:
 
 | Rule | Why |
 |------|-----|
-| No SQL from the model | A plausible query with the join or the sign wrong reports a false number, confidently. Picking one of six functions is a task a small local model can also do. |
+| No SQL from the model | A plausible query with the join or the sign wrong reports a false number, confidently. Picking one of seven functions is a task a small local model can also do. |
 | No arithmetic from the model | Every amount comes back twice — a raw float and a preformatted `_eur` string. The model quotes the string; a rounding it never performs is one it cannot get wrong. |
-| No calendar arithmetic from the model | "Last month" and "since summer" are where small models actually fail. Tools take a `period` name from a fixed list and `resolve_period()` turns it into explicit months, in Python, where it is tested. |
+| No calendar arithmetic from the model | "Last month" and "since summer" are where small models actually fail. Tools take a `period` name from a fixed list and `resolve_period()` turns it into explicit months, in Python, where it is tested. Month **names** go the same way: `months_by_name` in the context resolves "June" to `2026-06`, because asked what it spent in June the model tried `last_3_months`, then `last_6_months`, then `this_year`, and reported a three-month total as one month's. |
 
 **A tool has to hand back every total it will be asked for**, or the model works
 it out anyway. Asked what it earned last year, it added up twelve monthly income
@@ -511,6 +511,27 @@ not import `app.py` — which is `scripts/ask.py`, the harness the model is judg
 with. The suite never saw it, because its `client` fixture imports `app`; the
 regression test runs in a subprocess for that reason.
 
+**`analyse_month` is the odd one out**, and deliberately. The other six answer a
+question; this one is handed a month and returns the whole of it — totals
+against the month before, every category against both last month and its own
+usual month, the largest charges, what moved most, and what the subscriptions
+came to. "Tell me what stands out" is not a question with a lookup behind it,
+and a small model cannot do the reading if it has to decide what to fetch four
+times first. So the fetching is decided in Python and the model does the part it
+is good at: noticing which of it is worth saying.
+
+It is the longest result any tool returns, so it drops the raw floats the rules
+forbid the model to do arithmetic on anyway, and caps both lists.
+
+**Two comparisons, each with its direction already decided.** A category can be
+above its usual month and below last month at once, and given only the figures
+the model got it wrong: Medical at 74 € against 335 € in July came back as
+"spiked to 74 €, up from 335 €". Every row now carries `vs_last_month_direction`
+and `vs_usual_direction`, named so that neither can be attached to the wrong
+comparison. It still muddles that particular category about one run in three —
+the numbers are right and the connective prose is not, which is where a 4B model
+sits.
+
 Read-only on purpose — the app has no undo for a hand-edited row.
 
 The loop in `ai_chat.py` is hand-written and knows nothing about which model
@@ -522,8 +543,12 @@ four — small models circle more readily than large ones — and the final turn
 withdraws the tools so a stuck conversation ends in a sentence rather than a
 fifth identical lookup.
 
-**The panel.** A round button at the bottom right, "Ask" in the sidebar, or ⌘K,
-slides a column in from the right.
+**Balance AI** is what the panel is called. Which model answers is a setting,
+not a brand, so the model name appears in exactly one place: the set-up card,
+where it is the thing you have to type.
+
+**The panel.** A round button at the bottom right, "Balance AI" in the sidebar,
+or ⌘K, slides a column in from the right.
 A column and not a modal: the assistant answers about the figures on the page,
 so covering them would defeat it. Below 1024px there is no beside and it takes
 the width.
