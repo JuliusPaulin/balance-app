@@ -36,7 +36,11 @@
   default), Ollama (for development), and Anthropic (the control), behind one
   interface
 - `model_runtime.py` — the model that ships with the app: where the runtime and
-  the weights are, fetching the weights once, and running the server
+  the weights are, fetching the weights once, running the server, and which of
+  the GPU and the CPU it ended up on
+- `patches/metal-readback.patch` — the one change carried on top of llama.cpp,
+  without which every Mac on macOS 13 or older loses the GPU.
+  `scripts/fetch_runtime.sh` applies it and compiles the result
 - `scripts/ask.py` — ask the assistant from the terminal; prints which tools it
   called, which is how a prompt problem is told apart from a model problem
 
@@ -127,7 +131,7 @@ through `db`: `db.IntegrityError`, `db.DatabaseError`, `db.Json(...)`,
 
 ## Tests
 
-`python3 -m pytest tests/` — 359 tests, all green.
+`python3 -m pytest tests/` — 368 tests, all green.
 
 `conftest.py` points `SQLITE_PATH` at a throwaway file **at import time**, before
 pytest collects any test module. This matters: test modules `import config` /
@@ -614,32 +618,62 @@ passed as a whole one, `llama-server` could not load it, and the panel said
 "starting up" until somebody gave up. The size must match what was promised, and
 the file has to begin `GGUF`.
 
-**The GPU is asked for, not assumed.** The server was started with
-`--n-gpu-layers 999` and a comment claiming llama.cpp puts back what will not
-fit. It does not; it dies. A 16 GB Air stopped at `ggml-metal-context.m:361:
-GGML_ASSERT(buf_dst) failed`, which reads like running out of memory and is not:
-that line wraps an existing pointer with `newBufferWithBytesNoCopy:`, and Metal
-returns nil there when the pointer is not page-aligned or the length does not
-suit. A precondition failing inside llama.cpp's readback path, on one machine
-and not another.
+**The GPU crash, and the four explanations of it.** A 16 GB M2 Air stopped at
+`ggml-metal-context.m:361: GGML_ASSERT(buf_dst) failed`. That line wraps a
+pointer with `newBufferWithBytesNoCopy:`, which returns nil — not an error —
+when the address is not page-aligned. Three readings of it were wrong and shaped
+six releases: that the Mac had run out of memory (it had 10 GB of GPU free),
+that llama.cpp would put back what would not fit (it does not, it dies), and
+that the memory-mapped model handed out the unaligned pointer (it does not).
 
-**So the model is never memory-mapped.** That is what triggers it, and it is
-not worth having on the path at all: `newBufferWithBytesNoCopy:` returns
-nil when the pointer is not page-aligned, and a memory-mapped model hands out
-tensor pointers at arbitrary offsets into the mapping. `--load-mode none` reads
-the model into memory instead, gives back aligned pointers, and keeps the GPU.
+The pointer is llama.cpp's **logits buffer** — the destination it reads results
+back *into*, allocated by the CPU backend and aligned to 32 bytes. Nothing
+started from here reaches it, which is why every flag was tried and every one
+aborted: `-ngl 1` as surely as `-ngl 999`, every context size, every load mode,
+with and without the app's library path. What separates the machines is the OS.
+macOS 14 and later take the pointer; **12 and 13 refuse it**, so every Balance
+user on Ventura or older had a CPU-only assistant and no way to tell.
 
-This began as a fallback, with the memory map as the default — which put a crash
-between every affected Mac and a working assistant, and one of them never got
-past it. That Air ran on its CPU at **26 tokens a second against 310 on the
-GPU**: a simple question took over two minutes, and a month's analysis could not
-finish inside the request timeout at all. The same binary, handed these flags by
-hand on the same Mac, started on its GPU in seconds.
+**So the fix is in the build, not in how the server is started.**
+`patches/metal-readback.patch` guards that one call: when Metal refuses the
+pointer, drain the queue and copy the result out of the source buffer by hand.
+Buffers there are `MTLResourceStorageModeShared` and Apple silicon has one
+memory pool, so the bytes are already somewhere the CPU can read. Measured over
+a 400-token answer the slow path costs about **1%** — 32.2 tokens a second
+against 32.2 — which is the difference between this and the fallback it replaces:
+the CPU runs at **23 against 310**, where a simple question takes over two
+minutes and a month's analysis cannot finish inside the request timeout at all.
 
-So the configuration that works on every machine tested is the one to start
-with, and the crash is not on the path any more. Reading 2.7 GB rather than
-mapping it costs about twenty seconds at launch, once. The CPU stays as the last
-resort, because slow enough is the same as broken.
+macOS 14 and later never reach the guarded branch, so nothing changes for a
+current Mac. That is also what made it untestable, so
+`GGML_METAL_FORCE_READBACK=1` takes the slow path anywhere — six releases
+shipped a theory about this crash that could not be run on any machine to hand,
+and the fix should not be another one.
+
+**Which is why `scripts/fetch_runtime.sh` compiles llama.cpp instead of
+downloading it.** There is no patched release to fetch: the bug is unfixed
+upstream ([#16266](https://github.com/ggml-org/llama.cpp/issues/16266), reported
+Sept 2025, closed by a stale bot with nothing done, and the one attempted fix
+withdrawn because the maintainer has no machine old enough to reproduce on). So
+the release workflow carries a compiler now — 95 seconds cold on eight cores,
+about four minutes on a GitHub runner's three — and `vendor/llama/BUILD.txt`
+says `b10715+metal-readback` rather than `b10715`.
+Pinning to a build from before the bug is not an escape: it landed in Sept 2025
+and Qwen 3.5 support landed in Feb 2026, so no build exists that has one without
+the other.
+
+**A patch that goes missing has to fail loudly**, because nothing about losing
+it looks wrong — the server starts, the assistant answers, and every Mac below
+macOS 14 is quietly back on its processor. `model_runtime.runtime_patched()`
+reads the marker, a test asserts it, and the release workflow checks it inside
+the finished bundle. The runtime is built *before* the tests run for that
+reason.
+
+The CPU stays as the last resort, for the machine nobody has tested on yet, and
+`/api/chat/status` now says which of the two is running: `accelerator` is `gpu`
+or `cpu`, and on `cpu` the panel says so and warns that a long analysis will not
+finish. `ready` used to mean both, so a Mac twelve times slower than it should
+be looked exactly like one that was fine.
 
 **Only the GPU is negotiable.** The first version of that step-down also halved
 the context to 4 096 to save memory, and that is under the floor: a turn carries
@@ -1073,7 +1107,10 @@ GET        /api/import/bank/callback               consent return; verifies stat
 POST       /api/import/bank/fetch                  (body: {account_uid, date_from, date_to}) → stages txns
 POST       /api/import/bank/disconnect             drops the user's bank session
 
-GET        /api/chat/status                        whether the assistant is configured
+GET        /api/chat/status                        whether the assistant is
+                                                   configured, and `accelerator`
+                                                   (gpu | cpu) with the reason
+                                                   when it is the slow one
 POST       /api/chat                               (body: {messages:[{role,content}]})
 POST       /api/chat/download                      fetch the model, once. Returns at
                                                    once; watch /api/chat/status

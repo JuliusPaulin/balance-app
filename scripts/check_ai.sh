@@ -57,11 +57,11 @@ if [ -z "$LINE" ]; then
     echo "  The model server is not running."
 else
     GPU=$(printf '%s' "$ARGS" | sed -n 's/.*--n-gpu-layers \([0-9]*\).*/\1/p')
-    MMAP=$(printf '%s' "$ARGS" | grep -c -- "--load-mode none")
     echo "  running since $(printf '%s' "$LINE" | awk '{print $2,$3,$4,$5}')"
     if [ "$GPU" = "0" ]; then
-        echo "  ON THE CPU — this is the slow last resort (about 26 tokens/sec)."
-        echo "  Expect two minutes or more per question."
+        echo "  ON THE CPU — the slow last resort, about 23 tokens/sec."
+        echo "  Expect two minutes or more per question, and a question about a"
+        echo "  whole month may not finish at all."
         # The model server is a child process and only stops when the window
         # closes cleanly. Force-quit Balance and it stays resident with the port
         # still answering, so the next launch finds it, calls that ready, and
@@ -72,12 +72,36 @@ else
         echo "  over from an older version. Quit Balance, then run:"
         echo "    kill $PID"
         echo "  and open Balance again."
-    elif [ "$MMAP" = "1" ]; then
-        echo "  On the GPU, without the memory map. This is the intended fix."
     else
-        echo "  On the GPU, memory-mapped. The fastest way, and the usual one."
+        echo "  On the GPU. This is what it should say."
     fi
 fi
+
+say "Which llama.cpp is in the app"
+# The thing to check first on a Mac below macOS 14. Without the patch the server
+# aborts on its first decode inside Metal's readback path, the app falls back to
+# the CPU, and nothing on screen says why. See patches/metal-readback.patch.
+BUNDLE="/Applications/Balance.app"
+BUILD=""
+for D in "$BUNDLE/Contents/Frameworks/vendor/llama" "$BUNDLE/Contents/Resources/vendor/llama"; do
+    [ -f "$D/BUILD.txt" ] && BUILD=$(cat "$D/BUILD.txt") && break
+done
+OS=$(sw_vers -productVersion)
+if [ -z "$BUILD" ]; then
+    echo "  No BUILD.txt — this build predates the patched runtime (before 1.11)."
+else
+    echo "  $BUILD   (this Mac is on macOS $OS)"
+fi
+case "$BUILD" in
+    *metal-readback*) echo "  Carries the Metal readback patch. The GPU should work here." ;;
+    *) case "$OS" in
+           1[0-3].*)
+               echo "  NO Metal readback patch, and this Mac is below macOS 14."
+               echo "  The GPU cannot work on this build. Update Balance."
+               ;;
+           *) echo "  No Metal readback patch, but macOS $OS does not need it." ;;
+       esac ;;
+esac
 
 say "What the model server said"
 if [ -f "$M/server.log" ]; then

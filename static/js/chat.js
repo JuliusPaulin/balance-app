@@ -124,6 +124,7 @@ function renderChatLog() {
         log.innerHTML = chatReady && !chatReady.configured
             ? chatSetupHtml() : chatEmptyHtml();
         updateChatLengthNote();
+        updateChatNotice();
         return;
     }
 
@@ -131,6 +132,27 @@ function renderChatLog() {
         + (chatPending ? chatPendingHtml() : "");
     scrollChatToEnd();
     updateChatLengthNote();
+    updateChatNotice();
+}
+
+function updateChatNotice() {
+    // Which of the two ways it is running, said out loud when it is the slow
+    // one. On the CPU an answer takes about two minutes rather than fifteen
+    // seconds, and a question about a whole month runs out of time before it
+    // finishes — so without this the assistant simply looks hung, which is
+    // exactly how one Mac stayed twelve times slower than it should be through
+    // six releases.
+    const notice = document.getElementById("chat-notice");
+    if (!chatReady || chatReady.state !== "ready" || chatReady.accelerator !== "cpu") {
+        notice.hidden = true;
+        return;
+    }
+    notice.hidden = false;
+    notice.innerHTML = `
+        <strong>Balance AI is running on the processor, not the graphics chip.</strong>
+        Answers take a couple of minutes instead of a few seconds, and a
+        question about a whole month may run out of time before it finishes.
+        <span class="chat-notice-why">${escapeHtml(chatReady.accelerator_detail || "")}</span>`;
 }
 
 function chatPendingHtml() {

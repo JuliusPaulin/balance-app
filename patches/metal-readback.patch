@@ -1,0 +1,97 @@
+Read results back off the GPU on macOS 12 and 13.
+
+The bug: llama.cpp asks Metal to wrap the buffer it wants results written into,
+with `newBufferWithBytesNoCopy:`. That call wants a page-aligned address and
+gets a 32-byte-aligned one, because the buffer comes from the CPU backend.
+macOS 14 and later take it anyway. macOS 12 and 13 return nil, upstream asserts
+on it, and `llama-server` aborts on its first decode:
+
+    ggml/src/ggml-metal/ggml-metal-context.m:361: GGML_ASSERT(buf_dst) failed
+
+It is the readback path, not the model. Nothing about the flags, the context
+size, the load mode or the number of GPU layers changes it, and `-ngl 1` aborts
+exactly as `-ngl 999` does. The only thing that avoids it is keeping the model
+off the GPU altogether, which costs a factor of twelve.
+
+The fix: when Metal refuses the pointer, drain the queue and copy the result out
+of the source buffer by hand. Buffers here are MTLResourceStorageModeShared and
+Apple silicon has one memory pool, so the bytes are already somewhere the CPU
+can read. It costs the asynchronous write-back, and only on the machines that
+would otherwise die. macOS 14 and later never reach it — `buf_dst` is not nil
+there — so nothing changes for anyone who is working today.
+
+Which is also the problem with testing it, so `GGML_METAL_FORCE_READBACK=1`
+takes the slow path on any Mac. Six releases shipped a theory about this crash
+that could not be run anywhere; the fix should not be another one.
+
+Upstream: https://github.com/ggml-org/llama.cpp/issues/16266 — reported Sept
+2025, closed by a stale bot in Dec 2025 with nothing fixed. The one attempt at a
+fix (#18738) was withdrawn: the maintainer has no machine old enough to
+reproduce on and would rather find why the pointer is unaligned than guard the
+call. Until that happens this patch is ours to carry.
+
+Against: llama.cpp tag b10715.
+
+--- a/ggml/src/ggml-metal/ggml-metal-context.m
++++ b/ggml/src/ggml-metal/ggml-metal-context.m
+@@ -353,13 +353,23 @@
+ void ggml_metal_get_tensor_async(ggml_metal_t ctx, const struct ggml_tensor * tensor, void * data, size_t offset, size_t size) {
+     @autoreleasepool {
+         id<MTLDevice> device = ggml_metal_device_get_obj(ctx->dev);
+-        id<MTLBuffer> buf_dst = [device newBufferWithBytesNoCopy:data
+-                                                          length:size
+-                                                         options:MTLResourceStorageModeShared
+-                                                     deallocator:nil];
+ 
+-        GGML_ASSERT(buf_dst);
++        // Take the slow path even where the fast one would work. There is no
++        // way to make a current macOS refuse a pointer, so without this the
++        // fallback below could only ever be exercised on the machines that were
++        // already broken — which is how it came to be broken for six releases.
++        static int force_readback = -1;
++        if (force_readback < 0) {
++            const char * env = getenv("GGML_METAL_FORCE_READBACK");
++            force_readback = env != NULL && env[0] != '\0' && env[0] != '0';
++        }
+ 
++        id<MTLBuffer> buf_dst = force_readback ? nil :
++            [device newBufferWithBytesNoCopy:data
++                                      length:size
++                                     options:MTLResourceStorageModeShared
++                                 deallocator:nil];
++
+         struct ggml_metal_buffer_id bid_src = ggml_metal_get_buffer_id(tensor);
+         if (bid_src.metal == nil) {
+             GGML_ABORT("%s: failed to find buffer for tensor '%s'\n", __func__, tensor->name);
+@@ -367,6 +377,31 @@
+ 
+         bid_src.offs += offset;
+ 
++        // On macOS 12 and 13, newBufferWithBytesNoCopy: returns nil instead of
++        // wrapping the pointer: it wants a page-aligned address, and `data` is
++        // llama.cpp's logits buffer, which the CPU backend aligns to 32 bytes.
++        // macOS 14 and later accept the same pointer, which is why this goes
++        // unseen on a current Mac. Upstream asserts, so every decode on an
++        // older one kills the process.
++        //
++        // Nothing is wrong with the GPU, and the result is already in memory
++        // both sides can read: buffers here are MTLResourceStorageModeShared,
++        // and Apple silicon has one pool. So drain the queue and copy straight
++        // out of the source buffer. This gives up the asynchronous write-back,
++        // which is why it is reached only when the fast path has refused.
++        if (buf_dst == nil) {
++            ggml_metal_synchronize(ctx);
++
++            const char * src = (const char *) [(id<MTLBuffer>) bid_src.metal contents];
++            if (src == NULL) {
++                GGML_ABORT("%s: cannot read tensor '%s' back from the GPU\n", __func__, tensor->name);
++            }
++
++            memcpy(data, src + bid_src.offs, size);
++
++            return;
++        }
++
+         // queue the copy operation into the queue of the Metal context
+         // this will be queued at the end, after any currently ongoing GPU operations
+         id<MTLCommandQueue> queue = ggml_metal_device_get_queue(ctx->dev);

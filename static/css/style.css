@@ -3702,6 +3702,31 @@ body.fs-active { overflow: hidden; }
 /* A local model reads the whole conversation back every turn, so a long one
    gets slower and dearer. The server refuses past its own ceiling; this warns
    before that happens. */
+/* A standing condition rather than a message, so it sits under the header and
+   stays there: the assistant works, and it is twelve times slower than it
+   should be. No tinted background — color-mix is not safe on the WebKit the
+   affected Macs ship, and this has to be legible on exactly those. */
+.chat-notice {
+    font-size: var(--text-caption);
+    line-height: 1.45;
+    color: var(--text-secondary);
+    padding: 10px 18px;
+    margin: 0 14px 8px;
+    border: 1px solid var(--orange);
+    border-radius: 10px;
+}
+
+.chat-notice strong {
+    color: var(--orange);
+    display: block;
+}
+
+.chat-notice-why {
+    display: block;
+    margin-top: 4px;
+    color: var(--text-tertiary);
+}
+
 .chat-length-note {
     font-size: var(--text-caption);
     color: var(--text-tertiary);

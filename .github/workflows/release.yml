@@ -52,20 +52,33 @@ jobs:
           python3 -m pip install --upgrade pip
           python3 -m pip install -r requirements.txt
 
+      - name: Build the model runtime
+        # llama.cpp's server travels inside the app. It is not in git — 45 MB of
+        # compiled binaries do not belong in a repository — so it is built here,
+        # and Balance.spec expects it at vendor/llama. Without this step
+        # PyInstaller fails on a missing data source, which is the right way for
+        # it to fail: an app shipped without its runtime would tell every user
+        # that Balance AI is unavailable.
+        #
+        # This downloaded a release binary until it turned out that the release
+        # binary cannot use the GPU on macOS 12 or 13 — see
+        # patches/metal-readback.patch.
+        #
+        # Compiling costs 95 seconds on an 8-core M-series Mac, measured cold:
+        # clone, patch, configure, build, copy. This runner has 3 cores, so
+        # expect roughly four minutes. Not cached, because a stale CMake cache
+        # would be a rare and baffling way to lose a release and there is under
+        # four minutes to win.
+        #
+        # Before the tests, not after, so the one that checks the patch marker
+        # has a runtime to look at.
+        run: ./scripts/fetch_runtime.sh
+
       - name: Run the tests
         # A release that fails its own suite should never reach anyone.
         run: |
           python3 -m pip install -r requirements-dev.txt
           python3 -m pytest tests/ -q
-
-      - name: Fetch the model runtime
-        # llama.cpp's server travels inside the app. It is not in git — 56 MB of
-        # compiled binaries do not belong in a repository — so it is pulled
-        # here, and Balance.spec expects it at vendor/llama. Without this step
-        # PyInstaller fails on a missing data source, which is the right way for
-        # it to fail: an app shipped without its runtime would tell every user
-        # that Balance AI is unavailable.
-        run: ./scripts/fetch_runtime.sh
 
       - name: Build Balance.app
         run: python3 -m PyInstaller Balance.spec --noconfirm --clean
@@ -92,6 +105,16 @@ jobs:
             || { echo "No llama-server in the bundle — the AI would not run."; exit 1; }
           test -f "$app/Contents/Resources/licences/Apache-2.0.txt" \
             || { echo "The model licence is missing from the bundle."; exit 1; }
+          # And that it is the patched one. Without the patch every Mac on
+          # macOS 13 or older falls back to its CPU and answers twelve times
+          # slower, which nothing in a build log would show.
+          build=$(cat "$app/Contents/Frameworks/vendor/llama/BUILD.txt" \
+                  2>/dev/null || cat "$app/Contents/Resources/vendor/llama/BUILD.txt")
+          case "$build" in
+            *metal-readback*) echo "Runtime is $build" ;;
+            *) echo "Runtime $build has no Metal readback patch — see"
+               echo "patches/metal-readback.patch. Do not ship this."; exit 1 ;;
+          esac
           echo "Runtime and licences are in the bundle"
 
       - name: Zip it

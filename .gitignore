@@ -22,3 +22,7 @@ postgresql:/
 # Fetched by scripts/fetch_runtime.sh, not committed: 56 MB of compiled
 # binaries do not belong in a repository.
 vendor/
+
+# The llama.cpp checkout scripts/fetch_runtime.sh builds the runtime from.
+# Kept between runs so a rebuild is incremental; never committed.
+.llama-build/

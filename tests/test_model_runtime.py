@@ -481,3 +481,136 @@ def test_the_cpu_is_the_last_resort_and_only_that(models_dir):
               if "999" in model_runtime._fit_args(l)]
     assert on_gpu == [0]
     assert model_runtime._fit_args(model_runtime._FIT_LEVELS - 1)[-1] == "0"
+
+
+# ── The patch that lets an old Mac use its GPU ────────────────────────────
+#
+# `patches/metal-readback.patch` guards the one Metal call that refuses a
+# 32-byte-aligned pointer on macOS 12 and 13, and `scripts/fetch_runtime.sh`
+# compiles it in. Nothing about a runtime without it looks wrong: the server
+# starts, the assistant answers, and every Mac below macOS 14 is silently on its
+# CPU at a twelfth of the speed. So the marker is checked rather than assumed.
+
+def test_the_shipped_runtime_carries_the_metal_patch():
+    """The failure most likely to come back.
+
+    A bump of LLAMA_BUILD that dropped the patch would put every Ventura user
+    back on the processor and there would be nothing anywhere to say so — no
+    error, no crash, just a slow answer nobody could explain. The release
+    workflow builds the runtime before it runs the tests so this has something
+    to look at.
+    """
+    if not model_runtime.server_binary():
+        pytest.skip("no runtime in this checkout — scripts/fetch_runtime.sh")
+    build = model_runtime.runtime_build()
+    assert model_runtime.RUNTIME_PATCH in build, (
+        f"the runtime says {build!r}. Rebuild it with scripts/fetch_runtime.sh "
+        "— without the patch every Mac on macOS 13 or older loses its GPU.")
+
+
+def test_an_old_mac_with_an_unpatched_runtime_does_not_try_the_gpu(monkeypatch):
+    """The crash was the first thing every launch did, and it never varied.
+
+    llama.cpp aborts on its first decode there, so level 0 buys a guaranteed
+    death and five seconds. Skipping it is not the fix — the patch is — but it
+    is what an app already installed can do.
+    """
+    monkeypatch.setattr(model_runtime.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(model_runtime.platform, "mac_ver",
+                        lambda: ("13.5", ("", "", ""), "arm64"))
+    monkeypatch.setattr(model_runtime, "runtime_build", lambda: "b10715")
+    assert model_runtime._start_level() == 1
+
+
+def test_an_old_mac_with_the_patched_runtime_uses_the_gpu(monkeypatch):
+    """The whole point of compiling llama.cpp ourselves.
+
+    If this ever went the other way the patch would be built, shipped, and then
+    never reached — the app would step around the very code path it exists to
+    make safe.
+    """
+    monkeypatch.setattr(model_runtime.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(model_runtime.platform, "mac_ver",
+                        lambda: ("13.5", ("", "", ""), "arm64"))
+    monkeypatch.setattr(model_runtime, "runtime_build",
+                        lambda: f"b10715+{model_runtime.RUNTIME_PATCH}")
+    assert model_runtime._start_level() == 0
+
+
+def test_a_current_mac_uses_the_gpu_patch_or_no_patch(monkeypatch):
+    """macOS 14 and later never reach the guarded call, so it cannot matter."""
+    monkeypatch.setattr(model_runtime.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(model_runtime.platform, "mac_ver",
+                        lambda: ("14.0", ("", "", ""), "arm64"))
+    monkeypatch.setattr(model_runtime, "runtime_build", lambda: "b10715")
+    assert model_runtime._start_level() == 0
+
+
+def test_a_mac_whose_version_cannot_be_read_is_not_stepped_down(monkeypatch):
+    """Never guess a machine out of its GPU. Twelve times slower is a real
+    cost, and an unreadable version is not evidence of anything."""
+    monkeypatch.setattr(model_runtime.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(model_runtime.platform, "mac_ver",
+                        lambda: ("", ("", "", ""), ""))
+    monkeypatch.setattr(model_runtime, "runtime_build", lambda: "b10715")
+    assert model_runtime._start_level() == 0
+
+
+# ── Saying which of the two it is ─────────────────────────────────────────
+
+def test_the_state_says_when_it_is_on_the_gpu(
+        models_dir, runtime_present, monkeypatch):
+    write_model(models_dir / "model.gguf")
+    monkeypatch.setattr(model_runtime, "server_responding", lambda host=None: True)
+    monkeypatch.setattr(model_runtime, "_fit", 0)
+    state = model_runtime.runtime_state()
+    assert state["accelerator"] == "gpu"
+    assert state["accelerator_detail"] is None
+
+
+def test_the_state_says_when_it_is_on_the_cpu_and_why(
+        models_dir, runtime_present, monkeypatch):
+    """`ready` used to mean both, so a Mac taking two minutes an answer looked
+    exactly like one taking fifteen seconds. The only record was a log file
+    nobody had a reason to open."""
+    write_model(models_dir / "model.gguf")
+    monkeypatch.setattr(model_runtime, "server_responding", lambda host=None: True)
+    monkeypatch.setattr(model_runtime, "_fit", 1)
+    monkeypatch.setattr(model_runtime, "_fell_back", None)
+    monkeypatch.setattr(model_runtime.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(model_runtime.platform, "mac_ver",
+                        lambda: ("13.5", ("", "", ""), "arm64"))
+    state = model_runtime.runtime_state()
+    assert state["accelerator"] == "cpu"
+    assert "13.5" in state["accelerator_detail"]
+
+
+def test_a_gpu_that_died_says_what_it_said(
+        models_dir, runtime_present, monkeypatch):
+    """A machine nobody has seen before falls back for a reason nobody knows
+    yet, and the line it died on is the only thing that tells them apart."""
+    write_model(models_dir / "model.gguf")
+    monkeypatch.setattr(model_runtime, "server_responding", lambda host=None: True)
+    monkeypatch.setattr(model_runtime, "_fit", 1)
+    monkeypatch.setattr(model_runtime, "_fell_back",
+                        "ggml-metal-context.m:361: GGML_ASSERT(buf_dst) failed")
+    state = model_runtime.runtime_state()
+    assert state["accelerator"] == "cpu"
+    assert "GGML_ASSERT" in state["accelerator_detail"]
+
+
+def test_a_leftover_is_judged_against_the_level_this_mac_would_use(
+        models_dir, monkeypatch):
+    """The reclaim check compared against level 0 whatever this Mac runs at, so
+    on a machine that belongs on level 1 it would kill a correct server every
+    launch and start an identical one in its place."""
+    monkeypatch.setattr(model_runtime, "_fit", 1)
+    args = f"llama-server --model {config.model_file()} " + \
+        " ".join(model_runtime._fit_args(1))
+    monkeypatch.setattr(model_runtime, "server_responding", lambda host=None: True)
+    monkeypatch.setattr(model_runtime, "_server_process", lambda: (4242, args))
+    killed = []
+    monkeypatch.setattr(model_runtime.os, "kill", lambda pid, sig: killed.append(pid))
+
+    assert model_runtime.ensure_running() is True
+    assert killed == []

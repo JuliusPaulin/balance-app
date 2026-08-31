@@ -67,72 +67,133 @@ STARTUP_TIMEOUT = 180
 MIN_MACOS = (13, 3)
 
 
-def macos_too_old():
-    """True when this Mac cannot run the bundled runtime. Never guesses."""
+# Where llama.cpp stops needing our patch to read its own results back off the
+# GPU. Below this, `newBufferWithBytesNoCopy:` refuses the logits pointer — 32
+# bytes aligned, and Metal wants a page — and an unpatched server aborts on its
+# first decode. macOS 14 and later take the same pointer without complaint.
+MIN_MACOS_GPU = (14, 0)
+
+# What `scripts/fetch_runtime.sh` writes into BUILD.txt once it has applied
+# `patches/metal-readback.patch`. Read rather than assumed, because the failure
+# worth catching is a runtime bump that dropped the patch: the app would go on
+# putting the model on the GPU on an old Mac and go on crashing there.
+RUNTIME_PATCH = "metal-readback"
+
+
+def _macos_version():
+    """This Mac's version as (major, minor), or None when it cannot be read."""
     if platform.system() != "Darwin":
-        return False
+        return None
     release = platform.mac_ver()[0]
     if not release:
-        return False
+        return None
     try:
-        parts = tuple(int(n) for n in release.split(".")[:2])
+        return tuple(int(n) for n in release.split(".")[:2])
     except ValueError:
-        return False
-    return parts < MIN_MACOS
+        return None
 
 
-# How hard to lean on the GPU, from most to least. Every Mac gets the first one
-# and almost every Mac keeps it.
-#
-#   0  all layers on Metal, the configured context — fast, and what a machine
-#      with headroom should do
-#   1  the same, half the context — the KV cache is the part that grows with it
-#   2  nothing on the GPU at all — slower, and it runs
-#
-# This was `--n-gpu-layers 999` and nothing else, with a comment claiming
-# llama.cpp "quietly puts back what will not fit". It does not — it dies.
-#
-# A 16 GB Air stopped at `ggml-metal-context.m:361: GGML_ASSERT(buf_dst)
-# failed`, which is not the shortage of memory it looks like. That line wraps an
-# existing pointer with `newBufferWithBytesNoCopy:`, and Metal returns nil there
-# — not an error — when the pointer is not page-aligned or the length does not
-# suit. It is a precondition failing inside llama.cpp's readback path on one
-# machine and not another, and no argument from here reliably avoids it.
-#
-# What can be done is refuse to let it be fatal. The last level keeps the model
-# off the GPU altogether, which leaves that code path unused: slower, and it
-# answers. A machine that needs it gets it once and keeps it for the session.
+def macos_too_old():
+    """True when this Mac cannot run the bundled runtime. Never guesses."""
+    version = _macos_version()
+    return version is not None and version < MIN_MACOS
+
+
+def runtime_build():
+    """What the bundled runtime says it is — `b10715+metal-readback`, or ""."""
+    try:
+        with open(os.path.join(_bundle_root(), "vendor", "llama",
+                               "BUILD.txt")) as handle:
+            return handle.read().strip()
+    except OSError:
+        return ""
+
+
+def runtime_patched():
+    """Whether this build's llama.cpp can read off the GPU on an old Mac."""
+    return RUNTIME_PATCH in runtime_build()
+
+
 # The context is not one of the things that may be given up. A turn carries the
 # system prompt, the tool schemas and a tool result — about 5 100 tokens at the
-# smallest, and past 10 000 for a whole month read at once. The first version of
-# this step-down halved it to 4 096 to save memory, which is under the floor:
-# the server started, took a long time, and answered nothing at all. It traded a
-# crash for silence, which is worse, because a crash says something.
+# smallest, and past 10 000 for a whole month read at once. An early step-down
+# halved it to 4 096 to save memory, which is under the floor: the server
+# started, took a long time, and answered nothing at all. It traded a crash for
+# silence, which is worse, because a crash says something.
 MIN_CTX = 8192
 
-# Two ways to run, and the memory map is not one of them.
+# Two ways to run:
 #
-#   0  the GPU, model read into memory
-#   1  the CPU, same — the last resort, and a poor one
+#   0  the GPU
+#   1  the CPU — the last resort, and a poor one, at 23 tokens a second against
+#      310. Slow enough is the same as broken: a simple question takes over two
+#      minutes and a month's analysis cannot finish inside the request timeout.
 #
-# Memory-mapping the model is what Metal objects to:
-# `newBufferWithBytesNoCopy:` returns nil — not an error — when the pointer is
-# not page-aligned, and a mapped model hands out tensor pointers at arbitrary
-# offsets into the mapping. `GGML_ASSERT(buf_dst) failed`, and the process dies.
+# Only the GPU is negotiable, and now it should almost never have to be.
 #
-# It was the default here, with reading the model in as the fallback. That put a
-# crash between every affected Mac and a working assistant, and one of them
-# never got past it: an M2 Air on Ventura ran the assistant on its CPU at 26
-# tokens a second, while the very same binary, given these flags by hand,
-# started on its GPU in seconds. So the configuration that works on every
-# machine tested is the one to start with, and the crash is not on the path at
-# all. Reading 2.7 GB rather than mapping it costs about two seconds at launch,
-# once, and is measured against answers that took over two minutes.
+# The crash that made this a ladder is `ggml-metal-context.m:361:
+# GGML_ASSERT(buf_dst) failed`, and three explanations of it were wrong before
+# the fourth was right. It is not memory: that line wraps a pointer with
+# `newBufferWithBytesNoCopy:`, and Metal returns nil — not an error — when the
+# address is not page-aligned. It is not the memory-mapped model either, which
+# is what the previous version of this comment claimed and what six releases
+# were built on. The pointer is llama.cpp's *logits* buffer, the destination it
+# reads results back into, allocated by the CPU backend and aligned to 32 bytes.
+# No flag reaches it, which is why every one of them was tried and every one of
+# them aborted: -ngl 1 as surely as -ngl 999, every context size, every load
+# mode. What separates the machines is the OS. macOS 14 and later take the
+# pointer; 12 and 13 refuse it.
+#
+# So it was never something to configure around, and the fix is in the build:
+# `patches/metal-readback.patch` guards that one call, and
+# `scripts/fetch_runtime.sh` compiles it in. With a patched runtime every Mac
+# starts at level 0 and stays there. Level 1 remains for the machine nobody has
+# tested on yet.
 _FIT_LEVELS = 2
-_fit = 0
+# Resolved the first time a server is started, then stepped down if it dies.
+# Not a constant 0 any more: on a Mac the runtime cannot use the GPU on, level 0
+# is a crash with a known cause, and spending one on every launch teaches
+# nobody anything.
+_fit = None
+# What the GPU attempt said before it was given up on. The fallback used to be
+# silent to everything but the log file, so the panel could report a working
+# assistant and never mention that it was twelve times slower than it should be.
+_fell_back = None
+
+
+def _start_level():
+    """The first level worth trying on this Mac.
+
+    Level 0 puts the model on the GPU, and an unpatched llama.cpp cannot read
+    the results back off it below macOS 14 — see `patches/metal-readback.patch`.
+    A patched runtime guards that call and level 0 works, which is the whole
+    reason the runtime is built rather than downloaded. So this steps down only
+    when the runtime in the bundle is not the patched one, and the crash stops
+    being part of every launch.
+    """
+    version = _macos_version()
+    if version is not None and version < MIN_MACOS_GPU and not runtime_patched():
+        return 1
+    return 0
+
+
+def _level():
+    """The level to run at now, decided once and then only ever stepped down."""
+    global _fit
+    if _fit is None:
+        _fit = _start_level()
+    return _fit
 
 
 def _fit_args(level):
+    """The flags for a level. The context is the same at every one of them.
+
+    `--load-mode none` does turn the memory map off, and that is all it does
+    here: it was added believing it avoided the Metal crash, and it does not.
+    Kept because every measurement in this app was taken with it and reading
+    the model in costs about twenty seconds of a launch, once — but it is no
+    longer holding anything up, and dropping it is worth measuring.
+    """
     ctx = max(config.OLLAMA_NUM_CTX, MIN_CTX)
     return ["--ctx-size", str(ctx), "--load-mode", "none",
             "--n-gpu-layers", "999" if level <= 0 else "0"]
@@ -383,7 +444,7 @@ def _reclaim():
     if not found:
         return
     pid, args = found
-    wanted = " ".join(_fit_args(0))
+    wanted = " ".join(_fit_args(_level()))
     if wanted in args:
         _log(f"kept a server already running (pid {pid}): {args}")
         return
@@ -411,7 +472,7 @@ def ensure_running():
     Returns True once it responds. Safe to call on every request: the common
     case is one HTTP call to /health against a process already up.
     """
-    global _server, _fit
+    global _server, _fit, _fell_back
     if server_responding():
         # Answering, but not necessarily started by us and not necessarily
         # started the way this version starts one.
@@ -435,14 +496,26 @@ def ensure_running():
             # the crash that caused the fallback — which is the half worth
             # having.
             log = open(os.path.join(config.model_dir(), "server.log"), "a")
-            log.write(f"\n=== starting: {' '.join(_fit_args(_fit))} ===\n")
+            # Which llama.cpp, and why this level. On a Mac that skipped the
+            # GPU on purpose the log otherwise shows a CPU start with nothing
+            # to say what chose it, which is the opacity this whole thing is
+            # about: the only record of a machine running twelve times slower
+            # than it should was a file with no reason in it.
+            log.write(f"\n=== starting: {' '.join(_fit_args(_level()))} ===\n")
+            log.write(f"=== runtime {runtime_build() or 'unknown'}, "
+                      f"macOS {platform.mac_ver()[0] or 'unknown'}, "
+                      f"level {_level()} of {_FIT_LEVELS - 1} ===\n")
+            if _level() > 0 and not _fell_back:
+                log.write("=== the GPU was not tried: this macOS needs the "
+                          "metal-readback patch and this runtime has not got "
+                          "it ===\n")
             log.flush()
             _server = subprocess.Popen(
                 [binary,
                  "--model", config.model_file(),
                  "--host", "127.0.0.1",
                  "--port", str(config.LLAMACPP_PORT),
-                 *_fit_args(_fit)],
+                 *_fit_args(_level())],
                 stdout=log, stderr=subprocess.STDOUT,
                 env={**os.environ,
                      "DYLD_LIBRARY_PATH": os.path.dirname(binary)})
@@ -453,8 +526,11 @@ def ensure_running():
             return True
         if _server.poll() is not None:
             # It died. If there is a less demanding way to run, take it and say
-            # so in the log beside the crash that prompted it.
-            if _fit < _FIT_LEVELS - 1:
+            # so in the log beside the crash that prompted it — and keep the
+            # line, because the panel has to be able to say the assistant is
+            # running on the CPU and what put it there.
+            if _level() < _FIT_LEVELS - 1:
+                _fell_back = server_error()
                 _fit += 1
                 return ensure_running()
             return False
@@ -594,10 +670,41 @@ def runtime_state(host=None, model_path=None):
                   progress=progress)
 
 
+def _accelerator():
+    """Where the model runs, and what put it there. Returns (what, why).
+
+    Invisible until now, and it is the difference between an answer in fifteen
+    seconds and one in two minutes. `runtime_state` said `ready` either way, so
+    a Mac quietly down on its CPU looked exactly like a Mac that was fine —
+    which is how one stayed that way through six releases, with the only
+    evidence in a log file nobody had reason to open.
+    """
+    if _level() <= 0:
+        return "gpu", None
+    # The cause only. That it is on the CPU, and what that costs, is the
+    # panel's to say — repeating it here put the same sentence on screen twice.
+    if _fell_back:
+        # The GPU was tried on this machine and died. Carry the line, because
+        # it is the one thing that says whether this is the known crash or
+        # something nobody has seen yet.
+        return "cpu", f"Starting it on the graphics chip failed. It said: {_fell_back}"
+    return "cpu", (f"This Mac is on macOS {platform.mac_ver()[0]}, and the model "
+                   "in this build of Balance cannot use a graphics chip below "
+                   f"macOS {MIN_MACOS_GPU[0]}.{MIN_MACOS_GPU[1]}. A newer "
+                   "Balance carries one that can.")
+
+
 def _state(state, path, configured=False, detail=None, progress=None):
+    accelerator, why = _accelerator()
     return {
         "backend": "bundled",
         "state": state,
+        # Which of the two ways it is running. The panel says so out loud when
+        # it is the slow one: an assistant that takes two minutes and does not
+        # explain itself reads as one that has hung.
+        "accelerator": accelerator,
+        "accelerator_detail": why,
+        "runtime_build": runtime_build(),
         "configured": configured,
         # The two the panel used to switch on, kept so the old set-up card and
         # every existing test still read a truthful answer out of this.

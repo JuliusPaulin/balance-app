@@ -1,3 +1,11 @@
+> **Superseded — kept for the record.** This was written before anyone had run
+> the assistant on the Mac with the problem. Two of its claims turned out to be
+> wrong: the app was *not* adopting a leftover CPU-bound server (it started its
+> own and chose `--n-gpu-layers 0` itself), and the bundled binary does *not*
+> start on the GPU when run by hand. The cause is a llama.cpp bug that no flag
+> reaches — `patches/metal-readback.patch` fixes it, and CLAUDE.md's "The GPU
+> crash, and the four explanations of it" tells the whole story.
+
 # Handover: Balance AI will not use the GPU on this Mac
 
 You are on **Sofie's MacBook Air**, not the machine Balance is developed on.
