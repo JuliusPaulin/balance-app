@@ -675,13 +675,30 @@ or `cpu`, and on `cpu` the panel says so and warns that a long analysis will not
 finish. `ready` used to mean both, so a Mac twelve times slower than it should
 be looked exactly like one that was fine.
 
-**Only the GPU is negotiable.** The first version of that step-down also halved
-the context to 4 096 to save memory, and that is under the floor: a turn carries
-the system prompt, the tool schemas and a tool result — about 5 100 tokens at
-the smallest, past 10 000 for a whole month read at once. The server started,
-took a long time and answered nothing at all, which is worse than the crash it
-replaced, because a crash says something. `MIN_CTX` is asserted across every
-fallback level.
+**Only the GPU is negotiable, and the context was too small anyway.** Fixing
+the GPU on Sofie's Mac left the assistant still answering nothing after ninety
+seconds, and that was a second fault wearing the same face. Measured against the
+real database, **every one of the four questions the panel suggests on its own
+empty screen** overflowed the 8 192-token window:
+
+| Question | Tokens in |
+|---|---|
+| what did I spend on groceries last month? | 8 612 |
+| what are my subscriptions costing me? | 9 261 |
+| make a trend analysis of my latest month | 10 392 |
+| how did last month compare to my usual? | 10 406 |
+
+These are single questions, not long conversations — a turn carries the system
+prompt, the tool schemas and one tool result. Over the line llama.cpp logs
+`Context size has been exceeded`, the decode fails, and the panel gets an empty
+reply, which reads as a hang. `MIN_CTX` is now **16 384**: about 57% headroom
+over the worst of them, and roughly 0.7 GB of KV cache — 3.5 GB resident against
+the model's 2.7 GB, which a 16 GB Mac has. It is asserted across every fallback
+level, and a test holds it above the measured worst turn.
+
+An early step-down once halved the context to 4 096 to save memory. The server
+started, took a long time and answered nothing at all, which is worse than the
+crash it replaced, because a crash says something.
 
 **And the server the last session left behind is not adopted blindly.** The
 model server is a child process, stopped only when the window closes cleanly —

@@ -183,7 +183,7 @@ Defaulted to a ~9B at 4-bit, which is about 6 GB resident — the comfortable
 size on a 16 GB Mac once the app and its webview are already running. On 8 GB,
 set this to a 4B."""
 
-OLLAMA_NUM_CTX = int(os.environ.get("OLLAMA_NUM_CTX", 8192))
+OLLAMA_NUM_CTX = int(os.environ.get("OLLAMA_NUM_CTX", 16384))
 """Context window for the local model.
 
 8k is ample here and deliberately not more: the prompt, the tool schemas and one

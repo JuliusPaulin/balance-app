@@ -614,3 +614,21 @@ def test_a_leftover_is_judged_against_the_level_this_mac_would_use(
 
     assert model_runtime.ensure_running() is True
     assert killed == []
+
+
+def test_the_context_holds_the_questions_the_panel_itself_asks():
+    """8 192 did not, and that is what "no answer" on Sofie's Mac turned out
+    to be once the GPU was fixed.
+
+    Measured against the real database, every one of the four questions the
+    panel offers on its empty screen: groceries last month 8 612 tokens,
+    subscriptions 9 261, trend analysis 10 392, last month against usual
+    10 406. Over the line llama.cpp logs "Context size has been exceeded", the
+    decode fails, and the panel shows an empty reply after ninety seconds.
+
+    These are ordinary single questions, not long conversations, so the floor
+    has to clear the worst of them with room to spare.
+    """
+    WORST_MEASURED_TURN = 10_406
+    assert model_runtime.MIN_CTX > WORST_MEASURED_TURN * 1.25, (
+        "the context no longer clears the app's own suggested questions")

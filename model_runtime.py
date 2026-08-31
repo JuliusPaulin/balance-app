@@ -114,13 +114,27 @@ def runtime_patched():
     return RUNTIME_PATCH in runtime_build()
 
 
-# The context is not one of the things that may be given up. A turn carries the
-# system prompt, the tool schemas and a tool result — about 5 100 tokens at the
-# smallest, and past 10 000 for a whole month read at once. An early step-down
-# halved it to 4 096 to save memory, which is under the floor: the server
-# started, took a long time, and answered nothing at all. It traded a crash for
-# silence, which is worse, because a crash says something.
-MIN_CTX = 8192
+# The context is not one of the things that may be given up, and 8 192 was not
+# enough of it. Measured against the real database, every one of the four
+# questions the panel itself suggests overflows that:
+#
+#   groceries last month      8 612
+#   subscriptions             9 261
+#   trend analysis           10 392
+#   last month vs usual      10 406
+#
+# A turn carries the system prompt, the tool schemas and a tool result, so this
+# is the ordinary size of a question, not a long conversation. Over the line the
+# server logs "Context size has been exceeded", the decode fails, and the panel
+# gets an empty reply after ninety seconds — which reads as a hang and was
+# blamed on the GPU for six releases while the GPU was only half of it.
+#
+# 16 384 leaves about 57% headroom over the worst measured turn and costs around
+# 0.7 GB of KV cache — 3.5 GB resident against the model's 2.7 GB, which a 16 GB
+# Mac has. An early step-down once halved the context to 4 096 to save memory:
+# the server started, took a long time, and answered nothing at all. It traded a
+# crash for silence, which is worse, because a crash says something.
+MIN_CTX = 16384
 
 # Two ways to run:
 #
