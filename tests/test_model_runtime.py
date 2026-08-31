@@ -357,3 +357,25 @@ def test_the_first_attempt_asks_for_the_whole_gpu(models_dir):
     assert model_runtime._fit_args(0) == ["--ctx-size",
                                           str(config.OLLAMA_NUM_CTX),
                                           "--n-gpu-layers", "999"]
+
+
+def test_no_fallback_ever_starves_the_context(models_dir):
+    """The context is not one of the things that may be given up.
+
+    A turn carries the system prompt, the tool schemas and a tool result —
+    about 5 100 tokens at the smallest, and past 10 000 for a whole month read
+    at once. The first step-down halved it to 4 096 to save memory, which is
+    under the floor: the server started, took a long time, and answered nothing
+    at all. It traded a crash for silence, which is worse.
+    """
+    for level in range(model_runtime._FIT_LEVELS):
+        args = model_runtime._fit_args(level)
+        ctx = int(args[args.index("--ctx-size") + 1])
+        assert ctx >= model_runtime.MIN_CTX, f"level {level} would starve the model"
+
+
+def test_only_the_gpu_is_negotiable(models_dir):
+    """Every level runs the same size of conversation; they differ in where."""
+    sizes = {tuple(model_runtime._fit_args(l)[:2])
+             for l in range(model_runtime._FIT_LEVELS)}
+    assert len(sizes) == 1

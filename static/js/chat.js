@@ -435,7 +435,12 @@ async function sendChat(event) {
         const result = await streamChat(payload);
         chatMessages.push({
             role: "assistant",
-            content: result.reply || "The model replied with nothing.",
+            // An empty answer is not an answer, and it has a usual cause: a
+            // conversation long enough to crowd out the room to reply in.
+            content: result.reply
+                || "Balance AI had nothing to say. If this conversation has been "
+                 + "going a while, start a new one — a long one leaves less room "
+                 + "for the answer.",
             toolCalls: result.tool_calls || [],
         });
     } catch (e) {

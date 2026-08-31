@@ -98,17 +98,23 @@ def macos_too_old():
 # What can be done is refuse to let it be fatal. The last level keeps the model
 # off the GPU altogether, which leaves that code path unused: slower, and it
 # answers. A machine that needs it gets it once and keeps it for the session.
-_FIT_LEVELS = 3
+# The context is not one of the things that may be given up. A turn carries the
+# system prompt, the tool schemas and a tool result — about 5 100 tokens at the
+# smallest, and past 10 000 for a whole month read at once. The first version of
+# this step-down halved it to 4 096 to save memory, which is under the floor:
+# the server started, took a long time, and answered nothing at all. It traded a
+# crash for silence, which is worse, because a crash says something.
+MIN_CTX = 8192
+
+_FIT_LEVELS = 2
 _fit = 0
 
 
 def _fit_args(level):
-    ctx = config.OLLAMA_NUM_CTX
-    if level <= 0:
-        return ["--ctx-size", str(ctx), "--n-gpu-layers", "999"]
-    if level == 1:
-        return ["--ctx-size", str(max(2048, ctx // 2)), "--n-gpu-layers", "999"]
-    return ["--ctx-size", str(max(2048, ctx // 2)), "--n-gpu-layers", "0"]
+    ctx = max(config.OLLAMA_NUM_CTX, MIN_CTX)
+    # Only the GPU is negotiable.
+    return ["--ctx-size", str(ctx),
+            "--n-gpu-layers", "999" if level <= 0 else "0"]
 
 
 def _bundle_root():

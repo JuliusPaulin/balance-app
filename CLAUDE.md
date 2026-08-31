@@ -624,9 +624,17 @@ suit. A precondition failing inside llama.cpp's readback path, on one machine
 and not another.
 
 Nothing passed from here avoids that reliably, so the point is to stop it being
-fatal: a start that dies is retried with a smaller context, and then with the
-model off the GPU altogether, which leaves the failing path unused. Slower, and
-it answers. A machine that needs it settles there for the session.
+fatal: a start that dies is retried with the model off the GPU altogether, which
+leaves the failing path unused. Slower, and it answers. A machine that needs it
+settles there for the session.
+
+**Only the GPU is negotiable.** The first version of that step-down also halved
+the context to 4 096 to save memory, and that is under the floor: a turn carries
+the system prompt, the tool schemas and a tool result — about 5 100 tokens at
+the smallest, past 10 000 for a whole month read at once. The server started,
+took a long time and answered nothing at all, which is worse than the crash it
+replaced, because a crash says something. `MIN_CTX` is asserted across every
+fallback level.
 
 **Balance runs on more Macs than the assistant does.** The app needs Apple
 silicon, which is macOS 11 and up; the bundled llama.cpp reports `minos 13.3`.
