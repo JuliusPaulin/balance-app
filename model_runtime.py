@@ -177,11 +177,27 @@ def _check_room(needed):
 # ── Running the server ────────────────────────────────────────────────────
 
 def server_responding(host=None):
+    """Whether *our* model server is answering — not merely that something is.
+
+    This asked `/health`, which says yes to anything listening on the port. It
+    said yes to a server left running from an earlier session, so the panel
+    reported itself ready, offered a chat box, and had no model on disk at all:
+    `state: ready` sitting next to `model_installed: false` in the same reply.
+    A port is not an identity. `/props` names the file the server has open, and
+    that is the thing worth agreeing on — it also means another program on 5051
+    cannot be mistaken for this one.
+    """
     try:
-        response = requests.get(f"{(host or config.LLAMACPP_HOST)}/health",
+        response = requests.get(f"{(host or config.LLAMACPP_HOST)}/props",
                                 timeout=2)
-        return response.ok
-    except requests.RequestException:
+        if not response.ok:
+            return False
+        loaded = (response.json() or {}).get("model_path") or ""
+    except (requests.RequestException, ValueError):
+        return False
+    try:
+        return os.path.realpath(loaded) == os.path.realpath(config.model_file())
+    except OSError:
         return False
 
 
@@ -252,7 +268,10 @@ def runtime_state(host=None, model_path=None):
     path = model_path or config.model_file()
     progress = download_state()
 
-    if server_responding(host):
+    # Both, and in this order. A server can outlive the file it loaded — the
+    # process keeps the handle open after the file is moved or deleted — so
+    # "something is answering" is not enough to call this ready.
+    if os.path.isfile(path) and server_responding(host):
         return _state("ready", path, configured=True,
                       detail=None, progress=progress)
     if not server_binary():

@@ -40,7 +40,10 @@ def runtime_present(monkeypatch, tmp_path):
 
 # ── Which "not ready" is it ───────────────────────────────────────────────
 
-def test_a_running_server_is_ready(models_dir, runtime_present, monkeypatch):
+def test_a_running_server_with_its_model_on_disk_is_ready(
+        models_dir, runtime_present, monkeypatch):
+    """Both, and that is the point — see the outliving-its-file test below."""
+    (models_dir / "model.gguf").write_bytes(b"GGUF" + b"\0" * 100)
     monkeypatch.setattr(model_runtime, "server_responding", lambda host=None: True)
     state = model_runtime.runtime_state()
     assert state["state"] == "ready"
@@ -121,3 +124,43 @@ def test_an_already_answering_server_is_not_started_twice(models_dir, monkeypatc
                         lambda *a, **k: started.append(a) or None)
     assert model_runtime.ensure_running() is True
     assert started == []
+
+
+# ── Whose server is that ──────────────────────────────────────────────────
+
+def test_a_server_serving_a_different_model_is_not_ours(models_dir, monkeypatch):
+    """A port is not an identity.
+
+    This checked `/health`, which says yes to anything listening. A server left
+    over from an earlier session answered it, so the panel called itself ready
+    and offered a chat box with no model on disk at all — `state: ready` beside
+    `model_installed: false` in the same reply.
+    """
+    class Reply:
+        ok = True
+        @staticmethod
+        def json():
+            return {"model_path": "/somewhere/else/other-model.gguf"}
+    monkeypatch.setattr(model_runtime.requests, "get", lambda *a, **k: Reply())
+    assert model_runtime.server_responding() is False
+
+
+def test_a_server_serving_our_model_is_ours(models_dir, monkeypatch):
+    class Reply:
+        ok = True
+        @staticmethod
+        def json():
+            return {"model_path": config.model_file()}
+    monkeypatch.setattr(model_runtime.requests, "get", lambda *a, **k: Reply())
+    assert model_runtime.server_responding() is True
+
+
+def test_a_server_outliving_its_model_file_is_not_ready(
+        models_dir, runtime_present, monkeypatch):
+    """A process keeps its handle after the file is moved, so it goes on
+    answering for a model that is no longer there."""
+    monkeypatch.setattr(model_runtime, "server_responding", lambda host=None: True)
+    # Nothing on disk: the file was moved out from under the running server.
+    state = model_runtime.runtime_state()
+    assert state["state"] != "ready"
+    assert state["configured"] is False
