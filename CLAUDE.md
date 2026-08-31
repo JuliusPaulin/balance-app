@@ -639,10 +639,27 @@ user on Ventura or older had a CPU-only assistant and no way to tell.
 pointer, drain the queue and copy the result out of the source buffer by hand.
 Buffers there are `MTLResourceStorageModeShared` and Apple silicon has one
 memory pool, so the bytes are already somewhere the CPU can read. Measured over
-a 400-token answer the slow path costs about **1%** — 32.2 tokens a second
-against 32.2 — which is the difference between this and the fallback it replaces:
-the CPU runs at **23 against 310**, where a simple question takes over two
-minutes and a month's analysis cannot finish inside the request timeout at all.
+a 400-token answer the guarded path costs about **1%** — 32.2 tokens a second
+against 32.2.
+
+**What the GPU is actually worth, measured.** One M1 Pro, same model, same
+context, same question, the two rates llama.cpp reports separately:
+
+| | reading the question | writing the answer |
+|---|---|---|
+| `--n-gpu-layers 999` | 132 tok/s | 31.7 tok/s |
+| `--n-gpu-layers 0` | 60 tok/s | 25.3 tok/s |
+
+**2.2x and 1.25x.** This file used to say "26 tokens a second against 310 on the
+GPU", and a factor of twelve was repeated from it into six other places. It was
+never true: 310 is a *reading* rate and 26 a *writing* rate, and the two were
+put either side of one comparison. Reading is what dominates — a turn is roughly
+8 600 tokens in and 60 out — so the GPU is worth having and worth about **twice**
+the speed, not twelve times.
+
+Rates are per machine and not transferable. An M2 Air measured 100 tok/s reading
+and 6.5 writing on the same build, which is further below the M1 Pro than memory
+bandwidth alone accounts for.
 
 macOS 14 and later never reach the guarded branch, so nothing changes for a
 current Mac. That is also what made it untestable, so
@@ -672,8 +689,8 @@ reason.
 The CPU stays as the last resort, for the machine nobody has tested on yet, and
 `/api/chat/status` now says which of the two is running: `accelerator` is `gpu`
 or `cpu`, and on `cpu` the panel says so and warns that a long analysis will not
-finish. `ready` used to mean both, so a Mac twelve times slower than it should
-be looked exactly like one that was fine.
+finish. `ready` used to mean both, so a Mac running at half the speed it should
+looked exactly like one that was fine.
 
 **Only the GPU is negotiable, and the context was too small anyway.** Fixing
 the GPU on Sofie's Mac left the assistant still answering nothing after ninety

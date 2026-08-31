@@ -139,9 +139,13 @@ MIN_CTX = 16384
 # Two ways to run:
 #
 #   0  the GPU
-#   1  the CPU — the last resort, and a poor one, at 23 tokens a second against
-#      310. Slow enough is the same as broken: a simple question takes over two
-#      minutes and a month's analysis cannot finish inside the request timeout.
+#   1  the CPU — the last resort. Measured on one M1 Pro, same model and
+#      context: the GPU reads a question at 132 tokens a second and writes an
+#      answer at 31.7; the CPU manages 60 and 25.3. So 2.2x and 1.25x, and
+#      because a turn is about 8 600 tokens in and 60 out, reading is what
+#      decides it. Worth roughly twice the speed — not the twelve this comment
+#      claimed for six releases, which came of putting a reading rate and a
+#      writing rate either side of one comparison.
 #
 # Only the GPU is negotiable, and now it should almost never have to be.
 #
@@ -171,7 +175,7 @@ _FIT_LEVELS = 2
 _fit = None
 # What the GPU attempt said before it was given up on. The fallback used to be
 # silent to everything but the log file, so the panel could report a working
-# assistant and never mention that it was twelve times slower than it should be.
+# assistant and never mention that it was running at half the speed it should.
 _fell_back = None
 
 
@@ -513,8 +517,8 @@ def ensure_running():
             # Which llama.cpp, and why this level. On a Mac that skipped the
             # GPU on purpose the log otherwise shows a CPU start with nothing
             # to say what chose it, which is the opacity this whole thing is
-            # about: the only record of a machine running twelve times slower
-            # than it should was a file with no reason in it.
+            # about: the only record of a machine running at half the speed
+            # it should was a file with no reason in it.
             log.write(f"\n=== starting: {' '.join(_fit_args(_level()))} ===\n")
             log.write(f"=== runtime {runtime_build() or 'unknown'}, "
                       f"macOS {platform.mac_ver()[0] or 'unknown'}, "

@@ -137,11 +137,12 @@ function renderChatLog() {
 
 function updateChatNotice() {
     // Which of the two ways it is running, said out loud when it is the slow
-    // one. On the CPU an answer takes about two minutes rather than fifteen
-    // seconds, and a question about a whole month runs out of time before it
-    // finishes — so without this the assistant simply looks hung, which is
-    // exactly how one Mac stayed twelve times slower than it should be through
-    // six releases.
+    // one. Measured on one M1 Pro, the CPU reads a question at 60 tokens a
+    // second against the GPU's 132 and writes an answer at 25.3 against 31.7 —
+    // so roughly twice the wait, and long enough that a question about a whole
+    // month can run out of time. Without this the assistant looks hung, which is
+    // exactly how one Mac stayed at half the speed it should be through six
+    // releases.
     const notice = document.getElementById("chat-notice");
     if (!chatReady || chatReady.state !== "ready" || chatReady.accelerator !== "cpu") {
         notice.hidden = true;
@@ -150,8 +151,8 @@ function updateChatNotice() {
     notice.hidden = false;
     notice.innerHTML = `
         <strong>Balance AI is running on the processor, not the graphics chip.</strong>
-        Answers take a couple of minutes instead of a few seconds, and a
-        question about a whole month may run out of time before it finishes.
+        Answers take about twice as long, and a question about a whole month
+        may run out of time before it finishes.
         <span class="chat-notice-why">${escapeHtml(chatReady.accelerator_detail || "")}</span>`;
 }
 

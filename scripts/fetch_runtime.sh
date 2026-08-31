@@ -18,8 +18,9 @@
 #
 # So there is a compiler in the release path now, which costs 95 seconds cold on
 # eight cores and about four minutes on a GitHub runner's three. That is the
-# whole price of the fix, and it buys back a factor of twelve on the machines
-# that were falling back to their CPU. The patch is a file rather than a fork,
+# whole price of the fix, and it buys back about twice the speed on the machines
+# that were falling back to their CPU — 2.2x on reading a question and 1.25x on
+# writing an answer, measured on one M1 Pro, with reading the half that counts. The patch is a file rather than a fork,
 # because a file rebases onto the next pinned tag and a fork has to be merged.
 #
 # Building only the `llama-server` target saves four seconds of the ninety-five

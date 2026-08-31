@@ -59,9 +59,10 @@ else
     GPU=$(printf '%s' "$ARGS" | sed -n 's/.*--n-gpu-layers \([0-9]*\).*/\1/p')
     echo "  running since $(printf '%s' "$LINE" | awk '{print $2,$3,$4,$5}')"
     if [ "$GPU" = "0" ]; then
-        echo "  ON THE CPU — the slow last resort, about 23 tokens/sec."
-        echo "  Expect two minutes or more per question, and a question about a"
-        echo "  whole month may not finish at all."
+        echo "  ON THE CPU — the last resort. Roughly twice the wait: on one"
+        echo "  M1 Pro the CPU read a question at 60 tokens/sec against the"
+        echo "  GPU's 132, and wrote an answer at 25.3 against 31.7. A question"
+        echo "  about a whole month may not finish at all."
         # The model server is a child process and only stops when the window
         # closes cleanly. Force-quit Balance and it stays resident with the port
         # still answering, so the next launch finds it, calls that ready, and
