@@ -61,6 +61,36 @@ circle: everything imports `core`; `csv_import` takes the rule rebuilder from
 Blueprint endpoint names are now prefixed (`categories.get_categories`), which
 costs nothing here because the app has never used `url_for`.
 
+**The `static/js/` files.** `app.js` held the whole frontend until it reached
+5,300 lines — the same size problem `app.py` had, one layer up. It is now one
+area per file, loaded in order by `index.html`.
+
+| File | Covers |
+|------|--------|
+| `core.js` | the plumbing every area shares: `api()`, the CSRF fetch wrapper, the loading overlay, `toast()`, `confirmDialog()`, navigation, theme, chart theming, the category palette, `fmt()`, card fullscreen |
+| `categories.js` | the Categories tab |
+| `merchant-rules.js` | the store-name patterns |
+| `transactions.js` | the list, the filter rail, the facet counts |
+| `import.js` | CSV + bank import, the review ledger, the category picker, bulk select, split, import history |
+| `period.js` | the horizon buttons, the month picker, the floating pill |
+| `dashboard.js` | the Dashboard cards, the breakdowns and their baselines, the summary table, the heatmap |
+| `reports.js` | the annual report |
+| `net-worth.js` | accounts, balances, holdings, the investment import |
+| `trends.js` | the Trends page and its drilldowns |
+| `subscriptions.js` | recurring charges |
+| `settings.js` | quit, retrain the rules, the guide |
+| `chat.js` | Balance AI: the panel, the event stream, the working under each answer |
+| `main.js` | app state and start-up — loaded last, `init()` is the final line |
+
+**They are plain scripts sharing one global scope, not ES modules, and that is
+deliberate:** `index.html` wires ~95 inline `onclick=` handlers straight to these
+function names, so every one of them has to stay global. **Load order in
+`index.html` is part of the contract** — `core.js` first, `main.js` last, and the
+handful of listeners registered at load time (the CSRF wrapper, the nav buttons,
+the drop zone, two outside-click closers) run in the order the tags appear.
+Nothing else executes at load, which is why the split could move whole sections
+without touching a line inside them.
+
 ---
 
 ## One user, one file, no server
@@ -94,7 +124,7 @@ through `db`: `db.IntegrityError`, `db.DatabaseError`, `db.Json(...)`,
 
 ## Tests
 
-`python3 -m pytest tests/` — 221 tests, all green.
+`python3 -m pytest tests/` — 323 tests, all green.
 
 `conftest.py` points `SQLITE_PATH` at a throwaway file **at import time**, before
 pytest collects any test module. This matters: test modules `import config` /
@@ -108,7 +138,21 @@ deleting the one user row and re-seeding.
 The route tests drive the real app over HTTP through the `client` fixture, and
 `tests/helpers.py` holds the two things they all need: `cat_id()` looks a
 seeded category up by **name and type** (creating a second "Groceries" would
-test a category the app never uses), and `add_tx()` posts a transaction.
+test a category the app never uses), and `add_tx()` posts a transaction. It also
+builds the two broker exports — `nordnet_csv_bytes()` writes a real one (UTF-16,
+TAB, decimal comma) and `nordea_xlsx_bytes()` an xlsx with the export timestamp
+in row 0 — because the parser tests and the import route tests need the same
+files.
+
+**The broker parsers are tested against the shape of the real exports**
+(`test_investment_import.py`), because nobody here owns that format: a renamed
+column or a switched decimal separator raises nothing, it just parses to the
+wrong number and lands in the net-worth total as fact. `test_holdings.py` then
+covers the route from an upload to that total — that a snapshot is
+`(account_id, as_of)` and re-importing the same day lands on it rather than
+doubling the portfolio, and that the account's `account_balances` row always
+equals the sum of its holdings. A holdings write that doesn't move the balance
+shows the right drill-down under the wrong total.
 
 ---
 
@@ -120,11 +164,14 @@ test a category the app never uses), and `add_tx()` posts a transaction.
 | `categories` | id, name, type, is_default |
 | `merchant_rules` | id, pattern, category_id (FK), match_type (exact/contains/smart) |
 | `import_staging` | id, date, store, suggested_category, amount, type, confirmed, final_category_id, import_batch_id |
-| `import_batches` | id, filename, imported_at, status (pending/completed) |
+| `import_batches` | id, filename, imported_at, status (pending/completed/undone) |
+| `import_formats` | id, signature (SHA-1 of the header names + delimiter), delimiter, date_col, amount_col, store_col (nullable), amount_sign (neg_expense/pos_expense); UNIQUE(user_id, signature) |
 | `month_notes` | id, month (YYYY-MM), note |
-| `accounts` | id, name, type (asset/liability), sort_order, is_archived |
+| `accounts` | id, name, type (asset/liability), sort_order, is_archived, external_id (the broker key an import matches on), group_name |
+| `holdings` | id, account_id (FK, cascade), as_of, name, isin, units, value_eur, return_pct, return_eur, currency; UNIQUE(account_id, as_of, name). No `user_id` — it is reachable only through `accounts`, which has one |
 | `account_balances` | id, account_id (FK, cascade), as_of (YYYY-MM-DD), balance; UNIQUE(account_id, as_of) |
 | `recurring_dismissed` | id, signature (UNIQUE, = normalized merchant + cadence), dismissed_at |
+| `manual_subscriptions` | id, store, amount, cadence (monthly/quarterly/yearly), category, type |
 | `bank_sessions` | id, user_id (FK, cascade), session_id, aspsp_name, aspsp_country, valid_until, accounts (JSONB), created_at; UNIQUE(user_id) |
 
 ---
@@ -181,6 +228,21 @@ so nothing opens, nothing closes, and the table never moves.
 - Fallback: if no rule matches, check most frequent historical category for that store
 - CRUD via UI and API (`/api/merchant-rules`)
 - **567 rules auto-generated** from historical data via `scripts/generate_merchant_rules.py`
+- **A rule says what it would do before you save it.** `/api/merchant-rules/preview`
+  runs the candidate pattern over the whole history and returns the match count,
+  how many distinct stores it hits, and the first rows — a `contains` rule on a
+  four-letter pattern can quietly own half the table, and the modal shows that
+  while you type.
+- `POST /api/merchant-rules/<id>/apply` re-categorises the history a saved rule
+  matches. It **skips rows of the other type**: a rule pointing at an expense
+  category must not reassign income, which would move a salary under "Groceries".
+- `/api/merchant-rules/stats` gives each rule a hit count and its last match —
+  the basis for spotting rules that no longer fire.
+- `POST /api/merchant-rules/train` rebuilds every rule from history, running the
+  same algorithm as the script below (`_rebuild_merchant_rules()` in
+  `routes/merchant_rules.py` is the shared implementation, and confirming an
+  import auto-retrains through it). It **clears the user's rules first**, so a
+  hand-written rule does not survive a training run.
 
 ### CSV Import
 Supports three CSV formats:
@@ -212,7 +274,9 @@ Supports three CSV formats:
   `type="number"` swallowed a comma before any of our code saw it, and a comma
   is what a Finnish hand types into an app that prints "16,05" and imports
   CSVs written "-25,00". `parseAmountInput()` takes either separator and says
-  so when it cannot, the way the date box always has.
+  so when it cannot, the way the date box always has. It also strips the
+  non-breaking space `fmt()` groups thousands with, so "2 500,55" — the app's own
+  output, copied or retyped — reads back rather than being refused.
 - **÷2 Split costs** halves the **expense** rows — your share of a statement
   you split with someone. It used to halve the salary too, and compound on a
   second click with nothing on screen to say the first had landed. It is a
@@ -221,6 +285,34 @@ Supports three CSV formats:
 - **Cancel discards the batch** (`DELETE /api/import/batch/<id>`). A *confirmed*
   batch is the record of what was imported and is refused (409); only a pending
   one can be discarded.
+
+### CSV format learning (unknown layouts)
+
+A CSV whose columns the alias table cannot place used to be a **400 and a dead
+end** — the app knew the file was a bank export and still refused it. Now the
+user maps the columns once and the app remembers the layout.
+
+- `POST /api/import/upload` returns **200 with `{needs_mapping: true, signature,
+  delimiter, headers, sample_rows, guess}`** instead of an error, and creates no
+  batch. There is nothing to clean up if the user walks away.
+- The UI opens a mapping step: the first five rows under their header names,
+  a dropdown per field (date and amount required, merchant optional), an
+  **amount-sign** toggle (`neg_expense` — the default — or `pos_expense`, for
+  banks that write expenses positive), and "Remember this format", on by default.
+- `POST /api/import/upload-mapped` re-posts the file with the chosen indices and
+  stages the rows, returning **the same shape as `/api/import/upload`** so the
+  review table takes it unchanged.
+- **The signature is recomputed server-side**, never taken from the client:
+  `format_signature()` is SHA-1 over the lowercased, trimmed header names joined
+  with `|`, plus the delimiter. The same export always fingerprints the same, so
+  the next file of that layout auto-maps and the user never sees the step again.
+- A saved mapping is only consulted **when auto-detection fails**, so teaching
+  the app one layout can never change how a recognized one imports.
+
+`GET /api/import/formats` and `DELETE /api/import/formats/<id>` are the reader
+and the forget button for saved mappings — both implemented, **neither called by
+the UI**, so a bad mapping currently cannot be removed from inside the app. That
+is the same gap `import_batches` had before the Recent imports card.
 
 ### Import history
 
@@ -353,7 +445,7 @@ Expense Trends → Spending Heatmap → Monthly Summary.
       teaches the eye to skip the column carrying the news. A flat category
       that **jumps** loses the flag and reports the jump — that is the loudest
       thing on the card.
-    - Two bands in `app.js`, both wide on purpose: `QUIET_BAND` (25%) is
+    - Two bands in `dashboard.js`, both wide on purpose: `QUIET_BAND` (25%) is
       ordinary movement and reads "as usual"; only past `OUTLIER_BAND` (50%)
       does the **bar itself** turn red. At 10% most of a real card went red
       and the colour stopped meaning anything. Past 4× the median a
@@ -407,6 +499,50 @@ kept **out of `monthly_total` / `annual_total`** — a service that ended is not
 part of what you pay each month — so the header reads "737 €/mo · 5 active",
 not 855 € across 10. Transfers and investments are excluded from those totals
 too, for a different reason (they are movements, not consumption).
+
+**Detection misses things**, so a series can be added by hand: `POST
+/api/subscriptions` writes to `manual_subscriptions` (store, amount, cadence of
+monthly/quarterly/yearly, optional category, expense or income) and the next
+`/api/recurring` folds it in beside the detected ones; `DELETE
+/api/subscriptions/<id>` removes it. A hand-added row is a claim about the
+future rather than a reading of the past, which is why it lives in its own
+table and not as a fake transaction.
+
+### Net Worth & investment holdings
+
+Accounts are kept by hand (`/api/accounts` + `/api/accounts/<id>/balances`), and
+`networth.py` carries the last balance of each forward — the rules that keeps
+true are in the entry-points table above. Two things sit on top of it:
+
+- **Holdings** are the per-product rows behind an investment account, snapshotted
+  by date. `GET /api/networth/holdings?account_id[&as_of]` is the drill-down
+  (latest snapshot by default, largest position first).
+- **`DELETE /api/networth/holdings/<id>`** is the "I sold this" action. The
+  account's total for that date was written as the sum of its holdings, so it is
+  **recomputed and written back** — otherwise the drill-down and the total
+  disagree. Only a balance row that already exists is updated: deleting from an
+  old snapshot must not invent a data point in the net-worth history. Earlier
+  snapshots keep the holding, because they are what was held at the time.
+
+**Investment import** (`investment_import.py`) parses Nordnet CSV and Nordea
+`Omistukset.xlsx` exports into broker → account → holding.
+`POST /api/networth/import-investments/preview` parses and **writes nothing**,
+returning the hierarchy plus a dedupe hint per account (`external_id`, then IBAN
+for cash accounts, then name) — a *suggestion* for the review screen, never an
+automatic merge. `POST .../confirm` writes what the user reviewed.
+
+- **A snapshot is `(account_id, as_of)`.** Re-importing the same day lands on the
+  same snapshot rather than doubling the portfolio, and several files for one
+  account (stocks and funds are separate exports) **union** their holdings
+  instead of overwriting.
+- The account total goes into `account_balances` as the sum of its holdings,
+  which is what the history reads. Cash accounts carry the figure directly and
+  hold nothing.
+- `as_of` must be `YYYY-MM-DD` or the import is refused — the date keys
+  everything, and a bad one makes a snapshot nothing can find again.
+- The parsers are held to the real export shapes in `tests/test_investment_import.py`;
+  a missing "Arvo EUR" column or an unrecognized Holdings layout is **refused**
+  rather than imported as a portfolio of zeroes.
 
 ### AI Chat Assistant
 
@@ -663,6 +799,30 @@ Re-run anytime with `python3 scripts/generate_merchant_rules.py` — clears and 
 new selector that does not join that list toggles a class nothing paints, and
 no button ever looks selected.
 
+**One segmented control.** `.seg` / `.seg-btn` styles every two-or-three-way
+pick — the theme switch in Settings and the Expense/Income toggle in the
+transaction modal — and `.theme-seg` / `.theme-seg-btn` are the same rule under
+their original name. A second copy under a third name is how two controls doing
+the same job start looking like different controls.
+
+**The category picker reads down its columns.** `.cat-pop-grid` is CSS
+multi-column, not a 3-across grid: a grid filled left-to-right put "Car
+charging, Car maintenance, Car parking" across the top and broke the alphabet at
+every row end, so finding a name you already knew the position of meant scanning
+the whole block. Multi-column fills column 1 top to bottom before starting
+column 2 — the order the list is sorted in, and the DOM order, so ↑/↓ still
+steps the way it looks. The panel sits at `z-index: 1100`, above
+`.modal-overlay`, because it opens from the import review (page content) *and*
+from the transaction modal (not).
+
+**The one row you type by hand is entered the way the four hundred you import
+are.** The Add/Edit Transaction modal was the last place still asking with
+native `<select>`s and a `type="number"` amount. It uses the same category
+picker, the same `parseAmountInput()`, and the same Expense/Income segment as
+the import review. Type and category are one decision and are held as one
+(`txModal`): picking a category adopts its type, and flipping the type keeps the
+category only when the other side has one by that name.
+
 **A failed request has to say so.** `api()` throws an `ApiError` on any
 non-2xx, carrying the server's own `error` string. That is what stops a caller
 mid-flight: it used to hand the error body back as data, so `saveTransaction()`
@@ -678,6 +838,30 @@ danger})` returns a promise of true or false, and every "are you sure?" goes
 through it. The browser's `confirm()` inside a pywebview window is a system
 alert box — another app's typeface, no way to mark the destructive answer, and
 paragraphs faked with `\n\n`.
+
+**A modal closes the modal that is open.** The per-open modals used to close
+themselves with `document.querySelector(".modal-overlay").remove()`, which takes
+the FIRST overlay in the document — and `#invest-overlay` is declared in
+`index.html`, so it sits ahead of anything appended to the body and is a
+`.modal-overlay` whether or not it is showing. Every such save deleted that
+hidden overlay and left the modal the user was looking at on screen, under a
+toast saying the save had landed: the "it does not close, you have to click
+outside" bug. It also took the investment-import overlay out of the DOM for
+good. `closeTopOverlay()` in `core.js` takes the last **visible** overlay, the
+same rule `closeTopModal()` uses for Escape, and calls its `data-close` closer
+when it has one.
+
+**Escape closes the top modal.** Only `confirmDialog()` used to take the key, so
+a drilldown opened by clicking a bar could be dismissed only by aiming at the
+backdrop — and a pywebview window has no browser chrome to fall back on.
+`closeTopModal()` in `core.js` takes the last open overlay in the DOM, which is
+the one on top. Modals built per open are removed; an overlay declared in
+`index.html` is reused rather than rebuilt, so it names its own closer in
+**`data-close`** (`#invest-overlay`, and the guide, which is not a
+`.modal-overlay` at all). One press closes one thing: the handler stands down
+when the key was already handled (`defaultPrevented` — `confirmDialog()` and the
+import category picker) or when something sits above the modal (`fs-active`,
+`nav-open`).
 
 **A filter that cannot be applied has to say so.** `readDateFilter()` marks a
 date box `.input-invalid` when it holds text the parser cannot read: the filter
@@ -696,6 +880,11 @@ PUT/DELETE /api/categories/<id>
 
 GET/POST   /api/merchant-rules
 PUT/DELETE /api/merchant-rules/<id>
+GET        /api/merchant-rules/preview   ?pattern, match_type, limit
+                                         what a candidate rule would match
+POST       /api/merchant-rules/<id>/apply  re-categorise the history it matches
+GET        /api/merchant-rules/stats     per-rule hit count + last match
+POST       /api/merchant-rules/train     rebuild every rule from history
 
 GET/POST   /api/transactions          ?month, months, category_ids, type, q,
 PUT/DELETE /api/transactions/<id>      date_from, date_to, amount_min, amount_max,
@@ -714,10 +903,16 @@ GET        /api/dashboard/category-breakdown   ?month, months, year, type
 GET        /api/dashboard/heatmap          ?year
 
 GET        /api/reports/annual
+GET        /api/trends/category    ?category_ids, months → one category (or
+                                    several) over a range; `category.type` comes
+                                    back resolved, and the page reads it
 
 GET        /api/recurring               ?lookback_months, min_occurrences
 POST       /api/recurring/dismiss               (body: {signature})  hide a series
 DELETE     /api/recurring/dismiss/<signature>                       un-hide a series
+POST       /api/subscriptions          (body: {store, amount, cadence,
+                                        category?, type?}) add one by hand
+DELETE     /api/subscriptions/<id>                        remove a hand-added one
 
 GET/POST   /api/accounts
 PUT/DELETE /api/accounts/<id>                       (DELETE cascades balances)
@@ -729,8 +924,19 @@ GET        /api/networth/history        ?months
 GET        /api/networth/summary
 GET        /api/networth/holdings       ?account_id[&as_of]
 DELETE     /api/networth/holdings/<id>              recomputes that snapshot's total
+POST       /api/networth/import-investments/preview   (multipart: files[])
+                                         parse broker exports, no DB writes
+POST       /api/networth/import-investments/confirm   (body: {accounts: [...]})
+                                         write the reviewed snapshot
 
-POST       /api/import/upload
+POST       /api/import/upload                      unknown layout → 200
+                                                   {needs_mapping: true, ...}
+POST       /api/import/upload-mapped               (multipart: file +
+                                        date_col, amount_col, store_col?,
+                                        amount_sign, remember) import by hand-
+                                        mapped columns
+GET        /api/import/formats                     saved column mappings
+DELETE     /api/import/formats/<id>                forget one
 GET        /api/import/staging/<batch_id>
 POST       /api/import/confirm
 DELETE     /api/import/staging/<item_id>
@@ -753,5 +959,16 @@ POST       /api/chat/stream                        the same turn as server-sent
 GET/PUT    /api/notes/<YYYY-MM>
 GET        /api/notes
 
+GET        /api/me                     CSRF token + app version
+GET        /api/backups                what is in the backups folder
+POST       /api/backups                (body: {reason}) make one now
 POST       /api/quit
+
+GET        /healthz                    liveness, no DB
+GET        /healthz/db                 runs SELECT 1; 503 if that fails
 ```
+
+`/healthz` and `/healthz/db` are the last of the hosted deploy — Render's
+liveness check and the ping that kept a free-tier Supabase project awake.
+Nothing calls them in a desktop app; they cost nothing and have simply not been
+taken out.

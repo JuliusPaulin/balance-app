@@ -486,3 +486,50 @@ def test_staging_fetch_matches_the_upload_shape(client, login, make_user):
     assert resumed["batch_id"] == up["batch_id"]
     assert resumed["count"] == up["count"] == 2
     assert len(resumed["items"]) == 2
+
+
+# ---------------------------------------------------------------------------
+# The suggestion may not overturn the sign the statement gave the row
+# ---------------------------------------------------------------------------
+# A staged row carries a type read off the amount's sign and a suggested
+# category read off the store's history. The review table resolves that
+# suggestion — a bare NAME — into a category, and took the type from it. So a
+# type-blind suggestion could flip the row: a refund from a grocer imported as
+# spending, a card payment to a store ruled into an income category imported as
+# earnings. The suggestion is now scoped to the row's own type, on both the CSV
+# and the bank path.
+
+SIGN_FLIP_CSV = (
+    "Kirjauspäivä;Määrä;Nimi;Viesti\n"
+    "2026-02-01;-40,00;Prisma;\n"      # the weekly shop  → expense
+    "2026-02-02;40,00;Prisma;\n"       # the return of it → income
+)
+
+
+def test_income_row_is_not_suggested_an_expense_category(client, login, make_user):
+    uid = make_user()
+    # Give Prisma an unambiguous expense history, so the suggester speaks.
+    with db.db_conn() as conn:
+        cid = conn.execute(
+            "SELECT id FROM categories WHERE user_id = %s AND name = 'Groceries' "
+            "AND type = 'expense'", (uid,)).fetchone()["id"]
+        for _ in range(9):
+            conn.execute(
+                "INSERT INTO transactions (user_id, date, store, category_id, amount, type) "
+                "VALUES (%s, '2026-01-01', 'Prisma', %s, 40.0, 'expense')", (uid, cid))
+        conn.commit()
+
+    login(client, uid)
+    resp = _upload(client, SIGN_FLIP_CSV, filename="etutili.csv")
+    assert resp.status_code == 200
+    by_date = {r["date"]: r for r in resp.get_json()["items"]}
+
+    # The sign still decides the type on both rows — that part was never wrong.
+    assert by_date["2026-02-01"]["type"] == "expense"
+    assert by_date["2026-02-02"]["type"] == "income"
+
+    # The expense row is suggested from the expense history it has.
+    assert by_date["2026-02-01"]["suggested_category"] == "Groceries"
+    # The income row is not: "Groceries" is an expense category, and the review
+    # table would have adopted its type and turned the refund into spending.
+    assert by_date["2026-02-02"]["suggested_category"] is None

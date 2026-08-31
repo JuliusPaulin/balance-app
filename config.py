@@ -100,6 +100,22 @@ PORT = int(os.environ.get("PORT", 5050))
 DEBUG = os.environ.get("FLASK_DEBUG", "0") == "1"
 """Flask debug mode flag."""
 
+START_MAXIMIZED = os.environ.get("START_MAXIMIZED", "1") != "0"
+"""Open the desktop window filling the screen instead of a 1200x800 box.
+
+A 1200x800 window is a starting size, not a choice: every session began by
+dragging the corner out, and the Transactions rail plus its table wants the
+width. Set START_MAXIMIZED=0 for the old windowed default.
+"""
+
+START_FULLSCREEN = os.environ.get("START_FULLSCREEN", "0") == "1"
+"""Open in true OS fullscreen (macOS Spaces / no title bar).
+
+Off by default: fullscreen hides the window chrome, and this window's only
+close affordance is that chrome. START_MAXIMIZED gives the whole screen and
+keeps it.
+"""
+
 
 # ── Enable Banking (optional Open Banking import) ────────────────────────
 # Credentials for the Enable Banking PSD2 API. The private key is stored
