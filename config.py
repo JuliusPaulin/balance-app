@@ -257,7 +257,16 @@ while they look at their spending is exactly the person who waits longer than
 five minutes between questions. Set "0" to hand the memory back at once.
 """
 
-OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", 180))
+OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", 420))
+"""How long to wait for one model call.
+
+180 was generous for a Mac running the model on its GPU and not enough for one
+reduced to its CPU: 26 tokens a second there, so a month's analysis spends over
+four minutes reading the prompt before it writes a word, and the request was
+abandoned before the answer existed. A wait that ends in an answer beats one
+that ends in nothing.
+"""
+
 """Seconds to wait for a local reply. The first call after a cold start pays
 for loading several gigabytes off disk, which is slow and not a failure."""
 

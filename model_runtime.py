@@ -106,15 +106,36 @@ def macos_too_old():
 # crash for silence, which is worse, because a crash says something.
 MIN_CTX = 8192
 
-_FIT_LEVELS = 2
+# Three ways to run, fastest first.
+#
+#   0  the GPU, model memory-mapped — what almost every Mac does
+#   1  the GPU, model read into memory instead — same speed, and it steps
+#      around the Metal failure below
+#   2  the CPU — the last resort, and a poor one
+#
+# Level 1 exists because of level 2's cost. A 16 GB Air fell all the way to the
+# CPU and managed 26 tokens a second against this machine's 310: a simple
+# question took over two minutes and a month's analysis could not finish inside
+# the request timeout at all. Slow enough is the same as broken.
+#
+# What sends it there is `GGML_ASSERT(buf_dst) failed` inside Metal, where
+# llama.cpp wraps an existing pointer with `newBufferWithBytesNoCopy:`. That
+# call returns nil — not an error — when the pointer is not page-aligned, and a
+# memory-mapped model hands out tensor pointers at arbitrary offsets into the
+# mapping. Reading the model into memory instead gives back aligned pointers,
+# and the GPU is kept.
+_FIT_LEVELS = 3
 _fit = 0
 
 
 def _fit_args(level):
     ctx = max(config.OLLAMA_NUM_CTX, MIN_CTX)
-    # Only the GPU is negotiable.
-    return ["--ctx-size", str(ctx),
-            "--n-gpu-layers", "999" if level <= 0 else "0"]
+    args = ["--ctx-size", str(ctx)]
+    if level <= 0:
+        return args + ["--n-gpu-layers", "999"]
+    if level == 1:
+        return args + ["--n-gpu-layers", "999", "--load-mode", "none"]
+    return args + ["--n-gpu-layers", "0", "--load-mode", "none"]
 
 
 def _bundle_root():

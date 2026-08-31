@@ -379,3 +379,19 @@ def test_only_the_gpu_is_negotiable(models_dir):
     sizes = {tuple(model_runtime._fit_args(l)[:2])
              for l in range(model_runtime._FIT_LEVELS)}
     assert len(sizes) == 1
+
+
+def test_the_gpu_is_kept_before_it_is_given_up(models_dir):
+    """The step before the CPU keeps the GPU and drops the memory map instead.
+
+    A 16 GB Air fell straight to the CPU and managed 26 tokens a second against
+    310 on the GPU — a simple question took over two minutes, and a month's
+    analysis could not finish inside the request timeout at all. What sent it
+    there was Metal refusing a pointer from a memory-mapped model; reading the
+    model into memory gives back an aligned one and keeps the GPU.
+    """
+    on_gpu = [l for l in range(model_runtime._FIT_LEVELS)
+              if "999" in model_runtime._fit_args(l)]
+    assert on_gpu == [0, 1], "the CPU must be the last resort, not the second"
+    assert "--load-mode" in model_runtime._fit_args(1)
+    assert "--load-mode" not in model_runtime._fit_args(0)
