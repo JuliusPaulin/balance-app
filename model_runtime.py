@@ -23,6 +23,7 @@ import os
 import platform
 import re
 import shutil
+import signal
 import subprocess
 import sys
 import threading
@@ -39,6 +40,9 @@ _download = {"state": "idle", "bytes": 0, "total": 0, "error": None}
 # does not queue up a spawn per poll, and how many have failed in a row.
 _starting = False
 _failed_starts = 0
+# Whether this process has already looked for a server left behind by an
+# earlier one. Once is enough, and it must not happen on every poll.
+_reclaimed = False
 
 # How many attempts before the panel stops saying "starting up" and says what
 # went wrong. Two, because the first failure can be a cold disk or a machine
@@ -320,6 +324,87 @@ def server_responding(host=None):
         return False
 
 
+def _log(line):
+    """One line into the server log, beside whatever the server itself wrote."""
+    try:
+        with open(os.path.join(config.model_dir(), "server.log"), "a") as handle:
+            handle.write(f"\n=== {line} ===\n")
+    except OSError:
+        pass
+
+
+def _server_process():
+    """A `llama-server` running against our weights, whoever started it.
+
+    Matched on the model path, not the port: that path is inside Balance's own
+    Application Support folder, so a process holding it is ours by definition
+    and cannot be somebody else's llama.cpp.
+    """
+    try:
+        listing = subprocess.run(["ps", "-Ao", "pid=,args="], capture_output=True,
+                                 text=True, timeout=5).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    model = config.model_file()
+    for line in listing.splitlines():
+        line = line.strip()
+        if "llama-server" in line and model in line:
+            pid, _, args = line.partition(" ")
+            try:
+                return int(pid), args.strip()
+            except ValueError:
+                return None
+    return None
+
+
+def _reclaim():
+    """Take the port back from a server this app left behind.
+
+    The model server is a child process, and it only gets stopped when the
+    window closes cleanly. Force-quit the app, or lose it to a crash, and three
+    gigabytes stay resident with the port still answering — so the next launch
+    finds something running against the right model file, calls that ready, and
+    never starts its own.
+
+    That is harmless when the leftover is configured the way this version wants.
+    It is not harmless otherwise: a server that fell back to the CPU in an
+    earlier session outlives the update meant to fix it, and no release can
+    reach it. The user reinstalls, sees no change, and the only cure is a
+    reboot nobody would think to try.
+
+    So a leftover is kept when its flags match, and replaced when they do not.
+    """
+    global _reclaimed
+    if _reclaimed:
+        return
+    _reclaimed = True
+
+    found = _server_process()
+    if not found:
+        return
+    pid, args = found
+    wanted = " ".join(_fit_args(0))
+    if wanted in args:
+        _log(f"kept a server already running (pid {pid}): {args}")
+        return
+
+    _log(f"replacing a leftover server (pid {pid}) started as: {args}")
+    try:
+        os.kill(pid, signal.SIGTERM)
+    except OSError:
+        return
+    # Give it a moment to let go of the port before we bind it.
+    deadline = time.monotonic() + 10
+    while time.monotonic() < deadline:
+        if not server_responding():
+            return
+        time.sleep(0.3)
+    try:
+        os.kill(pid, signal.SIGKILL)
+    except OSError:
+        pass
+
+
 def ensure_running():
     """Start the model server if it is not already answering.
 
@@ -328,7 +413,12 @@ def ensure_running():
     """
     global _server, _fit
     if server_responding():
-        return True
+        # Answering, but not necessarily started by us and not necessarily
+        # started the way this version starts one.
+        if _server is None:
+            _reclaim()
+        if server_responding():
+            return True
     binary = server_binary()
     if not binary or not model_present():
         return False

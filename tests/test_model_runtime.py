@@ -34,6 +34,7 @@ def models_dir(tmp_path, monkeypatch):
     monkeypatch.setenv("MODEL_PATH", str(tmp_path / "models" / "model.gguf"))
     os.makedirs(tmp_path / "models", exist_ok=True)
     model_runtime._download.update(state="idle", bytes=0, total=0, error=None)
+    model_runtime._reclaimed = False
     return tmp_path / "models"
 
 
@@ -131,11 +132,90 @@ def test_a_missing_model_does_not_start_a_server(models_dir, runtime_present, no
 
 def test_an_already_answering_server_is_not_started_twice(models_dir, monkeypatch):
     monkeypatch.setattr(model_runtime, "server_responding", lambda host=None: True)
+    monkeypatch.setattr(model_runtime, "_server_process", lambda: None)
     started = []
     monkeypatch.setattr(model_runtime.subprocess, "Popen",
                         lambda *a, **k: started.append(a) or None)
     assert model_runtime.ensure_running() is True
     assert started == []
+
+
+# ── The server the last session left behind ───────────────────────────────
+#
+# It is a child process, stopped only when the window closes cleanly. Force-quit
+# the app and it stays resident with the port still answering, which the next
+# launch reads as "ready" — so a server that fell back to the CPU in an earlier
+# session survives every update meant to fix it, and only a reboot clears it.
+
+def test_a_leftover_server_started_our_way_is_kept(models_dir, monkeypatch):
+    """No reason to spend twenty seconds reloading a server already right."""
+    args = f"llama-server --model {config.model_file()} " + \
+        " ".join(model_runtime._fit_args(0))
+    monkeypatch.setattr(model_runtime, "server_responding", lambda host=None: True)
+    monkeypatch.setattr(model_runtime, "_server_process", lambda: (4242, args))
+    killed = []
+    monkeypatch.setattr(model_runtime.os, "kill",
+                        lambda pid, sig: killed.append(pid))
+
+    assert model_runtime.ensure_running() is True
+    assert killed == []
+
+
+def test_a_leftover_server_started_differently_is_replaced(
+        models_dir, runtime_present, monkeypatch):
+    """The one that matters: an old fallback on the CPU, outliving its fix."""
+    write_model(models_dir / "model.gguf")
+    args = f"llama-server --model {config.model_file()} --n-gpu-layers 0"
+    monkeypatch.setattr(model_runtime, "_server_process", lambda: (4242, args))
+    killed, started = [], []
+    monkeypatch.setattr(model_runtime.os, "kill",
+                        lambda pid, sig: killed.append(pid))
+    # Answering until it is killed, and again once ours is up in its place.
+    monkeypatch.setattr(model_runtime, "server_responding",
+                        lambda host=None: not killed or bool(started))
+
+    class Alive:
+        def poll(self):
+            return None
+    monkeypatch.setattr(model_runtime.subprocess, "Popen",
+                        lambda *a, **k: started.append(a) or Alive())
+
+    try:
+        assert model_runtime.ensure_running() is True
+        assert killed == [4242]
+        assert started, "our own server was never started in its place"
+        assert "--n-gpu-layers" in started[0][0]
+        assert started[0][0][started[0][0].index("--n-gpu-layers") + 1] == "999"
+    finally:
+        model_runtime._server = None
+
+
+def test_a_leftover_is_looked_for_once_not_on_every_poll(models_dir, monkeypatch):
+    looks = []
+    monkeypatch.setattr(model_runtime, "server_responding", lambda host=None: True)
+    monkeypatch.setattr(model_runtime, "_server_process",
+                        lambda: looks.append(1) or None)
+
+    model_runtime.ensure_running()
+    model_runtime.ensure_running()
+    model_runtime.ensure_running()
+    assert len(looks) == 1
+
+
+def test_a_server_this_process_started_is_never_reclaimed(models_dir, monkeypatch):
+    """Only a leftover is a candidate — not the one we are already running."""
+    monkeypatch.setattr(model_runtime, "server_responding", lambda host=None: True)
+    monkeypatch.setattr(model_runtime, "_server_process",
+                        lambda: pytest.fail("looked at a server it started itself"))
+
+    class Alive:
+        def poll(self):
+            return None
+    monkeypatch.setattr(model_runtime, "_server", Alive())
+    try:
+        assert model_runtime.ensure_running() is True
+    finally:
+        model_runtime._server = None
 
 
 # ── Whose server is that ──────────────────────────────────────────────────

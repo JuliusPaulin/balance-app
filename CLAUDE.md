@@ -649,6 +649,19 @@ took a long time and answered nothing at all, which is worse than the crash it
 replaced, because a crash says something. `MIN_CTX` is asserted across every
 fallback level.
 
+**And the server the last session left behind is not adopted blindly.** The
+model server is a child process, stopped only when the window closes cleanly —
+force-quit Balance and it stays resident with the port still answering.
+`ensure_running()` opened with "is something already answering?", and a leftover
+holding the right model file answered yes, so the new launch called itself ready
+and never started its own. Harmless when that leftover is configured the way
+this version wants; ruinous when it is not. A server that fell back to the CPU
+in one session outlived every update meant to fix it, and the only cure was a
+reboot nobody would think to try — one Mac was updated three times against a
+process older than the first of them. A leftover is now matched against the
+flags this version would use: kept when they agree, replaced when they do not,
+and either way named in the log.
+
 **Balance runs on more Macs than the assistant does.** The app needs Apple
 silicon, which is macOS 11 and up; the bundled llama.cpp reports `minos 13.3`.
 That leaves a range of machines where everything else works and the model server

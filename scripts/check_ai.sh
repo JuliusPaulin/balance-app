@@ -50,15 +50,28 @@ fi
 [ -f "$GGUF.part" ] && echo "  a part-file is present — a download stopped early"
 
 say "How the model is running"
-ARGS=$(ps -Ao args | grep "[l]lama-server" | head -1)
-if [ -z "$ARGS" ]; then
+LINE=$(ps -Ao pid=,lstart=,args= | grep "[l]lama-server" | head -1)
+ARGS=$(printf '%s' "$LINE" | sed -n 's/.*\(--model.*\)/\1/p')
+PID=$(printf '%s' "$LINE" | awk '{print $1}')
+if [ -z "$LINE" ]; then
     echo "  The model server is not running."
 else
     GPU=$(printf '%s' "$ARGS" | sed -n 's/.*--n-gpu-layers \([0-9]*\).*/\1/p')
     MMAP=$(printf '%s' "$ARGS" | grep -c -- "--load-mode none")
+    echo "  running since $(printf '%s' "$LINE" | awk '{print $2,$3,$4,$5}')"
     if [ "$GPU" = "0" ]; then
         echo "  ON THE CPU — this is the slow last resort (about 26 tokens/sec)."
         echo "  Expect two minutes or more per question."
+        # The model server is a child process and only stops when the window
+        # closes cleanly. Force-quit Balance and it stays resident with the port
+        # still answering, so the next launch finds it, calls that ready, and
+        # never starts its own — which is how a server that fell back to the CPU
+        # in one session survives every update meant to fix it.
+        echo ""
+        echo "  If Balance was force-quit at some point, this is probably left"
+        echo "  over from an older version. Quit Balance, then run:"
+        echo "    kill $PID"
+        echo "  and open Balance again."
     elif [ "$MMAP" = "1" ]; then
         echo "  On the GPU, without the memory map. This is the intended fix."
     else
