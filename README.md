@@ -55,7 +55,28 @@ figures are untouched — they live outside the app.
 - **Net worth** — accounts, loans and investment holdings over time
 - **Split costs** — halve every imported amount in one click, for shared spending
 - **Month notes** — attach context to any month
+- **Balance AI** — ask about your money in plain English, answered by a model
+  running on your own Mac (see below)
 - **Auto-backup** — a safe snapshot before every import and on quit
+
+## Balance AI
+
+Ask it things — *what did I spend on groceries last month*, *did I spend more in
+July than in June*, *analyse my latest month and tell me what stands out* — and
+it answers from your own figures.
+
+It runs on your Mac. Not a service, not an account, no API key: the app carries
+its own model and never sends a word of your spending anywhere. It works with
+the wi-fi off.
+
+**The first time you open it, it downloads the model — about 2.7 GB, once.**
+There is a button and a progress bar, the rest of the app keeps working while it
+runs, and it picks up where it left off if it is interrupted. After that it
+starts with the app. You need about 3 GB free.
+
+Under every answer it tells you which screen it read and which months, because a
+figure you cannot check is a figure you have to take on trust. It can only read:
+it cannot add, edit or delete anything.
 
 ## Your data
 

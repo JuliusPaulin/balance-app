@@ -58,6 +58,15 @@ jobs:
           python3 -m pip install -r requirements-dev.txt
           python3 -m pytest tests/ -q
 
+      - name: Fetch the model runtime
+        # llama.cpp's server travels inside the app. It is not in git — 56 MB of
+        # compiled binaries do not belong in a repository — so it is pulled
+        # here, and Balance.spec expects it at vendor/llama. Without this step
+        # PyInstaller fails on a missing data source, which is the right way for
+        # it to fail: an app shipped without its runtime would tell every user
+        # that Balance AI is unavailable.
+        run: ./scripts/fetch_runtime.sh
+
       - name: Build Balance.app
         run: python3 -m PyInstaller Balance.spec --noconfirm --clean
 
@@ -70,6 +79,20 @@ jobs:
             echo "Built app reports $built, expected $expected"; exit 1;
           }
           echo "Bundle reports $built"
+
+      - name: Check the runtime made it into the bundle
+        # The version check above catches a stale VERSION; this catches the
+        # equivalent for the assistant. A bundle that builds and runs but has no
+        # model server in it looks entirely healthy until someone opens the
+        # panel.
+        run: |
+          app="dist/Balance.app"
+          test -f "$app/Contents/Frameworks/vendor/llama/llama-server" \
+            || test -f "$app/Contents/Resources/vendor/llama/llama-server" \
+            || { echo "No llama-server in the bundle — the AI would not run."; exit 1; }
+          test -f "$app/Contents/Resources/licences/Apache-2.0.txt" \
+            || { echo "The model licence is missing from the bundle."; exit 1; }
+          echo "Runtime and licences are in the bundle"
 
       - name: Zip it
         # ditto, not zip: it preserves the bundle's symlinks and resource forks.
