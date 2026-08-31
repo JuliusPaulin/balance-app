@@ -20,6 +20,8 @@ module knows a file path and a port.
 """
 
 import os
+import platform
+import re
 import shutil
 import subprocess
 import sys
@@ -52,6 +54,28 @@ STARTUP_TIMEOUT = 180
 
 
 # ── Where things are ──────────────────────────────────────────────────────
+
+# What the bundled llama.cpp is built against — `otool -l` reports minos 13.3.
+# Balance itself runs on any Apple silicon Mac, which is macOS 11 and up, so
+# there is a range of machines where the app is fine and the assistant cannot
+# start. dyld refuses the binary and the process dies with a backtrace, which is
+# a miserable way to learn about a version requirement.
+MIN_MACOS = (13, 3)
+
+
+def macos_too_old():
+    """True when this Mac cannot run the bundled runtime. Never guesses."""
+    if platform.system() != "Darwin":
+        return False
+    release = platform.mac_ver()[0]
+    if not release:
+        return False
+    try:
+        parts = tuple(int(n) for n in release.split(".")[:2])
+    except ValueError:
+        return False
+    return parts < MIN_MACOS
+
 
 def _bundle_root():
     """Where the app's own files are: the unpacked bundle, or the checkout."""
@@ -283,13 +307,40 @@ def ensure_running():
     return False
 
 
-def server_log_tail(lines=12):
+# A line of a crash backtrace: "9   dyld   0x000000018ab9c7f28 start + 2236".
+# Informative to a debugger and to nobody else.
+_STACK_FRAME = re.compile(r"^\s*\d+\s+\S+\s+0x[0-9a-f]+", re.I)
+
+# What a failure to start actually looks like, in the order worth reporting.
+_TELLING = ("built for newer", "incompatible", "Library not loaded",
+            "Symbol not found", "no such file", "error", "failed", "cannot")
+
+
+def server_log_tail(lines=40):
     """The last of what the model server said, for when it will not start."""
     try:
-        with open(os.path.join(config.model_dir(), "server.log")) as handle:
+        with open(os.path.join(config.model_dir(), "server.log"),
+                  errors="replace") as handle:
             return "".join(handle.readlines()[-lines:]).strip()
     except OSError:
         return ""
+
+
+def server_error():
+    """The one line worth showing a person out of a crashing server's output.
+
+    Taking the last line is what this did, and on a crash the last line is a
+    backtrace frame — a user was told "Balance AI could not start. It said: 9
+    dyld 0x000000018ab9c7f28 start + 2236", which tells them nothing and cannot
+    be acted on. The real cause is further up, above the stack.
+    """
+    lines = [l.strip() for l in server_log_tail().splitlines() if l.strip()]
+    lines = [l for l in lines if not _STACK_FRAME.match(l)]
+    for needle in _TELLING:
+        for line in reversed(lines):
+            if needle.lower() in line.lower():
+                return line
+    return lines[-1] if lines else ""
 
 
 def nudge():
@@ -358,6 +409,13 @@ def runtime_state(host=None, model_path=None):
     if not server_binary():
         return _state("no_runtime", path, detail=(
             "This build of Balance has no model runtime in it."), progress=progress)
+    if macos_too_old():
+        # Said plainly and before anything is downloaded. Otherwise this Mac
+        # fetches 2.7 GB it can never use and then shows a crash backtrace.
+        return _state("unsupported_os", path, progress=progress, detail=(
+            f"Balance AI needs macOS {MIN_MACOS[0]}.{MIN_MACOS[1]} or later. "
+            f"This Mac is on {platform.mac_ver()[0]}. The rest of Balance works "
+            "as it always has."))
     if progress["state"] == "downloading":
         return _state("downloading", path, detail="Downloading the model…",
                       progress=progress)
@@ -371,10 +429,9 @@ def runtime_state(host=None, model_path=None):
     if _failed_starts >= MAX_START_ATTEMPTS:
         # It has been tried and it is not coming up. Saying "starting up" past
         # this point is not optimism, it is a screen that never changes.
-        last = server_log_tail(3)
+        said = server_error()
         return _state("start_failed", path, progress=progress, detail=(
-            "Balance AI could not start."
-            + (f" It said: {last.splitlines()[-1]}" if last else "")))
+            "Balance AI could not start." + (f" It said: {said}" if said else "")))
 
     # The file is there and the server is not answering: it is still loading,
     # which on a cold disk takes a while and asks nothing of anyone.

@@ -224,6 +224,13 @@ function chatSetupHtml() {
         </div>`;
     }
 
+    if (s.state === "unsupported_os") {
+        return `<div class="chat-setup">
+            <h4>This Mac can't run Balance AI</h4>
+            <p>${escapeHtml(s.detail || "")}</p>
+        </div>`;
+    }
+
     if (s.state === "start_failed") {
         return `<div class="chat-setup">
             <h4>Balance AI could not start</h4>

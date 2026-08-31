@@ -603,6 +603,7 @@ weights changes the shape of the question, so `/api/chat/status` now carries a
 | `download_failed` | what stopped it, nothing lost | a click |
 | `starting` | that it is loading | nothing |
 | `start_failed` | what the server said, and an offer to fetch the model again | a click |
+| `unsupported_os` | that this Mac is below macOS 13.3 | nothing |
 | `no_runtime` | that this build has no model in it | nothing |
 
 The download streams to a `.part` file and resumes, because 2.7 GB is far too
@@ -613,10 +614,19 @@ passed as a whole one, `llama-server` could not load it, and the panel said
 "starting up" until somebody gave up. The size must match what was promised, and
 the file has to begin `GGUF`.
 
+**Balance runs on more Macs than the assistant does.** The app needs Apple
+silicon, which is macOS 11 and up; the bundled llama.cpp reports `minos 13.3`.
+That leaves a range of machines where everything else works and the model server
+cannot start at all — dyld refuses the binary and the process dies with a
+backtrace. `macos_too_old()` checks first, so such a Mac is told plainly instead
+of downloading 2.7 GB it can never use.
+
 **And a start that keeps failing says so.** Every poll nudged another attempt,
 each one failed, and the screen never changed. After two tries the state becomes
-`start_failed` and carries the last line the server printed, which is the whole
-reason its output is kept. "Starting up" for ever is the least useful thing a
+`start_failed` and carries the telling line out of the server's output — not the
+last one. A crashing process ends in a backtrace, and a user was shown "It said:
+9 dyld 0x00000001ab9c7f28 start + 2236", which no one can act on and which sat
+directly beneath the sentence that explained it. "Starting up" for ever is the least useful thing a
 screen can say. `licences/` travels in the
 bundle and is copied beside the weights when they land — Apache 2.0 permits the
 redistribution and asks that its terms and the attribution go with it, and the

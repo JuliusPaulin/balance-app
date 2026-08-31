@@ -259,3 +259,62 @@ def test_a_first_failure_is_still_just_starting(
     write_model(models_dir / "model.gguf")
     monkeypatch.setattr(model_runtime, "_failed_starts", 1)
     assert model_runtime.runtime_state()["state"] == "starting"
+
+
+# ── When the Mac itself is the problem ────────────────────────────────────
+
+def test_an_old_macos_is_told_before_anything_is_downloaded(
+        models_dir, runtime_present, no_server, monkeypatch):
+    """Balance runs on any Apple silicon Mac; the bundled runtime needs 13.3.
+
+    So there is a range of machines where the app is fine and the assistant
+    cannot start. Without this the Mac fetches 2.7 GB it can never use and then
+    shows a dyld backtrace, which is a miserable way to learn about a version
+    requirement.
+    """
+    monkeypatch.setattr(model_runtime.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(model_runtime.platform, "mac_ver",
+                        lambda: ("12.7.1", ("", "", ""), "arm64"))
+    state = model_runtime.runtime_state()
+    assert state["state"] == "unsupported_os"
+    assert "13.3" in state["detail"] and "12.7.1" in state["detail"]
+
+
+def test_a_supported_macos_is_left_alone(monkeypatch):
+    monkeypatch.setattr(model_runtime.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(model_runtime.platform, "mac_ver",
+                        lambda: ("13.3", ("", "", ""), "arm64"))
+    assert model_runtime.macos_too_old() is False
+
+
+def test_an_unreadable_version_is_not_treated_as_too_old(monkeypatch):
+    """Never guess a machine out of a feature it might be able to run."""
+    monkeypatch.setattr(model_runtime.platform, "system", lambda: "Darwin")
+    monkeypatch.setattr(model_runtime.platform, "mac_ver",
+                        lambda: ("", ("", "", ""), ""))
+    assert model_runtime.macos_too_old() is False
+
+
+# ── Saying what actually went wrong ───────────────────────────────────────
+
+def test_a_crash_reports_its_cause_not_its_stack(models_dir, monkeypatch):
+    """A user was told: "It said: 9 dyld 0x00000001ab9c7f28 start + 2236".
+
+    That is a backtrace frame. It cannot be acted on, and the real cause was
+    sitting a few lines above it.
+    """
+    log = (models_dir / "server.log")
+    log.write_text(
+        "ggml_metal_init: loaded kernels\n"
+        "dyld[4711]: Library not loaded: @rpath/libggml-base.dylib\n"
+        "  Referenced from: llama-server\n"
+        "0   llama-server  0x0000000104a1c000 main + 12\n"
+        "9   dyld          0x00000001ab9c7f28 start + 2236\n")
+    assert model_runtime.server_error() == (
+        "dyld[4711]: Library not loaded: @rpath/libggml-base.dylib")
+
+
+def test_an_ordinary_last_line_is_still_used(models_dir):
+    """No stack, no known phrase — then the last thing said is the best there is."""
+    (models_dir / "server.log").write_text("loading model\nout of memory\n")
+    assert model_runtime.server_error() == "out of memory"
