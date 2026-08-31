@@ -508,6 +508,10 @@ class LlamaCppBackend:
         read.
         """
         content, usage, calls = [], {}, {}
+        # Without asking, the usage totals never arrive on this path and every
+        # turn reports zero tokens in and zero out — which is what the terminal
+        # harness prints to tell a prompt problem from a model one.
+        payload = {**payload, "stream_options": {"include_usage": True}}
         with requests.post(url, json={**payload, "stream": True}, stream=True,
                            timeout=config.OLLAMA_TIMEOUT) as response:
             if not response.ok:
