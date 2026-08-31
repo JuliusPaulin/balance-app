@@ -33,6 +33,11 @@ def chat_status():
     the model name differently.
     """
     state = backend_status()
+    # Asking whether it is ready is also when to make it so. The panel polls
+    # this while it says "starting", and until now nothing was listening.
+    if state.get("state") == "starting":
+        from model_runtime import nudge
+        nudge()
     return jsonify({
         "configured": config.ai_configured() and state["reachable"]
                       and state["model_installed"],

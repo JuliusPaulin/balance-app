@@ -33,6 +33,9 @@ import config
 # One server, one download, for the life of the process.
 _server = None
 _download = {"state": "idle", "bytes": 0, "total": 0, "error": None}
+# Whether a start is already in flight, so a panel polling every two seconds
+# does not queue up a spawn per poll.
+_starting = False
 _lock = threading.Lock()
 
 # How long to let the server boot before calling it stuck. Loading three
@@ -218,6 +221,10 @@ def ensure_running():
         if _server and _server.poll() is None:
             pass  # Someone else started it; fall through and wait.
         else:
+            # Kept, not discarded. When this failed to start there was nothing
+            # anywhere to say why — the panel said "starting up" and the only
+            # way to learn otherwise was to run the binary by hand.
+            log = open(os.path.join(config.model_dir(), "server.log"), "w")
             _server = subprocess.Popen(
                 [binary,
                  "--model", config.model_file(),
@@ -227,7 +234,7 @@ def ensure_running():
                  # Everything on the GPU it can be. On a Mac that is Metal, and
                  # llama.cpp quietly puts back what will not fit.
                  "--n-gpu-layers", "999"],
-                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                stdout=log, stderr=subprocess.STDOUT,
                 env={**os.environ,
                      "DYLD_LIBRARY_PATH": os.path.dirname(binary)})
 
@@ -239,6 +246,33 @@ def ensure_running():
             return False
         time.sleep(0.5)
     return False
+
+
+def nudge():
+    """Start the server in the background if it should be running.
+
+    `runtime_state` only reports, and for a while nothing acted on what it
+    reported: with the weights on disk and no server up it answered "starting"
+    to every poll, forever, because the only thing that ever called
+    `ensure_running` was a question — and the panel will not let you ask one
+    until it says ready. A status of "starting" now has something starting
+    behind it.
+    """
+    global _starting
+    if _starting or server_responding() or not model_present():
+        return
+    if not server_binary():
+        return
+    _starting = True
+
+    def run():
+        global _starting
+        try:
+            ensure_running()
+        finally:
+            _starting = False
+
+    threading.Thread(target=run, daemon=True).start()
 
 
 def stop():

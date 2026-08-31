@@ -164,3 +164,42 @@ def test_a_server_outliving_its_model_file_is_not_ready(
     state = model_runtime.runtime_state()
     assert state["state"] != "ready"
     assert state["configured"] is False
+
+
+# ── Something has to actually start it ────────────────────────────────────
+
+def test_a_starting_state_has_something_starting_behind_it(
+        models_dir, runtime_present, no_server, monkeypatch):
+    """The panel said "starting up" for ever and nothing was.
+
+    `runtime_state` only reports, and the one thing that called
+    `ensure_running` was a question — which the panel will not let you ask
+    until it says ready. So with the weights on disk and no server up, every
+    poll answered "starting" and nothing acted on it.
+    """
+    model_runtime._starting = False
+    (models_dir / "model.gguf").write_bytes(b"GGUF" + b"\0" * 100)
+    started = []
+    monkeypatch.setattr(model_runtime, "ensure_running",
+                        lambda: started.append(True))
+
+    assert model_runtime.runtime_state()["state"] == "starting"
+    model_runtime.nudge()
+    for _ in range(50):
+        if started:
+            break
+        import time
+        time.sleep(0.02)
+    assert started == [True]
+
+
+def test_a_start_already_in_flight_is_not_started_again(
+        models_dir, runtime_present, no_server, monkeypatch):
+    """The panel polls every two seconds; that must not queue a spawn a poll."""
+    (models_dir / "model.gguf").write_bytes(b"GGUF" + b"\0" * 100)
+    monkeypatch.setattr(model_runtime, "_starting", True)
+    started = []
+    monkeypatch.setattr(model_runtime, "ensure_running",
+                        lambda: started.append(True))
+    model_runtime.nudge()
+    assert started == []
