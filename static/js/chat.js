@@ -232,8 +232,21 @@ function chatSetupHtml() {
         </div>`;
     }
 
-    // Ollama, or a build with no runtime in it: the old two, still true and
-    // still fixed the same way.
+    // A shipped build carries its own runtime, so there is nothing here a user
+    // could install and nothing to tell them to. Saying "run ollama pull" to
+    // someone who has never heard of Ollama — and who was never asked to — is
+    // worse than saying nothing.
+    if (s.backend === "bundled") {
+        return `<div class="chat-setup">
+            <h4>Balance AI isn't available</h4>
+            <p>${escapeHtml(s.detail || "Something went wrong starting it.")}</p>
+            <p>Reopening Balance usually fixes it. If it does not, this build is
+               missing part of itself and needs replacing.</p>
+            <button class="btn btn-secondary btn-sm" onclick="chatReady=null;loadChatStatus()">Try again</button>
+        </div>`;
+    }
+
+    // Ollama, which is a development backend and never what a user runs.
     const model = s.model;
     let what, how;
     if (s.reachable === false && s.state !== "no_runtime") {
