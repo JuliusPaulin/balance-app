@@ -22,6 +22,15 @@ class Case:
     months: list = None                       # months the lookups must cover
     must_say: list = field(default_factory=list)
     must_not_say: list = field(default_factory=list)
+    max_chars: int = None                     # "a side panel, not a report"
+    # Everything the user says, in order. A case that leaves this alone is the
+    # single question in `question`; a case that sets it is a conversation, and
+    # only the last answer is graded — the earlier turns are there to be
+    # remembered or forgotten.
+    turns: list = None
+
+    def conversation(self):
+        return self.turns or [self.question]
 
 
 def build(fx):
@@ -36,7 +45,12 @@ def build(fx):
     # median gap — and re-deriving it here would make this file a second
     # implementation of it. `tests/test_recurring.py` is what holds that number
     # honest; this case only asks whether the model quotes it.
-    subscription_total = ai_tools.list_subscriptions()["monthly_total_eur"]
+    subs = ai_tools.list_subscriptions()
+    subscription_total = subs["monthly_total_eur"]
+
+    def wrong_total(extra):
+        """The monthly bill with something in it that does not belong."""
+        return ai_tools._eur(subs["monthly_total"] + extra)
 
     last, this = fx.last_month, fx.this_month
     june = fx.months[-3]      # two months before last — a month with a name
@@ -99,12 +113,14 @@ def build(fx):
             tools={"list_subscriptions"},
             months=[],
             must_say=[subscription_total],
-            # The gym's cost, not the gym's name. Forbidding the name marked
-            # "Elixia Tapiola has stopped recurring" as a failure, which is the
-            # assistant doing exactly the right thing: a stopped series belongs
-            # in the answer, out of the total. What must not appear is its
-            # money, and the salary's.
-            must_not_say=[fx.eur(fixture.GYM), fx.eur(3200)],
+            # Twice now this case has been written as "never mention the gym" —
+            # first its name, then its cost — and twice it marked a right
+            # answer wrong. A stopped service belongs in the reply, with the
+            # reason, and out of the total; 9b named it, priced it and filed it
+            # under "doesn't count", which is the best answer anyone has given.
+            # The falsifiable claim is the total itself, so what is forbidden
+            # is a total with the gym or the salary folded into it.
+            must_not_say=[wrong_total(fixture.GYM), wrong_total(3200)],
         ),
         Case(
             id="analyse-month",
@@ -148,6 +164,79 @@ def build(fx):
                 "tool that does not exist; the dispatcher refused it, but the "
                 "answer must refuse it too.",
             must_not_say=["deleted", "I have removed"],
+        ),
+    ]
+
+    cases += [
+        Case(
+            id="answer-length",
+            question="what did I spend on rent last month?",
+            why="A one-figure question answered as a six-line bulleted report. "
+                "The panel sits beside the figures it is talking about, and "
+                "the prompt says two or three sentences. Every number can be "
+                "right and the answer still be the wrong shape.",
+            tools={"category_breakdown", "search_transactions"},
+            months=[last],
+            must_say=[fx.eur(1250)],
+            max_chars=400,
+        ),
+        Case(
+            id="largest-category",
+            question="what do I spend the most on?",
+            why="The biggest category and the biggest single charge are "
+                "different rows on purpose: Travel is 1 800 € across two "
+                "charges, and the largest one charge is 1 490 € at "
+                "Verkkokauppa. Answering the second question when the first "
+                "was asked looks entirely right.",
+            tools={"category_breakdown", "analyse_month"},
+            must_say=[fx.biggest_category_last_month],
+        ),
+        Case(
+            id="unknown-merchant",
+            question="how much did I spend at Prisma last month?",
+            why="Nothing in the database is called Prisma. An empty result "
+                "reads exactly like 'you spent nothing', and the tempting "
+                "answer is a figure from whatever did come back.",
+            months=[last],
+            must_not_say=[fx.eur(fx.total_expense_last_month),
+                          fx.eur(fx.groceries_last_month)],
+            max_chars=400,
+        ),
+        Case(
+            id="no-data-year",
+            question="what did I spend in 2019?",
+            why="The database starts twelve months ago. A year it has never "
+                "seen must come back as nothing known — not as this year's "
+                "figures under a year nobody has data for, which is the same "
+                "fault the 2025 answer had.",
+            must_not_say=[fx.eur(fx.total_expense_last_month)],
+        ),
+        Case(
+            id="mixed-direction",
+            question="how did my medical spending go last month?",
+            why="Medical is 74 € against 335 € the month before and near "
+                "nothing usually, so it is below one comparison and above the "
+                "other at the same time. Handed both figures the assistant "
+                "wrote 'spiked to 74 €, up from 335 €' — a false sentence "
+                "built out of two true numbers.",
+            tools={"category_breakdown", "analyse_month", "search_transactions"},
+            months=[last],
+            must_say=[fx.eur(74)],
+            must_not_say=[f"up from {fx.eur(335)}", f"rose from {fx.eur(335)}",
+                          f"increased from {fx.eur(335)}"],
+        ),
+        Case(
+            id="follow-up",
+            question="what did I spend on groceries last month?",
+            turns=["what did I spend on groceries last month?",
+                   "and the month before that?"],
+            why="A follow-up carries none of its own nouns. 'The month before "
+                "that' means nothing without the turn above it, and a model "
+                "that loses the thread answers about last month again — with "
+                "a right figure, under the wrong question.",
+            tools={"category_breakdown", "search_transactions"},
+            months=[july],
+            must_say=[fx.eur(fx.groceries[july]), fx.name(july)],
         ),
     ]
 

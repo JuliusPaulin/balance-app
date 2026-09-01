@@ -64,13 +64,19 @@ def run_case(case, on_event=None):
     from evals import grading
 
     started = time.monotonic()
-    result = ai_chat.chat([{"role": "user", "content": case.question}],
-                          on_event=on_event)
+    # A conversation, not a question: every turn is sent with the ones before
+    # it, and the last answer is the one graded. Most cases are one turn, which
+    # is the same thing said shortly.
+    history = []
+    for turn in case.conversation():
+        history.append({"role": "user", "content": turn})
+        result = ai_chat.chat(history, on_event=on_event)
+        history.append({"role": "assistant", "content": result.get("reply") or ""})
     elapsed = time.monotonic() - started
     outputs = _outputs_for(result.get("tool_calls") or [])
     return {
         "case": case.id,
-        "question": case.question,
+        "question": " → ".join(case.conversation()),
         "reply": result.get("reply") or "",
         "trace": [{"tool": c["tool"], "arguments": c["arguments"],
                    "period": c.get("period"), "ok": c.get("ok")}

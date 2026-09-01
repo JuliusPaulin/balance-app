@@ -58,6 +58,23 @@ def test_every_euro_figure_in_a_reply_is_found(reply, expected):
     assert grading.figures(reply) == expected
 
 
+@pytest.mark.parametrize("space, what", [
+    ("\u00a0", "no-break space — what the app writes"),
+    ("\u202f", "narrow no-break space — what Qwen 9b writes"),
+    (" ", "an ordinary space — what Qwen 4b writes"),
+    ("\u2009", "a thin space"),
+])
+def test_any_invisible_space_between_the_digits_is_the_same_figure(space, what):
+    """The grader failed a correct net worth four times out of four on the
+    character the model chose to put between the digits. None of them is
+    visible, all of them are the same money, and a grader that fails on one is
+    measuring itself."""
+    reply = f"Your net worth is -122{space}300{space}€."
+    assert grading.figures(reply) == [122300.0], what
+    assert grading.states(reply, ai_tools._eur(-122300)) is True
+    assert grading.reformatted(reply) == []
+
+
 def test_a_number_that_is_not_money_is_not_a_claim_about_money():
     """"the last 3 months" needs no source. Demanding one for every digit is
     how a grader ends up ignored."""
@@ -226,6 +243,81 @@ def test_a_case_asks_for_a_figure_the_fixture_can_actually_return(fx):
                 assert phrase in known, f"{case.id} wants {phrase!r}, nothing has it"
 
 
+# ── The harder cases, and what they rest on ───────────────────────────────
+
+def test_medical_moves_both_ways_at_once(fx):
+    """The case only means something if the two comparisons really disagree:
+    74 € is below the 335 € of the month before and above a usual of nearly
+    nothing. A fixture where they agree cannot see the inverted sentence."""
+    month = ai_tools.analyse_month(month=fx.last_month)
+    medical = next(c for c in month["categories"] if c["category"] == "Medical")
+
+    assert medical["vs_last_month_direction"] == "down"
+    assert medical["vs_usual_direction"] == "above"
+
+
+def test_the_biggest_category_is_not_the_biggest_charge(fx):
+    """Travel is 1 800 € across two charges; the largest single charge is
+    1 490 € at one shop. Answering the second when the first was asked looks
+    entirely right, and a fixture where they coincide cannot tell them apart.
+    """
+    breakdown = ai_tools.category_breakdown(month=fx.last_month)
+    top_charge = ai_tools.search_transactions(
+        month=fx.last_month, type="expense", limit=1)["transactions"][0]
+
+    assert breakdown["categories"][0]["category"] == fx.biggest_category_last_month
+    assert top_charge["category"] == "Electronics"
+
+
+def test_nothing_in_the_fixture_is_called_prisma(fx):
+    """The unknown-merchant case is a claim about the database, so hold the
+    database to it."""
+    assert ai_tools.search_transactions(q="Prisma", period="all_time")["matched"] == 0
+
+
+def test_a_long_report_fails_the_side_panel_check(fx):
+    """9b answers a one-figure question with a six-line bulleted list. Every
+    number right, and not what a side panel is for — and nothing else in the
+    suite could see it."""
+    case = _case(fx, "answer-length")
+    trace = [{"tool": "category_breakdown", "arguments": {"period": "last_month"},
+              "period": fx.last_month, "ok": True}]
+    outputs = [ai_tools.category_breakdown(month=fx.last_month)]
+
+    short = f"You paid {fx.eur(1250)} in rent in {fx.name(fx.last_month)}."
+    report = short + "\n" + "\n".join(
+        f"- **Item {n}**: some detail about the row and what it cost" for n in range(12))
+
+    assert _grade(case, short, trace, outputs)["short enough for a side panel"]
+    assert _grade(case, report, trace, outputs)["short enough for a side panel"] is False
+
+
+def test_a_case_with_no_turns_is_a_single_question():
+    plain = case_module.Case(id="x", question="what did I spend?", why="?")
+    assert plain.conversation() == ["what did I spend?"]
+
+
+def test_a_follow_up_is_graded_on_its_own_answer(fx):
+    """Only the last turn is graded. The turn above it exists to be remembered
+    — 'the month before that' has no nouns of its own."""
+    case = _case(fx, "follow-up")
+    july = fx.months[-2]
+    assert case.conversation()[-1] == "and the month before that?"
+
+    trace = [{"tool": "category_breakdown", "arguments": {"month": july},
+              "period": july, "ok": True}]
+    outputs = [ai_tools.category_breakdown(month=july)]
+
+    right = (f"In {fx.name(july)} you spent {fx.eur(fx.groceries[july])} "
+             "on groceries.")
+    lost_the_thread = (f"In {fx.name(fx.last_month)} you spent "
+                       f"{fx.eur(fx.groceries_last_month)} on groceries.")
+
+    assert all(_grade(case, right, trace, outputs).values())
+    assert _grade(case, lost_the_thread, trace, outputs)[
+        f"says {fx.name(july)!r}"] is False
+
+
 # ── The graders replayed against the answers that shipped ─────────────────
 
 def _grade(case, reply, trace, outputs):
@@ -277,17 +369,34 @@ def test_a_three_month_total_reported_as_one_month_is_marked_wrong(fx):
     assert grades[f"never says {fx.eur(fx.groceries[june] * 3)!r}"] is False
 
 
-def test_the_salary_sold_as_a_subscription_is_marked_wrong(fx):
+def test_the_salary_folded_into_the_monthly_bill_is_marked_wrong(fx):
     """It sorted every recurring row by cost and led with the salary, labelled
     "(income)". A flag on a row is not a boundary."""
     case = _case(fx, "subscriptions")
-    outputs = [ai_tools.list_subscriptions()]
+    result = ai_tools.list_subscriptions()
+    outputs = [result]
     trace = [{"tool": "list_subscriptions", "arguments": {}, "period": None,
               "ok": True}]
-    total = ai_tools.list_subscriptions()["monthly_total_eur"]
-    reply = (f"Your biggest recurring item is Acme Oy palkka at {fx.eur(3200)} "
-             f"(income), then {total} of subscriptions.")
-    assert _grade(case, reply, trace, outputs)[f"never says {fx.eur(3200)!r}"] is False
+    inflated = ai_tools._eur(result["monthly_total"] + 3200)
+    reply = f"Your recurring charges come to {inflated} a month."
+    assert _grade(case, reply, trace, outputs)[f"never says {inflated!r}"] is False
+
+
+def test_naming_a_stopped_service_and_its_cost_is_not_a_failure(fx):
+    """Twice this case was written as "never mention the gym" — first its
+    name, then its cost — and twice it marked a right answer wrong. A stopped
+    service belongs in the reply, with the reason, and out of the total. The
+    9b model named it, priced it and filed it under "doesn't count", which is
+    the best answer anything has given this question.
+    """
+    case = _case(fx, "subscriptions")
+    result = ai_tools.list_subscriptions()
+    trace = [{"tool": "list_subscriptions", "arguments": {}, "period": None,
+              "ok": True}]
+    reply = (f"Your subscriptions cost {result['monthly_total_eur']} a month. "
+             f"A stopped Elixia Tapiola membership ({fx.eur(fixture_module.GYM)}) "
+             "is not counted — the service ended.")
+    assert all(_grade(case, reply, trace, [result]).values())
 
 
 def test_answering_with_no_lookup_at_all_is_marked_wrong(fx):

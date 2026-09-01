@@ -50,6 +50,15 @@ BIG_PURCHASE = 1490.00
 # not — and confusing them is the ordinary mistake.
 TRAVEL_SPIKE = (940.00, 860.00)
 
+# Medical exists to make one category move two ways at once: 335 € two months
+# back, 74 € last month, and nothing in any other month. So last month it is
+# well BELOW the month before and well ABOVE its own usual, and the two
+# comparisons disagree. Handed both figures the assistant once wrote "Medical
+# spiked to 74 €, up from 335 €" — a false sentence built out of two true
+# numbers, and the reason every row carries its directions already decided.
+MEDICAL_SPIKE = 335.00      # the month before last
+MEDICAL_LAST_MONTH = 74.00
+
 # Net worth is kept by hand in this app, so the fixture keeps some by hand too.
 # A mortgage is in there because a net worth that is a positive number is the
 # easy case, and "how am I doing" against a negative one is the real one.
@@ -128,6 +137,13 @@ class Fixture:
                          if m.startswith(str(year))), 2)
 
     @property
+    def biggest_category_last_month(self):
+        """Travel, at 1 800 € across two charges — and NOT the biggest single
+        charge, which is 1 490 € at one shop. Confusing those two questions is
+        the ordinary mistake."""
+        return "Travel"
+
+    @property
     def stopped_subscription(self):
         """The gym. Detection still finds it; what it must not do is charge
         the user for it every month."""
@@ -181,6 +197,9 @@ def build(today=None):
             add(month, 14, "Netflix.com", "Entertainment", NETFLIX)
             if month <= stopped_from:
                 add(month, 2, "Elixia Tapiola", "Exercise", GYM)
+
+        add(fx.months[-2], 11, "Terveystalo", "Medical", MEDICAL_SPIKE)
+        add(fx.last_month, 9, "Yliopiston Apteekki", "Medical", MEDICAL_LAST_MONTH)
 
         # The two things that make "what stands out" a question with an answer.
         add(fx.last_month, 17, "Verkkokauppa.com", "Electronics", BIG_PURCHASE)

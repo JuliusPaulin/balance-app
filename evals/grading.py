@@ -15,6 +15,7 @@ the reply catches that; comparing its figures against the tool results does.
 """
 
 import re
+import unicodedata
 from collections import namedtuple
 
 import ai_tools
@@ -23,6 +24,19 @@ import ai_tools
 # whose headline number is dominated by punctuation is a run nobody reads, and
 # the first version of the format check below turned every case red.
 Check = namedtuple("Check", "name ok detail advisory")
+
+def plain_spaces(text):
+    """Every kind of Unicode space written as an ordinary one.
+
+    The app separates thousands with U+00A0. Qwen 9b writes U+202F, a narrow
+    no-break space, and 4b writes the ordinary one — all three are the same
+    figure and none of them is visible. Without this the grader failed a
+    correct net worth four times out of four on the character the model chose
+    to put between the digits, which is the grader measuring itself.
+    """
+    return "".join(" " if unicodedata.category(c) == "Zs" else c
+                   for c in (text or ""))
+
 
 # A figure with a euro sign on either side of it. Nothing else is checked:
 # dates, counts and "two or three" are not claims about money, and demanding a
@@ -65,7 +79,7 @@ def parse_amount(text):
 def figures(text):
     """Every euro amount stated in a reply, as numbers."""
     found = []
-    for match in _EUR_FIGURE.finditer(text or ""):
+    for match in _EUR_FIGURE.finditer(plain_spaces(text)):
         value = parse_amount(match.group(1) or match.group(2) or "")
         if value is not None:
             found.append(value)
@@ -73,7 +87,8 @@ def figures(text):
 
 
 def percentages(text):
-    return [v for v in (parse_amount(m.group(1)) for m in _PERCENT.finditer(text or ""))
+    return [v for v in (parse_amount(m.group(1))
+                        for m in _PERCENT.finditer(plain_spaces(text)))
             if v is not None]
 
 
@@ -201,6 +216,14 @@ def check(case, result, outputs):
     for phrase in case.must_not_say:
         add(f"never says {phrase!r}", not states(reply, phrase))
 
+    if case.max_chars:
+        # The system prompt says two or three sentences, because this is a side
+        # panel beside the figures being asked about. 9b answers a one-figure
+        # question with a six-line bulleted report — every number right, and
+        # not what the panel is for. Nothing else in the suite could see it.
+        add("short enough for a side panel", len(reply) <= case.max_chars,
+            f"{len(reply)} characters, cap is {case.max_chars}")
+
     misformatted = reformatted(reply)
     add("the app's own number format", not misformatted,
         f"wrote {misformatted}" if misformatted else "", advisory=True)
@@ -242,10 +265,10 @@ def reformatted(reply):
         """One ordinary space for any run of space. Which kind of space was
         typed is not a style a reader can see, and treating it as one flagged
         every answer in the suite — including the ones that were right."""
-        return re.sub(r"[\s ]+", " ", text)
+        return re.sub(r"\s+", " ", plain_spaces(text))
 
     off = []
-    for match in _EUR_FIGURE.finditer(reply or ""):
+    for match in _EUR_FIGURE.finditer(plain_spaces(reply)):
         # The regex takes the whole figure and whatever punctuation trails it;
         # the full stop ending the sentence is not a formatting choice.
         written = match.group(0).strip().rstrip(".,")

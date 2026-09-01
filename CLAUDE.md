@@ -134,7 +134,7 @@ through `db`: `db.IntegrityError`, `db.DatabaseError`, `db.Json(...)`,
 
 ## Tests
 
-`python3 -m pytest tests/` — 411 tests, all green.
+`python3 -m pytest tests/` — 422 tests, all green.
 
 `conftest.py` points `SQLITE_PATH` at a throwaway file **at import time**, before
 pytest collects any test module. This matters: test modules `import config` /
@@ -1027,7 +1027,31 @@ difference between 3/3 and 1/3 is the difference between shipping it and not.
 The eleven-question comparison of 4b against 9b recorded above was done by
 hand, and could not be run again.
 
-**Measured, 4b over three passes: 30 of 30, 5.0s a question.** It was 27 of 30
+**Six harder cases** were added once both models cleared the first ten, because
+a suite nothing fails measures nothing. Each is a shape of question the first
+ten could not see: an answer that is right and too long for a side panel, the
+biggest **category** asked for where the biggest **charge** is the tempting
+answer, a shop the database has never heard of, a year before the data starts,
+a category that is below last month and above its usual at the same time, and a
+follow-up turn carrying none of its own nouns ("and the month before that?").
+Two new kinds of check came with them: a character cap, and a case that is a
+conversation rather than a question — only its last answer is graded.
+
+**Measured over three passes: 4b 30 of 30 at 5.4s a question, 9b 30 of 30 at
+9.7s** on the first ten, and **4b 48 of 48 at 5.8s** on all sixteen. The eleven-question comparison recorded above found the same thing by
+hand and could not be run again; this one can. 9b is 1.8x the wait for the same
+answers, which is why 4b is still the default.
+
+**Two invisible spaces, and a grader failing on its own strictness.** 9b
+separates thousands with U+202F, a narrow no-break space; the app writes U+00A0
+and 4b writes an ordinary one. All three are the same money and none of them
+can be seen, and the grader failed a correct net worth four times out of four
+on the difference. Every kind of Unicode space is now read as one. The same run
+marked 9b wrong for naming a stopped subscription and its cost while filing it
+under "doesn't count" — the best answer anything has given that question. Twice
+that case had been written as "never mention the gym", and twice it failed a
+right answer; what it forbids now is a monthly total with the gym or the salary
+folded into it, which is the claim that can actually be false. It was 27 of 30
 on the first run, and the three failures were two real bugs neither the 411
 tests nor anyone reading answers by hand had caught. The tools were right in
 both cases; the sentences were not.
