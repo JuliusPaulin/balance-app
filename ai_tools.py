@@ -435,11 +435,18 @@ def list_subscriptions():
             # What it costs per month, whatever its cadence — the figure the
             # totals are built from. `last_amount` is what actually left the
             # account last time, which is the answer to "how much is Netflix".
+            #
+            # The yearly figure used to sit here too, and three amounts on one
+            # row was one too many. Asked what the subscriptions cost each
+            # month the model wrote "1 253 € per month, that's 1 472 € for
+            # rent" — 1 472 € being nothing any tool returned, a mangling of a
+            # row reading 1 226 € monthly, 14 718 € yearly and 1 250 € last
+            # charge. It got Netflix right, where the three are 16 €, 188 € and
+            # 16 € and picking wrongly barely shows. The rent is where it
+            # shows. The annual total is still on the result, because that is
+            # the yearly figure anyone actually asks for; a per-row one is not.
             "monthly_cost": s.get("monthly_cost"),
             "monthly_cost_eur": _eur(s.get("monthly_cost")),
-            "annual_cost": s.get("annual_cost"),
-            "annual_cost_eur": _eur(s.get("annual_cost")),
-            "last_amount": s.get("last_amount"),
             "last_amount_eur": _eur(s.get("last_amount")),
             "cadence": s.get("cadence"),
             "status": s.get("status"),
@@ -527,8 +534,15 @@ def annual_report(year=None):
                  "total_eur": _eur(r["total"]), "transactions": r.get("count")}
                 for r in (rows or [])[:8]]
 
+    reported = data.get("year")
     return {
-        "year": data.get("year"),
+        "year": reported,
+        # The panel puts the period of every lookup on its summary line, and
+        # reads it from this key. Without it an annual report showed a blank
+        # where the year should be — on the one answer whose whole meaning is
+        # which year it is about.
+        "period": f"{reported} ({span})" if reported and span else (
+            str(reported) if reported else None),
         # Both years are measured over the same months, or a part-finished year
         # would report a collapse in income that is really the calendar.
         "compared_over": span,
@@ -820,11 +834,25 @@ TOOL_SCHEMAS = [
     },
     {
         "name": "annual_report",
-        "description": "A year against the previous one, fairly compared over the "
-                       "months this year actually has.",
+        "description": "A whole named year — its income, its spending and how "
+                       "it compares with the year before, fairly measured over "
+                       "the months the year actually has. This is the tool for "
+                       "any question naming a year: 'what did I earn in 2025', "
+                       "'how was 2024'. No other tool takes a year, and a "
+                       "period like this_year always means the current one.",
         "input_schema": {
             "type": "object",
-            "properties": {"year": {"type": "integer", "description": "Defaults to this year."}},
+            "properties": {
+                "year": {
+                    "type": "integer",
+                    "description": "Use this — not a period on another tool — "
+                                   "whenever the question names a year "
+                                   "('in 2025', 'how was 2024'). The years "
+                                   "that hold data are listed as "
+                                   "years_with_data in the context. Defaults "
+                                   "to this year.",
+                },
+            },
             "required": [],
         },
     },
@@ -913,11 +941,22 @@ def context_block():
         label = f"{_MONTH_NAMES[int(key[5:7]) - 1]} {key[:4]}"
         by_name[label] = key
 
+    first, last = (span["first"], span["last"]) if span else (None, None)
+    years = ([str(y) for y in range(int(first[:4]), int(last[:4]) + 1)]
+             if first and last else [])
+
     return {
         "today": date.today().isoformat(),
         "current_month": this_month,
-        "first_month_with_data": span["first"] if span else None,
-        "last_month_with_data": span["last"] if span else None,
+        "current_year": this_month[:4],
+        "first_month_with_data": first,
+        "last_month_with_data": last,
+        # Named months are resolved here because the model got them wrong; a
+        # named year it was left to work out, and got wrong in the same way.
+        # Asked what it earned in 2025 it called category_breakdown with
+        # period "this_year", was handed 2026, and answered "in 2025 you
+        # earned 22 400 €" — grounded, sourced, and about the wrong year.
+        "years_with_data": years,
         # Newest first: a bare month name means the most recent one that has
         # been, which is the first match reading down.
         "months_by_name": by_name,

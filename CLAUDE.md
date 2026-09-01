@@ -43,6 +43,9 @@
   `scripts/fetch_runtime.sh` applies it and compiles the result
 - `scripts/ask.py` — ask the assistant from the terminal; prints which tools it
   called, which is how a prompt problem is told apart from a model problem
+- `evals/` — the questions the assistant is judged on, the fixture database
+  whose answers are known in advance, and the graders. `scripts/eval_ai.py`
+  runs them against a real model and scores what comes back
 
 **The `routes/` package.** `app.py` held every route until it reached 3,000
 lines; the routes now sit one area per module, and `routes/__init__.py` lists
@@ -131,7 +134,7 @@ through `db`: `db.IntegrityError`, `db.DatabaseError`, `db.Json(...)`,
 
 ## Tests
 
-`python3 -m pytest tests/` — 368 tests, all green.
+`python3 -m pytest tests/` — 411 tests, all green.
 
 `conftest.py` points `SQLITE_PATH` at a throwaway file **at import time**, before
 pytest collects any test module. This matters: test modules `import config` /
@@ -948,6 +951,113 @@ routing, and creativity here shows up as invented category names); `think` off
 by default with a one-time retry for models that reject the field; and
 `<think>` tags stripped from any reply, because a model narrating itself is not
 an answer to show anyone.
+
+### Validating the assistant
+
+The tests above cover the tool layer — that `category_breakdown` reports what
+the Dashboard would draw. None of them covers the part a user meets: a model
+choosing a tool, reading the result and writing a sentence. **Every failure
+recorded above was found by hand**, one question at a time, and there was no
+way to ask whether fixing one had broken another.
+
+`evals/` makes those runs repeatable.
+
+| File | Holds |
+|------|-------|
+| `evals/fixture.py` | a database whose every answer is known before the model is asked |
+| `evals/cases.py` | the questions, each with what a right answer must contain |
+| `evals/grading.py` | the graders, none of which needs a model of its own |
+
+```
+python3 scripts/eval_ai.py                       # the suite, once
+python3 scripts/eval_ai.py --repeat 3            # a pass rate, not a verdict
+python3 scripts/eval_ai.py --case subscriptions -v
+python3 scripts/eval_ai.py --backend anthropic   # the control
+```
+
+**The fixture, not the real database.** The real figures are the honest thing
+to judge a model against and the useless thing to judge it with: they move
+every time a statement is imported, so "it answered 421 €" cannot be written
+down as a pass. The fixture has the same shape — a salary, a rent, a weekly
+shop, two subscriptions, one service that stopped, one month with a spike — and
+`SQLITE_PATH` is pointed at a scratch file before `config` is imported, the same
+rule the test suite runs under.
+
+Three things in it are deliberate. The month in progress is left thin, because
+a real one is, and an assistant that reads it as a full month reports a
+collapse in spending that did not happen. The largest single **charge** and the
+largest **category** are different rows, because confusing those two questions
+is the ordinary mistake and a fixture where they coincide cannot see it. And
+the net worth is negative, because that is the one people have.
+
+**Four checks on every answer**, each one a thing that has actually gone wrong:
+
+| Check | Asks |
+|-------|------|
+| `tool` | did it look anything up, and the right thing? |
+| `months` | did it read the months the question was about? |
+| `grounded` | is every figure in the sentence one a tool handed it? |
+| `says` / `never says` | does the sentence carry the amount, the month, the shop? |
+
+`grounded` is the one worth the trouble. Every euro figure in the reply is
+matched against every number the tool results contained, walked recursively so
+a tool that grows a field does not quietly become a place to invent from.
+Asked what it earned last year the assistant once added twelve monthly figures
+up itself and answered 36 135 € against a real 36 840 € — confident, and 705 €
+out. No amount of reading the reply catches that.
+
+**A grader that fails everything is worse than none**, because a red run stops
+being read. Two rules keep it honest. An amount is graded as a **number**:
+"€1,490" is the figure the tool gave, re-punctuated, and calling it a miss
+buries the runs where the figure itself was wrong. And the format of an amount
+is a **note on a run, not a verdict on it** — `advisory` checks are shown and
+not counted. The first version counted them, flagged the app's own
+non-breaking space as a deviation from itself, and turned all ten cases red.
+
+**`tests/test_evals.py` judges the graders.** It replays each recorded failure
+as a scripted reply — the invented year total, the salary sold as a
+subscription, the figure with no month on it, the month taken apart in four
+lookups — and the grader has to mark every one wrong. It also checks the
+fixture is what the cases claim, so a case cannot demand a figure nobody wrote.
+No model is involved, so it runs in the ordinary suite.
+
+**`--repeat` is the flag to reach for when comparing two models.** A small model
+is not deterministic: a case that passes once has passed once, and the
+difference between 3/3 and 1/3 is the difference between shipping it and not.
+The eleven-question comparison of 4b against 9b recorded above was done by
+hand, and could not be run again.
+
+**Measured, 4b over three passes: 30 of 30, 5.0s a question.** It was 27 of 30
+on the first run, and the three failures were two real bugs neither the 411
+tests nor anyone reading answers by hand had caught. The tools were right in
+both cases; the sentences were not.
+
+**A named year, fixed.** Asked "what did I earn in 2025?" it called
+`category_breakdown(period="this_year")`, was handed 2026, and answered "in
+2025, you earned 22 400 €" — grounded, sourced, and about the wrong year, three
+times out of three. A named year was the one calendar case still left to the
+model: `annual_report` takes a `year` and nothing pointed at it, exactly as
+nothing pointed at `month` before `months_by_name` was written. The same three
+places were changed — `years_with_data` in the context, a description on the
+`year` argument that pulls as hard as the period's, and a paragraph on rule 4 —
+and it is 3/3 since. `annual_report` also had no `period` key, so the panel's
+summary line showed a blank on the one answer whose whole meaning is which year
+it covers.
+
+**Three amounts on one row, fixed.** Asked what the subscriptions cost, it wrote
+"1 253 € per month. That's 1 472 € for rent" — and 1 472 € is a figure no tool
+returned. The row carried `monthly_cost_eur` 1 226 €, `annual_cost_eur`
+14 718 € and `last_amount_eur` 1 250 €, and it mangled them into a fourth
+number, two runs in five. It got Netflix right, where the three are 16 €, 188 €
+and 16 € and picking wrongly barely shows; the rent is where it shows. This was
+rule 2 — copy the string, do not retype it — losing to a row with three strings
+on it, and the fix is the one `analyse_month` already took: give the model
+fewer amounts to choose between. The yearly figure came off the row. It stays
+on the result as `annual_total`, which is the yearly figure anyone actually
+asks for. 5/5 since.
+
+Both are what the harness is for. A wrong figure about money, stated
+confidently, is the failure this app cannot afford.
 
 ### Month Notes
 - Per-month text notes stored in `month_notes`

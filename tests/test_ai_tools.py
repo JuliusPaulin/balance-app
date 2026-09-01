@@ -331,6 +331,24 @@ def test_subscriptions_carry_amounts_and_a_total(with_a_subscription):
     assert spotify["counts_toward_total"] is True
 
 
+def test_a_subscription_row_carries_no_yearly_figure(with_a_subscription):
+    """Two amounts on a row, not three.
+
+    Asked what the subscriptions cost each month the model wrote "1 253 € per
+    month, that's 1 472 € for rent" — 1 472 € being nothing any tool returned,
+    a mangling of a row reading 1 226 € a month, 14 718 € a year and 1 250 €
+    last charge. It got Netflix right, where the three figures are 16 €, 188 €
+    and 16 € and picking wrongly barely shows. The yearly total stays on the
+    result; a yearly figure per row is one more thing to pick wrongly from.
+    """
+    result = ai_tools.list_subscriptions()
+    spotify = next(s for s in result["subscriptions"] if s["merchant"] == "Spotify")
+
+    assert "annual_cost" not in spotify
+    assert "annual_cost_eur" not in spotify
+    assert result["annual_total_eur"] is not None
+
+
 def test_a_salary_is_detected_but_does_not_count_as_a_subscription(client):
     """The detector finds any monthly series, wages included.
 
@@ -382,6 +400,14 @@ def test_annual_report_precomputes_the_year_on_year_change(seeded):
         result["this_year"]["income"] - result["last_year"]["income"])
     assert change["income_eur"].endswith("€")
     assert change["expense_direction"] in ("up", "down", "flat")
+
+
+def test_an_annual_report_says_which_year_it_is_about(seeded):
+    """The panel reads the period of every lookup off this key and puts it on
+    the summary line. An annual report showed a blank there — on the one answer
+    whose whole meaning is which year it covers."""
+    result = ai_tools.annual_report(year=2026)
+    assert result["period"].startswith("2026")
 
 
 def test_annual_report_compares_both_years_over_the_same_months(seeded):
