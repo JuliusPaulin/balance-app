@@ -195,6 +195,15 @@ CREATE TABLE IF NOT EXISTS recurring_dismissed (
     UNIQUE (user_id, signature)
 );
 
+CREATE TABLE IF NOT EXISTS recurring_overrides (
+    id         INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    signature  TEXT NOT NULL,
+    group_name TEXT NOT NULL,
+    created_at TEXT NOT NULL DEFAULT {_NOW_SQLITE},
+    UNIQUE (user_id, signature)
+);
+
 CREATE TABLE IF NOT EXISTS manual_subscriptions (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,

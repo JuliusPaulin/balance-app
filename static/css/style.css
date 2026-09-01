@@ -2684,6 +2684,118 @@ body.fs-active { overflow: hidden; }
     background: rgba(255, 56, 48, 0.10);
     color: var(--red);
 }
+/* The move button sits beside the hide button and does something reversible,
+   so it must not borrow the destructive red on hover. */
+.recurring-move:hover {
+    background: var(--accent-soft);
+    color: var(--accent);
+}
+
+/* ── Group headings inside the recurring table ────────────────────────
+   The page lists five kinds of recurring charge and used to run them together
+   under one total: on real data that total read 774 €/mo, of which 637 € was
+   rent. The headings are what make each figure answer its own question, so
+   they carry the group's own subtotal rather than only naming it. */
+.recurring-group-row td { padding: 0 !important; border: none; }
+.recurring-group-head {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    width: 100%;
+    padding: 22px 8px 8px;
+    border-bottom: 0.5px solid var(--separator);
+}
+.recurring-group-label {
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--text-secondary);
+}
+.recurring-group-blurb {
+    margin-left: 10px;
+    font-size: 11px;
+    font-weight: 400;
+    color: var(--text-tertiary);
+}
+.recurring-group-total {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    white-space: nowrap;
+}
+/* Ended and Hidden are shut by default and open on click, so their heading is
+   a real button. */
+.recurring-group-toggle {
+    background: transparent;
+    border: none;
+    border-bottom: 0.5px solid var(--separator);
+    cursor: pointer;
+    text-align: left;
+    font: inherit;
+}
+.recurring-group-toggle:hover .recurring-group-total { color: var(--accent); }
+.recurring-hidden-row td { color: var(--text-tertiary); }
+
+/* The two amounts either side of a price change. The badge alone said a price
+   moved and would not say to what. */
+.recurring-pricemove {
+    margin-top: 3px;
+    font-size: 11px;
+    color: var(--text-secondary);
+}
+.recurring-pricepct { color: var(--red); font-weight: 600; margin-left: 4px; }
+/* What actually leaves the account on a quarterly or yearly series — the
+   per-month column smooths a 120 €/yr charge into 10 € and hides it. */
+.recurring-cadence-note { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+
+/* ── The two cards above the table ────────────────────────────────────── */
+.sub-top-grid {
+    display: grid;
+    grid-template-columns: 1.6fr 1fr;
+    gap: 16px;
+    margin-bottom: 16px;
+}
+@media (max-width: 900px) {
+    .sub-top-grid { grid-template-columns: 1fr; }
+}
+.sub-card-note { font-size: 12px; color: var(--text-tertiary); white-space: nowrap; }
+.sub-upcoming-row {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 9px 0;
+    border-bottom: 0.5px solid var(--separator);
+}
+.sub-upcoming-row:last-child { border-bottom: none; }
+.sub-upcoming-store { font-size: 13px; font-weight: 600; }
+.sub-upcoming-when  { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
+.sub-upcoming-amt   { font-size: 13px; font-weight: 600; white-space: nowrap; }
+.sub-upcoming-empty { font-size: 13px; color: var(--text-tertiary); padding: 8px 0; }
+
+/* ── "Move to another group" ──────────────────────────────────────────── */
+.sub-move-list { display: flex; flex-direction: column; gap: 6px; margin: 4px 0 8px; }
+.sub-move-opt {
+    display: block;
+    width: 100%;
+    text-align: left;
+    padding: 10px 12px;
+    border: 0.5px solid var(--separator);
+    border-radius: 10px;
+    background: transparent;
+    cursor: pointer;
+    font: inherit;
+    transition: background 0.15s, border-color 0.15s;
+}
+.sub-move-opt:hover { background: var(--bg-grouped); }
+.sub-move-opt.active {
+    border-color: var(--accent);
+    background: var(--accent-soft);
+}
+.sub-move-label { font-size: 13px; font-weight: 600; color: var(--text-primary); }
+.sub-move-blurb { font-size: 11px; color: var(--text-tertiary); margin-top: 2px; }
 
 /* ── Segmented control ────────────────────────────────────────────────
    One rule for every two-or-three-way pick: the theme switch in Settings and

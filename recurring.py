@@ -49,10 +49,74 @@ _STABLE_COV = 0.10         # a series this amount-stable can flag a real price c
 # Generic / noise merchants that are recurring but not user-actionable.
 _SKIP_STORES = {"", "other", "rent", "missing info", "monthly fee", "korko"}
 
-# Categories that are transfers/investments rather than true consumption.
-# These are still detected, but excluded from the recurring EXPENSE summary
-# total and surfaced separately so they don't inflate "what I spend per month".
+# ── What kind of recurring thing is this? ───────────────────────────────────
+# Detection finds every charge that repeats on a schedule. That is not one kind
+# of thing, and a page that lists them together answers no question well: on the
+# real database the headline read 774 EUR/mo, of which 637 EUR was rent and 73 EUR
+# was actual subscriptions. The rent is not news, cannot be cancelled, and buried
+# the five services that can be.
+#
+# So each series is sorted into a group by its category, and the page totals each
+# group on its own. The groups are the questions people actually ask:
+#
+#   subscription  services you pay for and could stop  <- the headline
+#   bill          housing and utilities: real, fixed, not a decision
+#   spending      a shop you visit on a rhythm; there is nothing to cancel
+#   transfer      money moved, not consumed
+#   income        a salary is not a subscription
+#
+# Transfers and investments: real recurring movements, but money moved rather
+# than money spent, so they never belonged in "what I spend per month" either.
 _TRANSFER_CATEGORIES = {"investments", "debt"}
+
+# Housing, utilities and the other fixed obligations. Recurring, and the largest
+# figures on the page — which is exactly why they must not sit in a total whose
+# name promises subscriptions.
+_BILL_CATEGORIES = {
+    "rent", "condo fees", "utilities", "insurance",
+    "phone bill", "telecom", "car payment",
+}
+
+# Repeated purchases that keep a rhythm without being a service: the weekly shop,
+# the Friday takeaway, the commute. Detection is right to find them and the page
+# is wrong to call them subscriptions — there is no contract to end.
+_SPENDING_CATEGORIES = {
+    "groceries", "restaurant", "lunch", "going out", "gas", "car charging",
+    "public transportation", "car parking", "travel", "clothing",
+}
+
+# The group a series falls in when nothing above claims it. Deliberately the
+# permissive end: an unrecognised category (the user's own, or one renamed) shows
+# up in the headline group where it can be seen and moved, rather than being
+# quietly filed somewhere nobody looks. Hiding is the failure mode that costs
+# more here.
+GROUP_SUBSCRIPTION = "subscription"
+GROUP_BILL = "bill"
+GROUP_SPENDING = "spending"
+GROUP_TRANSFER = "transfer"
+GROUP_INCOME = "income"
+GROUPS = (GROUP_SUBSCRIPTION, GROUP_BILL, GROUP_SPENDING,
+          GROUP_TRANSFER, GROUP_INCOME)
+
+
+def classify_group(category: str | None, type_: str) -> str:
+    """Which group a series belongs to, from its category and expense/income.
+
+    Income first: a salary repeats monthly, holds a stable amount and clears
+    every gate the detector has. It is not a subscription, and sorting the whole
+    table by cost once put it in row one of a page called Subscriptions.
+    """
+    if type_ == "income":
+        return GROUP_INCOME
+    cat = (category or "").strip().lower()
+    if cat in _TRANSFER_CATEGORIES:
+        return GROUP_TRANSFER
+    if cat in _BILL_CATEGORIES:
+        return GROUP_BILL
+    if cat in _SPENDING_CATEGORIES:
+        return GROUP_SPENDING
+    return GROUP_SUBSCRIPTION
+
 
 # Fuzzy merchant merging: two normalized merchant names are treated as the same
 # service when their SequenceMatcher ratio is at least this high, or when one is
@@ -200,11 +264,31 @@ def _load_dismissed(conn, user_id) -> set:
     return {r["signature"] for r in rows}
 
 
+def _load_overrides(conn, user_id) -> dict:
+    """Return ``{signature: group}`` for the series this user has re-filed.
+
+    Grouping by category is a guess, and it will be wrong for somebody: a gym
+    under "Exercise" is a subscription, an "Exercise" purchase of running shoes
+    that happens to repeat is not. The user gets the last word, and it is stored
+    against the same signature a dismissal uses, so it survives the next charge.
+    """
+    try:
+        rows = conn.execute(
+            "SELECT signature, group_name FROM recurring_overrides "
+            "WHERE user_id = %s",
+            (user_id,),
+        ).fetchall()
+    except Exception:
+        return {}
+    return {r["signature"]: r["group_name"] for r in rows
+            if r["group_name"] in GROUPS}
+
+
 # Cadence → representative interval in days, for costing manual subscriptions.
 _MANUAL_INTERVALS = {"monthly": 30.4, "quarterly": 91.0, "yearly": 365.0}
 
 
-def _load_manual(conn, user_id) -> list:
+def _load_manual(conn, user_id, overrides: dict | None = None) -> list:
     """Return user-added subscriptions for ``user_id`` as recurring items.
 
     Manual subscriptions live in ``manual_subscriptions`` and are shaped to match
@@ -227,10 +311,22 @@ def _load_manual(conn, user_id) -> list:
         interval = _MANUAL_INTERVALS[cadence]
         amount = float(r["amount"])
         category = r["category"]
-        is_transfer = bool(category) and category.lower() in _TRANSFER_CATEGORIES
+        # Grouped by the same rule as everything else — a hand-added row with
+        # no category (the common case) lands in `subscription`, which is what
+        # the button that added it said. The override is the way to disagree,
+        # and one rule for both kinds of row beats an exception for one.
+        sig = f"manual:{r['id']}"
+        group = (overrides or {}).get(sig) or classify_group(category, r["type"])
+        is_transfer = group == GROUP_TRANSFER
         out.append({
             "store": r["store"],
             "type": r["type"],
+            "group": group,
+            "moved": sig in (overrides or {}),
+            "stores": [r["store"]],
+            "prev_amount": None,
+            "price_change_pct": None,
+            "price_changed_on": None,
             "category": category,
             "cadence": cadence,
             "interval_days": int(round(interval)),
@@ -244,7 +340,7 @@ def _load_manual(conn, user_id) -> list:
             "status": "active",
             "missed_cycles": 0,
             "confidence": 1.0,
-            "signature": None,
+            "signature": sig,
             "is_transfer": is_transfer,
             "is_manual": True,
             "manual_id": r["id"],
@@ -290,7 +386,8 @@ def signature(store: str, cadence: str) -> str:
 def detect_recurring(conn, user_id, lookback_months: int = 18,
                      min_occurrences: int = 3,
                      today: date | None = None,
-                     dismissed: set | None = None) -> dict:
+                     dismissed: set | None = None,
+                     overrides: dict | None = None) -> dict:
     """Detect recurring transaction series for ``user_id``.
 
     ``conn`` is an open psycopg connection yielding ``dict_row`` rows.
@@ -307,6 +404,8 @@ def detect_recurring(conn, user_id, lookback_months: int = 18,
 
     if dismissed is None:
         dismissed = _load_dismissed(conn, user_id)
+    if overrides is None:
+        overrides = _load_overrides(conn, user_id)
 
     rows = conn.execute(
         """
@@ -399,6 +498,12 @@ def detect_recurring(conn, user_id, lookback_months: int = 18,
         baseline_stable = _cov(amounts[:-1]) <= _STABLE_COV
         price_changed = (baseline_stable and baseline
                          and abs(last_amount - baseline) / baseline > _PRICE_CHANGE_PCT)
+        # Carry the old price out with the flag. "Price up" is a badge that
+        # tells you something changed and refuses to say what, which leaves the
+        # one thing worth knowing — 10 EUR to 13 EUR, and when — off the screen.
+        prev_amount = round(baseline, 2) if price_changed else None
+        price_change_pct = (round((last_amount - baseline) / baseline * 100, 1)
+                            if price_changed else None)
 
         # Overdue outranks a price change: if the charge never arrived, that the
         # last one cost more is stale news. A forgotten or cancelled service.
@@ -423,11 +528,23 @@ def detect_recurring(conn, user_id, lookback_months: int = 18,
         if sig in dismissed:
             continue
 
-        is_transfer = bool(category) and category.lower() in _TRANSFER_CATEGORIES
+        group = overrides.get(sig) or classify_group(category, g["type"])
+        is_transfer = group == GROUP_TRANSFER
+        moved = sig in overrides
 
         items.append({
             "store": display,
             "type": g["type"],
+            "group": group,
+            "moved": moved,
+            # Every original store string this series was merged from. The
+            # history endpoint sums the real transactions behind a series, and
+            # matching on the display name alone would miss the variants that
+            # merging exists to gather up.
+            "stores": sorted(g["stores"]),
+            "prev_amount": prev_amount,
+            "price_change_pct": price_change_pct,
+            "price_changed_on": last_date.isoformat() if price_changed else None,
             "category": category,
             "cadence": cadence,
             "interval_days": interval,
@@ -448,28 +565,47 @@ def detect_recurring(conn, user_id, lookback_months: int = 18,
         })
 
     # Fold in user-added (manual) subscriptions — ones detection missed.
-    items.extend(_load_manual(conn, user_id))
+    items.extend(_load_manual(conn, user_id, overrides))
 
     items.sort(key=lambda x: x["monthly_cost"], reverse=True)
 
-    # Transfers/investments are real recurring movements but not consumption, so
-    # they're excluded from the monthly/annual EXPENSE total (the UI surfaces
-    # them in a separate subsection via the is_transfer flag). Stopped series
-    # are excluded for a different reason: a service that ended is not part of
-    # what the user pays each month, and counting it makes the headline figure
-    # overstate the real bill. They stay in `items` so the table can still list
-    # them.
-    expenses = [i for i in items
-                if i["type"] == "expense"
-                and not i["is_transfer"]
+    # Each group totals on its own, and the headline totals only the group the
+    # page is named after.
+    #
+    # The old rule was "every expense that is not a transfer and has not
+    # stopped", which on the real database made the headline 774 EUR/mo: 637 EUR
+    # of rent, 48 EUR of phone bill, 12 EUR of takeaway, and 73 EUR of the
+    # services the page exists to show. Two true numbers making one false
+    # sentence. Stopped series still stay out of every total for the older
+    # reason — a service that ended is not part of what anyone pays each month —
+    # and stay in `items` so the table can list them under Ended.
+    def _live(group):
+        return [i for i in items
+                if i["group"] == group
+                and i["type"] == "expense"
                 and i["status"] != "stopped"]
+
+    groups = {}
+    for name in GROUPS:
+        live = _live(name)
+        groups[name] = {
+            "count": sum(1 for i in items if i["group"] == name),
+            "active_count": len(live),
+            "monthly_total": round(sum(i["monthly_cost"] for i in live), 2),
+            "annual_total": round(sum(i["annual_cost"] for i in live), 2),
+        }
+
+    subs = groups[GROUP_SUBSCRIPTION]
     summary = {
         "count": len(items),
         # How many series the totals are actually built from — the table below
-        # is longer, because it also lists the transfers and the stopped ones.
-        "active_count": len(expenses),
-        "monthly_total": round(sum(i["monthly_cost"] for i in expenses), 2),
-        "annual_total": round(sum(i["annual_cost"] for i in expenses), 2),
+        # is longer, because it also lists the bills, the transfers, the
+        # everyday spending and the ones that ended.
+        "active_count": subs["active_count"],
+        "monthly_total": subs["monthly_total"],
+        "annual_total": subs["annual_total"],
+        "ended_count": sum(1 for i in items if i["status"] == "stopped"),
+        "groups": groups,
     }
     return {"summary": summary, "items": items}
 

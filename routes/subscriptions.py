@@ -1,8 +1,11 @@
 """Recurring charges: what was detected, what was dismissed, what was added by hand."""
 
+from datetime import date
+
 from flask import Blueprint, request, jsonify
 from database import db_conn
-from recurring import detect_recurring
+from recurring import (detect_recurring, GROUPS, GROUP_SUBSCRIPTION,
+                       _load_dismissed)
 import core
 from core import current_user_id, bump_data_version
 
@@ -31,6 +34,18 @@ def recurring():
     with db_conn() as conn:
         result = detect_recurring(conn, uid, lookback_months=lookback,
                                   min_occurrences=min_occ)
+        # What the user has hidden rides along with what they have not. The ✕
+        # on a row wrote to `recurring_dismissed` and detection then dropped the
+        # series without a word, so a series hidden by a misclick left no trace
+        # anywhere in the app and took its cost out of the headline with it.
+        # A signature is "<normalized store>|<cadence>", which is enough to name
+        # the thing being offered back.
+        result["dismissed"] = [
+            {"signature": sig,
+             "store": sig.rsplit("|", 1)[0],
+             "cadence": sig.rsplit("|", 1)[-1] if "|" in sig else None}
+            for sig in sorted(_load_dismissed(conn, uid))
+        ]
     core.recurring_cache[key] = (core.data_version, result)
     return jsonify(result)
 
@@ -64,6 +79,102 @@ def undismiss_recurring(sig):
         )
     bump_data_version()
     return "", 204
+
+
+@bp.route("/api/recurring/group", methods=["PUT"])
+def set_recurring_group():
+    """Re-file one series into another group. Body: {signature, group}.
+
+    Grouping is inferred from the category, which is a good guess and will be
+    wrong for somebody: the gym filed under "Exercise" is a subscription, and a
+    repeat purchase of running shoes under the same category is not. Sending
+    ``group: null`` clears the override and hands the row back to the guess.
+    """
+    uid = current_user_id()
+    data = request.json or {}
+    sig = (data.get("signature") or "").strip()
+    group = data.get("group")
+    if not sig:
+        return jsonify({"error": "signature is required"}), 400
+    if group is not None and group not in GROUPS:
+        return jsonify({"error": f"group must be one of {', '.join(GROUPS)}"}), 400
+
+    with db_conn() as conn:
+        if group is None:
+            conn.execute(
+                "DELETE FROM recurring_overrides "
+                "WHERE user_id = %s AND signature = %s",
+                (uid, sig),
+            )
+        else:
+            conn.execute(
+                "INSERT INTO recurring_overrides (user_id, signature, group_name) "
+                "VALUES (%s, %s, %s) "
+                "ON CONFLICT (user_id, signature) DO UPDATE SET group_name = %s",
+                (uid, sig, group, group),
+            )
+    bump_data_version()
+    return jsonify({"signature": sig, "group": group})
+
+
+@bp.route("/api/recurring/history")
+def recurring_history():
+    """What the subscriptions actually cost, month by month. ``?months=12``.
+
+    Not a projection of the current list backwards: each month is the sum of the
+    real transactions behind the series in the subscription group, so a service
+    that ended shows in the months it charged and then stops, and one that put
+    its price up steps up on the month it did. That is the only way the number
+    can answer "is this creeping?" rather than restating today's total twelve
+    times.
+
+    Stopped series are included for the same reason — they are what the money
+    went on at the time. Only the group is filtered.
+    """
+    uid = current_user_id()
+    try:
+        months = max(1, min(36, int(request.args.get("months", 12))))
+    except (TypeError, ValueError):
+        months = 12
+
+    today = date.today()
+    first = date(today.year, today.month, 1)
+    # Walk back `months - 1` whole months from the current one.
+    y, m = first.year, first.month
+    for _ in range(months - 1):
+        m -= 1
+        if m == 0:
+            y, m = y - 1, 12
+    start = date(y, m, 1)
+
+    with db_conn() as conn:
+        result = detect_recurring(conn, uid)
+        # Every original store string of every subscription series, including
+        # the merged variants — matching on the display name alone would drop
+        # the "GOOGLE *YouTubePremium" half of a series merging exists to join.
+        stores = {s.strip().lower()
+                  for i in result["items"] if i["group"] == GROUP_SUBSCRIPTION
+                  for s in (i.get("stores") or [i["store"]])}
+        buckets = {}
+        if stores:
+            rows = conn.execute(
+                "SELECT substr(date, 1, 7) AS month, store, amount "
+                "FROM transactions "
+                "WHERE user_id = %s AND type = 'expense' AND date >= %s",
+                (uid, start.isoformat()),
+            ).fetchall()
+            for r in rows:
+                if (r["store"] or "").strip().lower() in stores:
+                    buckets[r["month"]] = buckets.get(r["month"], 0.0) + abs(float(r["amount"]))
+
+    out, y, m = [], start.year, start.month
+    for _ in range(months):
+        key = f"{y:04d}-{m:02d}"
+        out.append({"month": key, "total": round(buckets.get(key, 0.0), 2)})
+        m += 1
+        if m == 13:
+            y, m = y + 1, 1
+    return jsonify({"months": out})
 
 
 _SUB_CADENCES = ("monthly", "quarterly", "yearly")

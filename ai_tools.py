@@ -415,19 +415,25 @@ def list_subscriptions():
     items = data.get("items") or []
     summary = data.get("summary") or {}
 
+    # Why a row is not a subscription, in the order the reasons rank. Group
+    # first: rent is a bill whether or not it also stopped, and "stopped" would
+    # be a strange thing to say about it.
+    _NOT_BECAUSE = {
+        "income": "this is income, not a subscription",
+        "transfer": "a transfer or investment, not money spent",
+        "bill": "a household bill, not a subscription — there is nothing to cancel",
+        "spending": "a shop visited on a rhythm, not a service subscribed to",
+    }
+
     subscriptions, also_recurring = [], []
     for s in items:
-        counts = (s.get("type") == "expense"
-                  and not s.get("is_transfer")
-                  and s.get("status") != "stopped")
-        if s.get("type") != "expense":
-            why = "this is income, not a subscription"
-        elif s.get("is_transfer"):
-            why = "a transfer or investment, not money spent"
-        elif s.get("status") == "stopped":
+        group = s.get("group") or ("transfer" if s.get("is_transfer")
+                                   else "income" if s.get("type") != "expense"
+                                   else "subscription")
+        counts = group == "subscription" and s.get("status") != "stopped"
+        why = _NOT_BECAUSE.get(group)
+        if why is None and s.get("status") == "stopped":
             why = "stopped — the service ended"
-        else:
-            why = None
         (subscriptions if counts else also_recurring).append({
             "merchant": s.get("store"),
             "category": s.get("category"),
@@ -448,6 +454,7 @@ def list_subscriptions():
             "monthly_cost": s.get("monthly_cost"),
             "monthly_cost_eur": _eur(s.get("monthly_cost")),
             "last_amount_eur": _eur(s.get("last_amount")),
+            "kind": group,
             "cadence": s.get("cadence"),
             "status": s.get("status"),
             "next_charge": s.get("next_date"),
@@ -465,6 +472,14 @@ def list_subscriptions():
         # numbers making one false sentence.
         "counted_in_total": summary.get("active_count"),
         "detected_in_all": summary.get("count"),
+        # The bills have their own total for the same reason the subscriptions
+        # do: asked what the fixed costs are, a model with only the rows would
+        # add them up, and rule 2 says it must never have to. `also_recurring`
+        # is where those rows are, and this is what they come to.
+        "bills_monthly_total_eur": _eur(
+            (summary.get("groups") or {}).get("bill", {}).get("monthly_total")),
+        "bills_annual_total_eur": _eur(
+            (summary.get("groups") or {}).get("bill", {}).get("annual_total")),
         "subscriptions": subscriptions,
         # Kept apart rather than flagged in one list. A flag was not enough:
         # asked for the three biggest subscriptions the model sorted the whole

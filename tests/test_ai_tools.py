@@ -371,6 +371,47 @@ def test_a_salary_is_detected_but_does_not_count_as_a_subscription(client):
     assert "income" in payroll["not_a_subscription_because"]
 
 
+def test_rent_is_not_offered_as_a_subscription(client):
+    """The same mistake the page made, one layer down.
+
+    Asked what the subscriptions cost, the assistant answered with the rent
+    folded in — the tool handed it a list where a 1 250 EUR housing charge and a
+    12 EUR streaming service sat under one heading with one total. It is a bill,
+    and the row now says so in the field the model reads.
+    """
+    rent = cat_id(client, "Rent")
+    ent = cat_id(client, "Entertainment")
+    for month in range(3, 9):
+        add_tx(client, f"2026-{month:02d}-01", "Vuokra Oy", rent, 1250.00)
+        add_tx(client, f"2026-{month:02d}-05", "Spotify", ent, 11.99)
+
+    result = ai_tools.list_subscriptions()
+
+    assert [s["merchant"] for s in result["subscriptions"]] == ["Spotify"]
+    vuokra = next(s for s in result["also_recurring"] if s["merchant"] == "Vuokra Oy")
+    assert vuokra["kind"] == "bill"
+    assert vuokra["counts_toward_total"] is False
+    assert "bill" in vuokra["not_a_subscription_because"]
+    # The headline is the subscription alone; 1 250 EUR of rent is nowhere near it.
+    assert result["monthly_total"] < 100
+
+
+def test_the_bills_carry_their_own_total(client):
+    """Rule 2 again: a total the model would otherwise add up itself.
+
+    The bills are out of the subscription figure and their rows are in
+    `also_recurring`. Asked what the fixed costs come to, a model with only the
+    rows would sum them, and it must never have to.
+    """
+    rent = cat_id(client, "Rent")
+    for month in range(3, 9):
+        add_tx(client, f"2026-{month:02d}-01", "Vuokra Oy", rent, 1250.00)
+
+    result = ai_tools.list_subscriptions()
+    assert result["bills_monthly_total_eur"] is not None
+    assert result["bills_annual_total_eur"] is not None
+
+
 # ── Totals the model must never work out itself ───────────────────────────
 
 def test_monthly_summary_totals_the_period_itself(seeded):

@@ -87,7 +87,7 @@ area per file, loaded in order by `index.html`.
 | `reports.js` | the annual report |
 | `net-worth.js` | accounts, balances, holdings, the investment import |
 | `trends.js` | the Trends page and its drilldowns |
-| `subscriptions.js` | recurring charges |
+| `subscriptions.js` | recurring charges: the groups, the cost chart, what is due, what is hidden |
 | `settings.js` | quit, retrain the rules, the guide |
 | `chat.js` | Balance AI: the panel, the event stream, the working under each answer |
 | `main.js` | app state and start-up — loaded last, `init()` is the final line |
@@ -134,7 +134,7 @@ through `db`: `db.IntegrityError`, `db.DatabaseError`, `db.Json(...)`,
 
 ## Tests
 
-`python3 -m pytest tests/` — 422 tests, all green.
+`python3 -m pytest tests/` — 456 tests, all green.
 
 `conftest.py` points `SQLITE_PATH` at a throwaway file **at import time**, before
 pytest collects any test module. This matters: test modules `import config` /
@@ -181,6 +181,7 @@ shows the right drill-down under the wrong total.
 | `holdings` | id, account_id (FK, cascade), as_of, name, isin, units, value_eur, return_pct, return_eur, currency; UNIQUE(account_id, as_of, name). No `user_id` — it is reachable only through `accounts`, which has one |
 | `account_balances` | id, account_id (FK, cascade), as_of (YYYY-MM-DD), balance; UNIQUE(account_id, as_of) |
 | `recurring_dismissed` | id, signature (UNIQUE, = normalized merchant + cadence), dismissed_at |
+| `recurring_overrides` | id, signature (UNIQUE per user), group_name — the group the user filed a series under, overriding the one its category implies |
 | `manual_subscriptions` | id, store, amount, cadence (monthly/quarterly/yearly), category, type |
 | `bank_sessions` | id, user_id (FK, cascade), session_id, aspsp_name, aspsp_country, valid_until, accounts (JSONB), created_at; UNIQUE(user_id) |
 
@@ -505,10 +506,72 @@ gap, and flags each series:
 The overdue/stopped split exists because without it every long-dead series
 shouted "Overdue" beside the genuinely late ones and the column said nothing: on
 real data ten rows out of ten were red. Stopped series stay in the table but are
-kept **out of `monthly_total` / `annual_total`** — a service that ended is not
-part of what you pay each month — so the header reads "737 €/mo · 5 active",
-not 855 € across 10. Transfers and investments are excluded from those totals
-too, for a different reason (they are movements, not consumption).
+kept **out of every total** — a service that ended is not part of what you pay
+each month.
+
+**A repeating charge is not one kind of thing, and the page used to total it as
+if it were.** Detection is right about all of them: rent repeats monthly, holds
+a stable amount and clears every gate, and so does Netflix. Added together they
+made a headline that was true of nothing anybody wanted to know. On the real
+database it read **774 €/mo**, of which 637 € was rent, 48 € a phone bill, 12 €
+a takeaway habit — and 73 € the services the page is named after. Two true
+numbers making one false sentence, which is the same failure `list_subscriptions`
+had when it sold the salary as a subscription.
+
+So each series carries a **`group`**, and each group totals on its own:
+
+| `group` | Is | Counted in the headline |
+|---------|----|--------------------------|
+| `subscription` | services you pay for and could stop | **yes** |
+| `bill` | rent, condo fees, utilities, insurance, phone, car payment | no — own subtotal |
+| `spending` | shops visited on a rhythm; nothing to cancel | no — own subtotal |
+| `transfer` | investments and debt: money moved, not consumed | no |
+| `income` | a salary repeats monthly too | never costed |
+
+`classify_group()` reads the category, and **income wins over everything** — an
+"Investments" dividend is not a subscription either. An unrecognised category
+lands in `subscription`, the permissive end on purpose: categories are the
+user's to rename and invent, and a row nobody has taught the classifier should
+appear where it can be seen and moved rather than be filed somewhere nobody
+looks. Hiding is the more expensive mistake here.
+
+**The classifier is a guess, so the user gets the last word.** `PUT
+/api/recurring/group` writes `recurring_overrides` (signature → group), the row
+is marked `moved`, and `group: null` clears it. A gym under "Exercise" is a
+subscription and running shoes bought on a rhythm are not, and no category rule
+separates them. The override is keyed by the same signature a dismissal uses, so
+it survives the next charge.
+
+**A price change now says what the price was.** `prev_amount`,
+`price_change_pct` and `price_changed_on` ride with the flag. The badge alone
+said something moved and refused to say what — YouTube Premium went 9,99 € →
+14,99 € under it, a 50% rise nobody had reason to look at twice.
+
+**`GET /api/recurring/history?months=12`** is what the subscriptions actually
+cost, month by month. Not the current list projected backwards, which would draw
+twelve identical bars and answer nothing: each month is the real transactions
+behind the subscription-group series, matched on **every** store string a merged
+series was built from (`stores` on each item) — the display name alone drops the
+half of a series that merging exists to join. Stopped services are included,
+because they are what the money went on at the time. It is the only figure on
+the page that can answer "is this creeping?", and on the real database it does:
+43 €/mo a year ago against 80 €/mo now.
+
+**A hidden series can come back.** `recurring_dismissed` was written by the ✕ on
+every row and read by nothing the user could reach: detection dropped the series
+without a word and took its cost out of the headline with it, so one misclick
+removed a real charge from the app's own count of what is paid each month,
+invisibly and for good. `DELETE /api/recurring/dismiss/<sig>` had existed all
+along with nothing calling it. `/api/recurring` now returns a **`dismissed`**
+list beside the items, and the table ends with a collapsed **Hidden** section
+offering each one back. Three series turned out to be hidden on the real
+database, none of them on purpose.
+
+**The page.** One headline (subscriptions alone), a 12-month cost chart, a
+30-day "Coming up" list built from the `next_date` every series already carried
+and nothing used but a cell colour, then the table in group order with Ended and
+Hidden collapsed at the foot. A third of the real table was services that
+stopped months ago sitting between the ones still charging.
 
 **Detection misses things**, so a series can be added by hand: `POST
 /api/subscriptions` writes to `manual_subscriptions` (store, amount, cadence of
@@ -812,8 +875,12 @@ the bars never disagree.
 **And a flag is not a boundary.** `list_subscriptions` marked the salary
 `counts_toward_total: false`; asked for the three biggest subscriptions the
 model sorted every row by cost and led with it, labelled "(income)" and still
-wrong. Income, transfers and stopped series now sit in a separate
-`also_recurring` list, each saying why. Two lists cannot be sorted across.
+wrong. Income, transfers, bills, everyday spending and stopped series now sit in
+a separate `also_recurring` list, each saying why in
+`not_a_subscription_because` and carrying its `kind`. Two lists cannot be sorted
+across. The bills have their own `bills_monthly_total_eur` for the reason every
+other total exists: asked what the fixed costs come to, a model holding only the
+rows would add them up.
 
 **Nothing may fail quietly into a number.** Two things guard that. A dispatch
 that does not return 200 raises `ToolDispatchError` rather than returning
@@ -1233,6 +1300,13 @@ GET        /api/trends/category    ?category_ids, months → one category (or
                                     back resolved, and the page reads it
 
 GET        /api/recurring               ?lookback_months, min_occurrences
+                                       each item carries a `group`; the summary
+                                       totals each group on its own, and
+                                       `dismissed` lists what is hidden
+GET        /api/recurring/history       ?months → what the subscriptions cost,
+                                       month by month, from the real charges
+PUT        /api/recurring/group                 (body: {signature, group})
+                                       re-file one series; group=null clears it
 POST       /api/recurring/dismiss               (body: {signature})  hide a series
 DELETE     /api/recurring/dismiss/<signature>                       un-hide a series
 POST       /api/subscriptions          (body: {store, amount, cadence,

@@ -109,7 +109,9 @@ def build(fx):
             question="what are my subscriptions costing me each month?",
             why="It sorted every recurring row by cost and led with the salary, "
                 "labelled '(income)'. And a service that stopped is not part of "
-                "what this person pays each month.",
+                "what this person pays each month. Nor is the rent: the tool "
+                "handed over a list where 1 250 EUR of housing and a 12 EUR "
+                "streaming service sat under one heading with one total.",
             tools={"list_subscriptions"},
             months=[],
             must_say=[subscription_total],
@@ -119,8 +121,9 @@ def build(fx):
             # reason, and out of the total; 9b named it, priced it and filed it
             # under "doesn't count", which is the best answer anyone has given.
             # The falsifiable claim is the total itself, so what is forbidden
-            # is a total with the gym or the salary folded into it.
-            must_not_say=[wrong_total(fixture.GYM), wrong_total(3200)],
+            # is a total with the gym, the salary or the rent folded into it.
+            must_not_say=[wrong_total(fixture.GYM), wrong_total(3200),
+                          wrong_total(fixture.RENT)],
         ),
         Case(
             id="analyse-month",

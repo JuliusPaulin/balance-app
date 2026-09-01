@@ -604,6 +604,24 @@
                 <button class="btn btn-primary btn-sm" onclick="openAddSubscription()">+ Add subscription</button>
             </div>
         </div>
+        <div class="sub-top-grid">
+            <div class="card" id="recurring-history-card">
+                <div class="flex items-center" style="justify-content:space-between;margin-bottom:14px">
+                    <div class="card-title" style="margin:0">What subscriptions cost</div>
+                    <div class="sub-card-note" id="recurring-history-note"></div>
+                </div>
+                <div class="chart-container" style="height:190px">
+                    <canvas id="chart-recurring-history"></canvas>
+                </div>
+            </div>
+            <div class="card" id="recurring-upcoming-card">
+                <div class="flex items-center" style="justify-content:space-between;margin-bottom:14px">
+                    <div class="card-title" style="margin:0">Coming up</div>
+                    <div class="sub-card-note" id="recurring-upcoming-total"></div>
+                </div>
+                <div id="recurring-upcoming"></div>
+            </div>
+        </div>
         <div class="card full-width" id="recurring-card">
             <div class="table-container">
                 <table>
