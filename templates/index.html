@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en"{% if desktop_shell %} class="desktop-shell"{% endif %}>
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
@@ -39,6 +39,14 @@
 
 <!-- Sidebar -->
 <aside class="sidebar">
+    <!-- The window's own buttons. macOS draws none, because the window is
+         frameless so the page can reach the top edge — see main.py. Rendered
+         only inside the app: in a browser tab there is no window to close. -->
+    <div class="window-controls" aria-label="Window controls">
+        <button class="wc wc-close" onclick="windowAction('close')" title="Close" aria-label="Close"></button>
+        <button class="wc wc-min" onclick="windowAction('minimise')" title="Minimise" aria-label="Minimise"></button>
+        <button class="wc wc-zoom" onclick="windowAction('zoom')" title="Zoom" aria-label="Zoom"></button>
+    </div>
     <div class="sidebar-logo">Balance<span>.</span></div>
     <nav class="sidebar-nav">
         <button class="nav-item active" data-page="dashboard">

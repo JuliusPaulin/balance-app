@@ -30,6 +30,7 @@ Read-only on purpose. Letting the assistant write to ``transactions`` is a
 different risk conversation, and the app has no undo for a hand-edited row.
 """
 
+import re
 from datetime import date
 
 from core import app, current_user_id
@@ -209,14 +210,51 @@ def _category_ids(names):
 
 # ── The tools ─────────────────────────────────────────────────────────────
 
+def _search_words(q):
+    """The words of a query worth retrying on their own, longest first.
+
+    Under four characters a word is not a merchant, it is a fragment: "k" would
+    match half the table and report it as the shop the user asked about.
+    """
+    words = [w for w in re.split(r"[^0-9A-Za-zÀ-ÿ]+", q or "") if len(w) >= 4]
+    seen, out = set(), []
+    for w in sorted(words, key=len, reverse=True):
+        if w.lower() not in seen and w.lower() != (q or "").strip().lower():
+            seen.add(w.lower())
+            out.append(w)
+    return out
+
+
 def search_transactions(period=None, month=None, date_from=None, date_to=None,
                         categories=None, type=None, q=None,
-                        amount_min=None, amount_max=None, limit=20):
-    """Individual transactions matching a filter — the /api/transactions rail."""
+                        amount_min=None, amount_max=None, limit=20, sort="amount"):
+    """Individual transactions matching a filter — the /api/transactions rail.
+
+    Two of the defaults here are not the ones the other tools use, and both
+    were bugs found in one question: *"what are my 3 latest transactions for
+    peten koiratarvike?"* came back "there are no transactions matching" three
+    times, for a shop with ten of them.
+
+    **No period means all of it.** Everywhere else a missing period sensibly
+    means this month, because "what did I spend on groceries" is a question
+    about now. A search names a *shop*, and "have I ever bought anything at X"
+    is the question behind almost all of them. Answering it about the twenty
+    days of the current month, and reporting the silence as "no transactions",
+    is how a shop with a ten-year history reads as one nobody has heard of.
+
+    **Latest means latest.** This sorted by amount always, so "the 3 latest"
+    returned the three largest and called them recent. Ordering is the one
+    thing the question actually asked for.
+    """
+    # A search that names no period at all searches everything. An explicit
+    # period, month or date range still wins — the user said something.
+    if period is None and month is None and date_from is None and date_to is None:
+        period = "all_time"
     window = resolve_period(period, month, date_from, date_to)
     ids, unknown = _category_ids(categories)
 
-    params = {"per_page": min(int(limit or 20), MAX_ROWS), "sort": "amount", "dir": "desc"}
+    params = {"per_page": min(int(limit or 20), MAX_ROWS),
+              "sort": "date" if sort == "date" else "amount", "dir": "desc"}
     if window["months"]:
         params["months"] = ",".join(window["months"])
     if window["date_from"]:
@@ -227,17 +265,40 @@ def search_transactions(period=None, month=None, date_from=None, date_to=None,
         params["category_ids"] = ",".join(ids)
     if type in ("expense", "income"):
         params["type"] = type
-    if q:
-        params["q"] = q
     if amount_min is not None:
         params["amount_min"] = amount_min
     if amount_max is not None:
         params["amount_max"] = amount_max
 
-    data = _call_api("/api/transactions", params) or {}
+    def fetch(query):
+        args = dict(params)
+        if query:
+            args["q"] = query
+        return _call_api("/api/transactions", args) or {}
+
+    data = fetch(q)
+    searched_for = q
+
+    # One shop, two spellings. An import that truncates ("PETEN KOIRATARV")
+    # and one that does not ("Peten Koiratarvike Oy") put the same merchant in
+    # the table under two names, and the full phrase is a substring of only one
+    # of them. So a phrase that matches nothing is retried word by word,
+    # longest first — the most specific word that still finds something. What
+    # was actually searched comes back in `searched_for`, because an answer
+    # about "peten" must not be presented as an answer about the phrase asked.
+    if q and not data.get("total"):
+        for word in _search_words(q):
+            wider = fetch(word)
+            if wider.get("total"):
+                data, searched_for = wider, word
+                break
+
     _net = round(data.get("sum_income", 0.0) - data.get("sum_expense", 0.0), 2)
     return {
         "period": window["label"],
+        "searched_for": searched_for,
+        "widened_from": q if searched_for != q else None,
+        "sorted_by": "date, newest first" if sort == "date" else "amount, largest first",
         "matched": data.get("total", 0),
         "showing": len(data.get("items", [])),
         "sum_expense": data.get("sum_expense", 0.0),
@@ -782,13 +843,17 @@ _MONTH_SCHEMA = {
 TOOL_SCHEMAS = [
     {
         "name": "search_transactions",
-        "description": "Individual transactions matching a filter, largest first, "
-                       "with the totals for the whole match. Use for 'what did I "
-                       "buy at X', 'anything over 200 €', or listing purchases.",
+        "description": "Individual transactions matching a filter, with the totals "
+                       "for the whole match. Use for 'what did I buy at X', "
+                       "'anything over 200 €', or listing purchases. Leave `period` "
+                       "out to search the whole history — that is what you want for "
+                       "any question about a shop.",
         "input_schema": {
             "type": "object",
             "properties": {
-                "period": _PERIOD_SCHEMA,
+                "period": dict(_PERIOD_SCHEMA, description=(
+                    _PERIOD_SCHEMA["description"] + " Omit it entirely to search "
+                    "all of history, which is the right default for a shop.")),
                 "month": _MONTH_SCHEMA,
                 "date_from": {"type": "string", "description": "YYYY-MM-DD."},
                 "date_to": {"type": "string", "description": "YYYY-MM-DD."},
@@ -796,6 +861,11 @@ TOOL_SCHEMAS = [
                                "description": "Category names exactly as listed in the context."},
                 "type": {"type": "string", "enum": ["expense", "income"]},
                 "q": {"type": "string", "description": "Substring match on store name or category."},
+                "sort": {"type": "string", "enum": ["amount", "date"],
+                         "description": "'amount' (default) returns the largest "
+                                        "first; 'date' returns the newest first. "
+                                        "Use 'date' for 'latest', 'recent' or "
+                                        "'last few'."},
                 "amount_min": {"type": "number"},
                 "amount_max": {"type": "number"},
                 "limit": {"type": "integer", "description": f"Rows to return, at most {MAX_ROWS}."},

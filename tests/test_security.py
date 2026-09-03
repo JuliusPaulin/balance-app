@@ -116,3 +116,78 @@ def test_cookie_hardening_config():
     # Not Secure: the app is served over plain http on 127.0.0.1, where TLS
     # does not apply. A Secure cookie would simply never be sent.
     assert app_module.app.config["SESSION_COOKIE_SECURE"] is False
+
+
+# ── The desktop window's title bar ─────────────────────────────────────
+# The page tells the window which theme it wears, so macOS draws the title bar
+# to match instead of in the system's own appearance — which on a Mac in Dark
+# Mode was a black strip above a white sidebar.
+
+
+def test_window_appearance_does_nothing_outside_the_desktop_app(client, make_user, login):
+    """No window, no hook. In a browser tab this must be a harmless no-op."""
+    uid = make_user()
+    login(client, uid)
+    res = client.post("/api/window/appearance", json={"theme": "dark"})
+    assert res.status_code == 200
+    assert res.get_json() == {"applied": False, "theme": "dark"}
+
+
+def test_window_appearance_reaches_the_window_when_there_is_one(
+        client, make_user, login, monkeypatch):
+    """main.py registers the hook; the route is what calls it."""
+    import config as config_module
+
+    seen = []
+    monkeypatch.setattr(config_module, "WINDOW_THEME_HOOK", seen.append,
+                        raising=False)
+    uid = make_user()
+    login(client, uid)
+
+    res = client.post("/api/window/appearance", json={"theme": "dark"})
+    assert res.status_code == 200
+    assert res.get_json()["applied"] is True
+    assert seen == ["dark"]
+
+
+def test_window_appearance_refuses_a_theme_it_does_not_know(client, make_user, login):
+    """Only two appearances exist, and AppKit is not the place to find that out."""
+    uid = make_user()
+    login(client, uid)
+    for bad in ("solarized", "", None):
+        res = client.post("/api/window/appearance", json={"theme": bad})
+        assert res.status_code == 400
+
+
+def test_window_actions_reach_the_window(client, make_user, login, monkeypatch):
+    """The window is frameless, so these three are the only way to close it."""
+    import config as config_module
+
+    seen = []
+    monkeypatch.setattr(config_module, "WINDOW_ACTION_HOOK", seen.append,
+                        raising=False)
+    uid = make_user()
+    login(client, uid)
+
+    for action in ("close", "minimise", "zoom"):
+        res = client.post(f"/api/window/{action}")
+        assert res.status_code == 200
+        assert res.get_json() == {"applied": True, "action": action}
+    assert seen == ["close", "minimise", "zoom"]
+
+
+def test_an_unknown_window_action_is_refused(client, make_user, login):
+    """A typo must not reach AppKit, and must not look like it worked."""
+    uid = make_user()
+    login(client, uid)
+    res = client.post("/api/window/explode")
+    assert res.status_code == 400
+
+
+def test_window_actions_do_nothing_in_a_browser(client, make_user, login):
+    """No hook outside the desktop app; the route must still answer cleanly."""
+    uid = make_user()
+    login(client, uid)
+    res = client.post("/api/window/minimise")
+    assert res.status_code == 200
+    assert res.get_json()["applied"] is False

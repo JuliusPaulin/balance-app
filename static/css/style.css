@@ -129,6 +129,12 @@ html.loading .loading-overlay {
     /* Sidebar */
     --sidebar-width: 220px;
     --sidebar-bg: #ffffff;
+
+    /* The strip at the top of a frameless window: the window buttons sit in
+       it and the rest of it drags the window. Only ever applied under
+       `.desktop-shell`. Matches TITLEBAR_H in main.py, which sizes the drag
+       region — the two have to agree or the buttons and the drag overlap. */
+    --titlebar-h: 28px;
 }
 
 /* ── Fintech — Dark palette (source: docs/mockups/ui-01-dark-fintech.html) ─── */
@@ -213,6 +219,60 @@ body {
 }
 
 /* ── Sidebar — Apple HIG translucent material ────────────────────── */
+/* ── The desktop window ───────────────────────────────────────────────
+   The window is frameless, so the page runs to the very top edge and the
+   sidebar's own colour is what sits behind the window buttons — the thing a
+   native title bar could never give us, because it is drawn in macOS's grey
+   whatever the app is wearing.
+
+   The page draws the buttons and reserves the strip they sit in. `.desktop-shell`
+   is set by the server and only inside the app: a browser tab has a real
+   window of its own, so it gets neither the buttons nor the gap. */
+.window-controls { display: none; }
+
+.desktop-shell .window-controls {
+    display: flex;
+    gap: 8px;
+    height: var(--titlebar-h);
+    align-items: center;
+    padding: 0 20px;
+    flex-shrink: 0;
+}
+.desktop-shell .main { padding-top: calc(28px + var(--titlebar-h)); }
+
+/* 12px circles at macOS's own spacing, so the muscle memory still works.
+   They only show their glyphs when the pointer is over the group, which is
+   what the real ones do. */
+.wc {
+    width: 12px;
+    height: 12px;
+    border: none;
+    border-radius: 50%;
+    padding: 0;
+    cursor: default;
+    display: grid;
+    place-items: center;
+    font-size: 9px;
+    line-height: 1;
+    color: rgba(0, 0, 0, 0.55);
+    transition: filter var(--transition);
+}
+.wc::before { opacity: 0; transition: opacity var(--transition); }
+.window-controls:hover .wc::before { opacity: 1; }
+.wc:active { filter: brightness(0.85); }
+
+.wc-close { background: #ff5f57; }
+.wc-min   { background: #febc2e; }
+.wc-zoom  { background: #28c840; }
+.wc-close::before { content: "\00d7"; font-size: 11px; }
+.wc-min::before   { content: "\2212"; }
+.wc-zoom::before  { content: "\002b"; }
+
+/* Unfocused, macOS greys all three out. `:focus-within` is the wrong test —
+   this follows the document, which is what the window's focus actually is. */
+.desktop-shell.window-blurred .wc { background: var(--separator-opaque); }
+.desktop-shell.window-blurred .wc::before { opacity: 0; }
+
 .sidebar {
     width: var(--sidebar-width);
     background: var(--sidebar-bg);
@@ -3522,25 +3582,43 @@ body.fs-active { overflow: hidden; }
 }
 
 /* ── Ask: the assistant panel ─────────────────────────────────────────
-   A column beside the page, not a modal over it. The whole point of the
-   assistant is to answer about the figures you are looking at, so covering
+   A window floating beside the page, not a modal over it. The whole point of
+   the assistant is to answer about the figures you are looking at, so covering
    them would defeat it. On a narrow screen there is no beside, and it takes
-   the width. */
+   the width.
+
+   It is inset from all four edges and rounded on all four corners. Flush to
+   the top, bottom and right it read as part of the window frame — a second
+   sidebar that had grown out of the chrome — rather than a thing you had
+   opened and could close. The gap is what makes it an object on top of the
+   page instead. */
 
 .chat-panel {
+    --chat-inset: 16px;
     position: fixed;
-    top: 0;
-    right: 0;
-    bottom: 0;
+    top: var(--chat-inset);
+    right: var(--chat-inset);
+    bottom: var(--chat-inset);
     width: 400px;
-    max-width: 100vw;
+    max-width: calc(100vw - (var(--chat-inset) * 2));
     z-index: 900;
     display: flex;
     flex-direction: column;
     background: var(--bg);
-    border-left: 0.5px solid var(--separator);
-    box-shadow: -8px 0 32px rgba(16, 24, 40, 0.08);
-    transform: translateX(100%);
+    border: 0.5px solid var(--separator);
+    border-radius: var(--radius-lg);
+    /* The head's bottom rule and the log's scroll both run to the panel's own
+       edge, so without this they square off the corners the border just
+       rounded. */
+    overflow: hidden;
+    /* Lifted, not merely edged: a window needs a shadow that reads as height.
+       Two layers — a wide soft one for the lift, a tight one to keep the edge
+       from dissolving into a light page. */
+    box-shadow: 0 24px 60px rgba(16, 24, 40, 0.16),
+                0 2px 8px rgba(16, 24, 40, 0.06);
+    /* Past its own inset as well as its width, or it would park with a 16px
+       sliver of itself still showing against the right edge. */
+    transform: translateX(calc(100% + var(--chat-inset)));
     visibility: hidden;
     /* `visibility` as well as the transform: a panel merely slid off the screen
        still takes Tab focus, so tabbing from a closed one lands the caret
@@ -3558,8 +3636,9 @@ body.fs-active { overflow: hidden; }
 @media (max-width: 1024px) {
     /* Pinned to both edges rather than sized with 100vw: that unit counts the
        scrollbar and any horizontal overflow the page already has, which at
-       narrow widths pushed the panel a few pixels off the screen. */
-    .chat-panel { left: 0; width: auto; border-left: none; }
+       narrow widths pushed the panel a few pixels off the screen. The inset
+       tightens because at this width the page has none to spare. */
+    .chat-panel { --chat-inset: 10px; left: var(--chat-inset); width: auto; }
 }
 
 .chat-head {

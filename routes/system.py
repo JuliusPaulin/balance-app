@@ -32,7 +32,51 @@ def healthz_db():
 
 @bp.route("/")
 def index():
-    return render_template("index.html")
+    # `desktop_shell` is set by main.py and absent when the server is run on
+    # its own for development. It reserves the strip the window's own
+    # close/minimise/zoom buttons are drawn into, which exists in the app and
+    # not in a browser tab.
+    return render_template(
+        "index.html", desktop_shell=getattr(config, "DESKTOP_SHELL", False))
+
+
+@bp.route("/api/window/appearance", methods=["POST"])
+def window_appearance():
+    """The page telling the window which theme it is wearing.
+
+    The title bar is drawn by macOS in an appearance of its own, and on a Mac
+    set to Dark Mode that is a black strip above a white sidebar — the "black
+    bar" the window used to wear. The theme lives in the browser's
+    localStorage, so only the page can say which one is on.
+
+    This works because the server runs inside the desktop process: the hook
+    main.py registers reaches the real window. Outside it there is no hook and
+    this does nothing, which is right for a browser tab.
+    """
+    theme = (request.get_json(silent=True) or {}).get("theme")
+    if theme not in ("light", "dark"):
+        return jsonify({"error": "theme must be 'light' or 'dark'"}), 400
+    hook = getattr(config, "WINDOW_THEME_HOOK", None)
+    if hook is not None:
+        hook(theme)
+    return jsonify({"applied": hook is not None, "theme": theme})
+
+
+@bp.route("/api/window/<action>", methods=["POST"])
+def window_action(action):
+    """Close, minimise or zoom the window.
+
+    The window is frameless — macOS draws it no title bar and therefore no
+    buttons — so the page draws its own, and they call this. Same trick as the
+    appearance route: the server runs inside the desktop process, so the hook
+    main.py registers reaches the real window.
+    """
+    if action not in ("close", "minimise", "zoom"):
+        return jsonify({"error": f"unknown window action {action!r}"}), 400
+    hook = getattr(config, "WINDOW_ACTION_HOOK", None)
+    if hook is not None:
+        hook(action)
+    return jsonify({"applied": hook is not None, "action": action})
 
 
 @bp.route("/api/me")

@@ -16,7 +16,12 @@ datas = [('templates', 'templates'), ('static', 'static'), ('VERSION', '.'),
          ('licences', 'licences')]
 binaries = []
 hiddenimports = ['webview', 'webview.platforms.cocoa', 'flask', 'flask_limiter',
-                 'dateutil', 'openpyxl']
+                 'dateutil', 'openpyxl',
+                 # main.py reaches into AppKit for the frameless window: the
+                 # drag strip, the window buttons' actions, the appearance.
+                 # All three are imported inside functions, and a miss shows
+                 # up only in the packaged app.
+                 'AppKit', 'PyObjCTools', 'PyObjCTools.AppHelper', 'objc']
 # The app's own code lives in four packages. PyInstaller does follow the static
 # imports in each __init__.py, but a miss here only shows up in the packaged
 # app — never in the tests, never in a run from source — so every module is

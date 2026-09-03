@@ -336,8 +336,47 @@ function resolvedTheme(pref) {
     return (pref === "dark" || (pref === "auto" && darkMql.matches)) ? "dark" : "light";
 }
 
+// Tell the desktop window which theme it is wearing, so macOS draws its title
+// bar to match. Left alone, that strip is drawn in the *system's* appearance:
+// a Mac in Dark Mode put a black bar directly above a white sidebar, which is
+// the whole reason the window read as a page in a frame rather than an app.
+//
+// It goes over HTTP rather than through pywebview's `js_api` because the
+// server runs inside the desktop process — the route reaches the real window —
+// and because `js_api` injected `window.pywebview` with no methods on it under
+// pywebview 6. Only sent inside the window: `.desktop-shell` is on <html>
+// there and nowhere else, so a browser tab never makes the call.
+// The window's own buttons, in a frameless window that has none of its own.
+// Nothing is confirmed here: these are the three things every Mac window does,
+// and a dialog in front of a close button would be its own bug. Quitting from
+// the sidebar still asks, because that ends the app rather than the window.
+function windowAction(action) {
+    fetch("/api/window/" + action, { method: "POST" })
+        .catch(() => toast("The window did not respond."));
+}
+
+// macOS greys the buttons out when the window is not the active one.
+window.addEventListener("focus", () =>
+    document.documentElement.classList.remove("window-blurred"));
+window.addEventListener("blur", () =>
+    document.documentElement.classList.add("window-blurred"));
+
+let lastWindowTheme = null;
+function tellTheWindowTheTheme(theme) {
+    if (!document.documentElement.classList.contains("desktop-shell")) return;
+    if (theme === lastWindowTheme) return;
+    lastWindowTheme = theme;
+    fetch("/api/window/appearance", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ theme }),
+    }).catch(() => { lastWindowTheme = null; });   // decoration; retry next time
+}
+
 function applyThemeAttr(pref) {
-    document.documentElement.setAttribute("data-theme", resolvedTheme(pref));
+    const theme = resolvedTheme(pref);
+    document.documentElement.setAttribute("data-theme", theme);
+    tellTheWindowTheTheme(theme);
 }
 
 // Reflect the current preference in both the Settings segmented control
@@ -385,6 +424,8 @@ function initTheme() {
     syncThemeControls(pref);
 }
 
+// The bridge is injected after the page has loaded, so the call inside
+// initTheme can be a fraction too early. This is the one that always lands.
 // ── Chart theming ────────────────────────────────────────────────────
 function cssVar(name) {
     return getComputedStyle(document.documentElement).getPropertyValue(name).trim();

@@ -189,6 +189,79 @@ def test_search_never_returns_more_than_the_cap(seeded):
     assert result["showing"] <= ai_tools.MAX_ROWS
 
 
+# ── Searching for a shop ──────────────────────────────────────────────────
+# All four of these come from one question — "what are my 3 latest
+# transactions for peten koiratarvike?" — which was answered "there are no
+# transactions matching" three times, about a shop with ten of them.
+
+def test_search_with_no_period_searches_all_of_history(seeded):
+    """A shop question is 'have I ever', not 'have I this month'.
+
+    This defaulted to the current month like every other tool, so a search
+    naming no period reported the silence of the twenty days so far as though
+    the shop were unknown to the app.
+    """
+    result = ai_tools.search_transactions(q="K-Market")
+
+    assert result["period"] == "all time"
+    assert result["matched"] == 1
+    assert result["transactions"][0]["store"] == "K-Market"
+
+
+def test_an_explicit_period_still_beats_the_all_time_default(seeded):
+    """Widening the default must not start ignoring what the user asked for."""
+    assert ai_tools.search_transactions(q="K-Market", month="2026-04")["matched"] == 0
+    assert ai_tools.search_transactions(q="K-Market", period="last_month")["period"] \
+        != "all time"
+
+
+def test_search_can_return_the_latest_rather_than_the_largest(seeded):
+    """'The 3 latest' returned the 3 largest, and called them recent."""
+    largest = ai_tools.search_transactions(month="2026-05", type="expense")
+    latest = ai_tools.search_transactions(month="2026-05", type="expense", sort="date")
+
+    assert largest["transactions"][0]["store"] == "K-Market"       # 61,20
+    assert latest["transactions"][0]["store"] == "Bar Llamas"      # 20 May
+    assert latest["sorted_by"] == "date, newest first"
+
+
+def test_a_phrase_matching_nothing_is_retried_word_by_word(seeded):
+    """One shop, two spellings, because two importers wrote it differently.
+
+    A truncating import files "PETEN KOIRATARV" and a tidier one files
+    "Peten Koiratarvike Oy". The phrase is a substring of neither, so a
+    literal search finds nothing at all.
+    """
+    dog = cat_id(seeded, "Dog")
+    add_tx(seeded, "2026-05-07", "PETEN KOIRATARV", dog, 18.00)
+
+    result = ai_tools.search_transactions(q="peten koiratarvike jotain", sort="date")
+
+    assert result["matched"] == 1
+    assert result["searched_for"] == "peten"
+    assert result["widened_from"] == "peten koiratarvike jotain"
+    assert result["transactions"][0]["store"] == "PETEN KOIRATARV"
+
+
+def test_a_phrase_that_does_match_is_never_widened(seeded):
+    """Widening is a last resort, not a way to quietly answer a wider question."""
+    result = ai_tools.search_transactions(q="K-Market")
+    assert result["searched_for"] == "K-Market"
+    assert result["widened_from"] is None
+
+
+@pytest.mark.parametrize("query, expected", [
+    # Longest first: the most specific word that could still find something.
+    ("peten koiratarvike", ["koiratarvike", "peten"]),
+    # Under four characters is a fragment, not a shop. "k market" retried on
+    # "k" would match half the table and report it as the shop asked about.
+    ("k market", ["market"]),
+    ("s ok", []),
+])
+def test_only_words_long_enough_to_be_a_shop_are_retried(query, expected):
+    assert ai_tools._search_words(query) == expected
+
+
 def test_monthly_summary_reports_income_expense_and_net(seeded):
     result = ai_tools.monthly_summary(period="last_12_months")
     may = next((m for m in result["months"] if m["month"] == "2026-05"), None)
