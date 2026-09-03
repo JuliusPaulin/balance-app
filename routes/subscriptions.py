@@ -3,8 +3,8 @@
 from datetime import date
 
 from flask import Blueprint, request, jsonify
-from database import db_conn
-from recurring import (detect_recurring, GROUPS, GROUP_SUBSCRIPTION,
+from data.schema import db_conn
+from services.recurring import (detect_recurring, GROUPS, GROUP_SUBSCRIPTION,
                        _load_dismissed)
 import core
 from core import current_user_id, bump_data_version
@@ -14,7 +14,7 @@ bp = Blueprint("subscriptions", __name__)
 
 @bp.route("/api/recurring")
 def recurring():
-    """Detected recurring charges & subscriptions (see recurring.py)."""
+    """Detected recurring charges & subscriptions (see services/recurring.py)."""
     uid = current_user_id()
 
     def _int_arg(name, default):

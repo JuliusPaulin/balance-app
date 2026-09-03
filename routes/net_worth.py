@@ -2,9 +2,9 @@
 
 import re
 from flask import Blueprint, request, jsonify
-from database import db_conn, backup_db
-import networth
-import investment_import
+from data.schema import db_conn, backup_db
+from services import networth
+from services import investment_import
 from core import current_user_id
 
 bp = Blueprint("net_worth", __name__)

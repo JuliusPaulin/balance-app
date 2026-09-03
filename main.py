@@ -4,7 +4,7 @@ import threading
 import webview
 import config
 from app import app, SERVER_PORT
-from database import init_db, seed_local_user, backup_db
+from data.schema import init_db, seed_local_user, backup_db
 
 
 def start_server():
@@ -19,7 +19,7 @@ def _warm_model():
     fail quietly: no model yet is an ordinary first run, and the panel says so.
     """
     try:
-        from model_runtime import ensure_running
+        from ai.runtime import ensure_running
         ensure_running()
     except Exception:
         pass
@@ -60,7 +60,7 @@ if __name__ == "__main__":
         # closing the window leaves three gigabytes resident with nothing left
         # to talk to it.
         try:
-            from model_runtime import stop
+            from ai.runtime import stop
             stop()
         except Exception:
             pass

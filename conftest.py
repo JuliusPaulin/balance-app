@@ -36,7 +36,7 @@ os.environ["SQLITE_PATH"] = TEST_SQLITE_PATH
 def _test_db():
     """Build the schema once per session in the scratch database."""
     import config
-    import database
+    from data import schema as database
 
     assert config.SQLITE_PATH == TEST_SQLITE_PATH, (
         f"The suite must run against a scratch database, not {config.SQLITE_PATH}. "
@@ -45,7 +45,7 @@ def _test_db():
 
     database.init_db()
     yield
-    import db
+    from data import db
     db.close_pool()
 
 
@@ -57,8 +57,8 @@ def _reset_local_user():
     and its default categories back.
     """
     import config
-    import database
-    import db
+    from data import schema as database
+    from data import db
 
     with db.db_conn() as conn:
         conn.execute("DELETE FROM users WHERE id = %s", (config.LOCAL_USER_ID,))
@@ -85,7 +85,7 @@ def user_conn():
     so the user starts with default categories and no data.
     """
     import config
-    import db
+    from data import db
 
     with db.db_conn() as conn:
         yield conn, config.LOCAL_USER_ID
@@ -164,7 +164,7 @@ def fresh_conn():
     clean exit. Use it to set up or read back rows out-of-band from the HTTP
     requests the test client makes.
     """
-    import db
+    from data import db
 
     def _run(fn):
         with db.db_conn() as conn:

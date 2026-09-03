@@ -120,7 +120,7 @@ keeps it.
 # ── Enable Banking (optional Open Banking import) ────────────────────────
 # Credentials for the Enable Banking PSD2 API. The private key is stored
 # base64-encoded in the env var (so a multi-line PEM survives being pasted
-# around) and decoded at use time in enable_banking.py — never written to disk and
+# around) and decoded at use time in services/enable_banking.py — never written to disk and
 # never logged/returned. All optional: when app id + key aren't both set,
 # enable_banking_configured() is False and the bank-import routes report 400.
 
@@ -157,7 +157,7 @@ def enable_banking_configured():
 # nothing leaving the disk. That is the point of the feature — the app has
 # always been one SQLite file on your own Mac, and a panel that posted a
 # transaction history to somebody's API would be the first thing it ever did
-# that contradicts that. See docs/LOCAL_AI_RESEARCH.md.
+# that contradicts that. See docs/research/LOCAL_AI_RESEARCH.md.
 #
 # The cloud backend is kept as a control, not a destination: same loop, same
 # tools, different model, so a bad answer can be blamed on the right thing.

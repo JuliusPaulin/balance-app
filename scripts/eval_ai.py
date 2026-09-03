@@ -35,7 +35,7 @@ os.environ["SQLITE_PATH"] = os.path.join(_TMP, "expenses.db")
 
 def _prepare(today=None):
     import config
-    import database
+    from data import schema as database
     from evals import fixture
 
     assert config.SQLITE_PATH.startswith(_TMP), (
@@ -54,13 +54,13 @@ def _outputs_for(trace):
     returned" has no answer without the results. The tools are read-only and the
     database has not moved, so running them again returns the same thing.
     """
-    from ai_tools import run_tool
+    from ai.tools import run_tool
     return [run_tool(call["tool"], call["arguments"]) for call in trace]
 
 
 def run_case(case, on_event=None):
     """Ask one question; return the loop's result, the outputs and the grades."""
-    import ai_chat
+    from ai import chat as ai_chat
     from evals import grading
 
     started = time.monotonic()
@@ -124,7 +124,7 @@ def main():
             print(f"  {case.why}")
         return 0
 
-    import ai_chat
+    from ai import chat as ai_chat
     state = ai_chat.status()
     print(f"backend: {state['backend']}  model: {state['model']}")
     if not (state["reachable"] and state["model_installed"]):

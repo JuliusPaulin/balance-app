@@ -17,7 +17,7 @@ reads as evidence.
 
 import pytest
 
-import ai_tools
+from ai import tools as ai_tools
 from evals import cases as case_module
 from evals import fixture as fixture_module
 from evals import grading
@@ -235,7 +235,7 @@ def test_a_case_asks_for_a_figure_the_fixture_can_actually_return(fx):
                                   fx.assets, fx.usual_groceries)}
     known |= {fx.eur(fx.groceries[m]) for m in fx.months}
     # The one figure a case reads from a tool rather than writing down — what a
-    # series costs per month is recurring.py's answer, not this file's.
+    # series costs per month is services/recurring.py's answer, not this file's.
     known.add(ai_tools.list_subscriptions()["monthly_total_eur"])
     for case in case_module.build(fx):
         for phrase in case.must_say:

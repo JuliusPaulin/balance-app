@@ -9,7 +9,7 @@
 # postgresql@16 is keg-only, so we resolve its bin directory via
 # `brew --prefix postgresql@16` rather than relying on it being on PATH.
 #
-# Schema creation is NOT done here — that comes from database.py once the schema
+# Schema creation is NOT done here — that comes from data/schema.py once the schema
 # is ported (Step 1.2). After this script runs the databases exist but are empty.
 #
 set -euo pipefail
@@ -69,4 +69,4 @@ echo "    dev : postgresql://localhost/expense_dev"
 echo "    test: postgresql://localhost/expense_test"
 echo ""
 echo "==> Connect with: \"$PSQL\" postgresql://localhost/expense_dev"
-echo "==> Done. (Databases are empty until the schema is created — Step 1.2 / database.py.)"
+echo "==> Done. (Databases are empty until the schema is created — Step 1.2 / data/schema.py.)"

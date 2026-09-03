@@ -12,8 +12,8 @@ knowledge of the database, of what a category is, or of a provider's wire format
 import json
 
 import config
-from ai_backends import BackendUnavailable, get_backend
-from ai_tools import TOOL_SCHEMAS, context_block, run_tool
+from ai.backends import BackendUnavailable, get_backend
+from ai.tools import TOOL_SCHEMAS, context_block, run_tool
 
 # How many times the model may call tools before we stop and answer with what
 # we have. Every question this assistant can be asked is answerable in one or

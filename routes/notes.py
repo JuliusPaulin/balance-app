@@ -1,7 +1,7 @@
 """Per-month free-text notes."""
 
 from flask import Blueprint, request, jsonify
-from database import db_conn
+from data.schema import db_conn
 from core import current_user_id
 
 bp = Blueprint("notes", __name__)

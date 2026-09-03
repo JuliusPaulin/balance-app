@@ -12,7 +12,7 @@ so each user's data is created in committed `db.db_conn()` blocks via the
 
 import io
 
-import db
+from data import db
 
 
 # ---------------------------------------------------------------------------

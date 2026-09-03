@@ -1,6 +1,6 @@
 """Net worth tracking — carry-forward over manually entered account balances.
 
-See NET_WORTH_PLAN.md. Net worth at a date =
+See docs/plans/NET_WORTH_PLAN.md. Net worth at a date =
   sum(latest asset balance with as_of <= date)
   - sum(latest liability balance with as_of <= date).
 Balances carry forward: the most recent snapshot per account is used until a

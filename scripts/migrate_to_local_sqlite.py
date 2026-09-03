@@ -26,7 +26,7 @@ import sys
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
 import config
-import database
+from data import schema as database
 
 # Tables copied from the old DB, in FK-dependency order. Each row gets user_id =
 # LOCAL_USER_ID; for every table we copy only the columns that exist in BOTH the

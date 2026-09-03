@@ -5,7 +5,7 @@
 net-worth history. Two things are worth guarding beyond "it wrote a row":
 
 * **The account total is the sum of its holdings**, written into
-  `account_balances`, which is what `networth.py` carries forward. A holdings
+  `account_balances`, which is what `services/networth.py` carries forward. A holdings
   write that does not move the balance shows the right drill-down under the
   wrong total.
 * **A snapshot is (account_id, as_of)** and re-importing the same day must land

@@ -120,17 +120,23 @@ Both read the same database, so your figures carry over either way.
 python3 -m pytest tests/
 ```
 
-All 63 pass. They run against a throwaway database in a temp folder — your own
+All 456 pass. They run against a throwaway database in a temp folder — your own
 figures are never opened.
 
 ### Where things live
 
 ```
-main.py, app.py, db*.py …   the app itself
+main.py, app.py             the launcher and the wiring
+core.py, config.py          the Flask object and the settings
+data/                       the database: db, engine, schema
+services/                   net worth, recurring, imports, banking
+ai/                         the assistant: tools, loop, backends, runtime
+routes/                     the API, one module per area
 templates/, static/         the interface
 tests/                      pytest suite
+evals/                      the questions the assistant is judged on
 scripts/                    build script and one-off tools
-docs/                       plans, research, UI mockups
+docs/                       plans/, research/, history/, mockups/
 Balance.spec                the PyInstaller build recipe
 update.sh                   the one-line updater
 ```

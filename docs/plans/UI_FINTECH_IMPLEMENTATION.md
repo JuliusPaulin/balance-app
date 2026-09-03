@@ -2,7 +2,7 @@
 
 Reskin the Expense Tracker to the **Fintech** visual style (from the accepted
 mockup UI-01) and ship it in **both a light and a dark theme** with a user-facing
-**theme toggle** (Light / Dark / Auto). See `UI_REDESIGN_RESEARCH.md` for the verdict.
+**theme toggle** (Light / Dark / Auto). See `../research/UI_REDESIGN_RESEARCH.md` for the verdict.
 
 ## Source of truth (the look)
 - **Light palette:** `mockups/ui-01-light-fintech.html` `:root`

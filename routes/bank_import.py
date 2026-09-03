@@ -3,11 +3,11 @@
 import secrets
 from datetime import datetime
 from flask import Blueprint, request, jsonify, session, redirect
-import db
-from database import get_db, db_conn
+from data import db
+from data.schema import get_db, db_conn
 import config
-import enable_banking
-from enable_banking import BankAuthError, BankConfigMissing, BankError, SessionExpired
+from services import enable_banking
+from services.enable_banking import BankAuthError, BankConfigMissing, BankError, SessionExpired
 from core import app, limiter, current_user_id
 from routes.csv_import import suggest_category, _staging_response, _cleanup_import_batch
 

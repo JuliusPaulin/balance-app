@@ -33,7 +33,7 @@ different risk conversation, and the app has no undo for a hand-edited row.
 from datetime import date
 
 from core import app, current_user_id
-from database import db_conn
+from data.schema import db_conn
 
 # The relative periods a question can name. The model picks one of these by
 # name; it never computes a date. Anything outside the list has to be given as
@@ -400,7 +400,7 @@ def monthly_summary(period="last_12_months", months=None):
 
 
 def list_subscriptions():
-    """Detected recurring charges (see recurring.py).
+    """Detected recurring charges (see services/recurring.py).
 
     The totals deliberately exclude stopped series, transfers and investments,
     which is why they come from the endpoint rather than being summed here.

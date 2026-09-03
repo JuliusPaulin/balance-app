@@ -6,13 +6,13 @@ into one list under one total, so on the real database the headline read
 bill and a takeaway habit standing under a heading that said Subscriptions.
 
 These tests hold the line that split them, at both ends: `classify_group` and
-the per-group totals in `recurring.py`, and the endpoints the page reads.
+the per-group totals in `services/recurring.py`, and the endpoints the page reads.
 """
 from datetime import date, timedelta
 
 import pytest
 
-from recurring import (classify_group, detect_recurring, signature,
+from services.recurring import (classify_group, detect_recurring, signature,
                        GROUP_BILL, GROUP_INCOME, GROUP_SPENDING,
                        GROUP_SUBSCRIPTION, GROUP_TRANSFER)
 

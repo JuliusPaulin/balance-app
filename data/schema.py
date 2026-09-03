@@ -7,9 +7,9 @@ table survive from an earlier multi-user port; they are kept purely as an
 internal anchor so the user-scoped queries throughout the app run unchanged
 against the one fixed local user (``config.LOCAL_USER_ID``).
 
-Public shape (app.py / recurring.py / networth.py import from here):
+Public shape (app.py, routes/, services/ import from here):
 
-- ``db_conn``            — re-exported from :mod:`db`.
+- ``db_conn``            — re-exported from :mod:`data.db`.
 - ``get_db()``           — a direct connection the caller commits + closes.
 - ``init_db()``          — build the full schema idempotently.
 - ``seed_categories_for_user(conn, user_id)`` — seed default categories.
@@ -17,7 +17,7 @@ Public shape (app.py / recurring.py / networth.py import from here):
 - ``backup_db`` / ``list_backups`` — timestamped file copies of the database.
 
 Param style is ``%s`` and rows come back as dicts: the SQL is written
-psycopg-flavoured and :mod:`db_sqlite` translates it on the way to sqlite3.
+psycopg-flavoured and :mod:`data.sqlite` translates it on the way to sqlite3.
 """
 
 import os
@@ -25,8 +25,8 @@ import shutil
 from datetime import date, datetime, timedelta
 
 import config
-import db
-from db import db_conn  # re-export so `from database import db_conn` keeps working
+from data import db
+from data.db import db_conn  # re-export so `from data.schema import db_conn` keeps working
 
 # Default categories — 28 expense + 6 income = 34 total. Single source of truth
 # for per-user seeding on both backends.

@@ -2,7 +2,7 @@
 
 import difflib
 from flask import Blueprint, request, jsonify
-from database import db_conn
+from data.schema import db_conn
 from core import current_user_id, bump_data_version
 
 bp = Blueprint("merchant_rules", __name__)

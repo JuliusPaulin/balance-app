@@ -35,12 +35,12 @@ class Case:
 
 def build(fx):
     """The suite, with every figure taken from the fixture that was written."""
-    import ai_tools
+    from ai import tools as ai_tools
 
     from evals import fixture
 
     # One figure is read from the tool rather than written down here, on
-    # purpose. What a recurring series costs per month is `recurring.py`'s
+    # purpose. What a recurring series costs per month is `services/recurring.py`'s
     # answer — a monthly rent of 1 250 € normalises to 1 226 € over a 31-day
     # median gap — and re-deriving it here would make this file a second
     # implementation of it. `tests/test_recurring.py` is what holds that number

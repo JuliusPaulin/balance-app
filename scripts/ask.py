@@ -39,8 +39,8 @@ def main():
         os.environ["OLLAMA_MODEL" if os.environ.get("AI_BACKEND", "local") == "local"
                    else "AI_MODEL"] = args.model
 
-    import ai_chat
-    from ai_backends import BackendUnavailable
+    from ai import chat as ai_chat
+    from ai.backends import BackendUnavailable
 
     state = ai_chat.status()
     print(f"backend: {state['backend']}  model: {state['model']}")

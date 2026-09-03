@@ -14,7 +14,7 @@ import pytest
 
 import config
 
-import ai_tools
+from ai import tools as ai_tools
 from helpers import add_tx, cat_id
 
 
@@ -264,8 +264,8 @@ def test_a_tool_works_in_a_process_that_never_imports_app():
     import sys
 
     source = (
-        "import ai_tools;"
-        "r = ai_tools._call_api('/api/categories');"
+        "from ai import tools;"
+        "r = tools._call_api('/api/categories');"
         "assert isinstance(r, list) and r, 'no categories came back';"
         "print('ok')"
     )

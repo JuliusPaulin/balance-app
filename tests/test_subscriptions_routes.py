@@ -9,7 +9,7 @@ with nothing calling it.
 """
 from datetime import date, timedelta
 
-from recurring import GROUP_BILL, GROUP_SUBSCRIPTION, signature
+from services.recurring import GROUP_BILL, GROUP_SUBSCRIPTION, signature
 from tests.helpers import cat_id
 
 

@@ -119,7 +119,7 @@ cp "${BIN}"/*.metal "${DEST}/" 2>/dev/null || true
 
 # MIT, and it asks that the notice travel with the binaries.
 cp "${SRC_DIR}/LICENSE" "${DEST}/LICENSE-llama.cpp.txt"
-# What the running binary is, patch and all. `model_runtime` reads this before
+# What the running binary is, patch and all. `ai/runtime.py` reads this before
 # it will put the model on the GPU on an old Mac, and a test asserts the marker
 # is here — a runtime bump that dropped the patch would otherwise put every
 # Ventura user back on their CPU with nothing to show for it.

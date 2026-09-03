@@ -12,7 +12,7 @@ funnel through here: ``IntegrityError``, ``DatabaseError``, ``Json``,
 ``load_json``.
 """
 
-from db_sqlite import (  # noqa: F401  (re-exported public API)
+from data.sqlite import (  # noqa: F401  (re-exported public API)
     db_conn,
     run_sql_script,
     get_db,

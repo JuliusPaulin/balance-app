@@ -10,34 +10,65 @@
 | Desktop shell | pywebview (native window on port 5050, `PORT` env-overridable) |
 | Charts | Chart.js |
 
-**Entry points:**
+**The shape of it.** Five files at the root and six packages. The root holds
+only what starts the app or what every package needs; everything else lives in
+the package that owns it.
+
+```
+main.py app.py core.py config.py conftest.py
+ai/        the assistant
+data/      the database
+services/  what the app works out
+routes/    what it serves
+evals/     how the assistant is judged
+scripts/   what is run by hand
+```
+
+**At the root:**
 - `main.py` — desktop app launcher (pywebview); on launch creates the schema,
   backs up the DB, and seeds the local user.
 - `app.py` — the wiring: registers the blueprints and runs the server. ~30 lines.
 - `core.py` — the Flask `app` object and the request plumbing every route shares:
   the rate limiter, CSRF, `current_user_id()`, the security headers, the
-  before-request guards, and the recurring-detection cache.
-- `routes/` — one module per area, each owning a blueprint (see below)
-- `config.py` — runtime config (all optional; safe defaults throughout)
-- `db.py` — the single import point for the database; re-exports `db_sqlite`
-- `db_sqlite.py` — the SQLite engine (translates `%s`→`?`, `now()`→`datetime('now')`, dict rows)
-- `database.py` — schema DDL + seeding + backups
+  before-request guards, and the recurring-detection cache. **It stays at the
+  root because `Flask(__name__)` finds `templates/` and `static/` beside the
+  module that built it** — move it into a package and both go missing, with
+  nothing failing until a page is asked for.
+- `config.py` — runtime config (all optional; safe defaults throughout). Also at
+  the root because it reads `VERSION` relative to its own `__file__`.
+- `conftest.py` — pytest's, and it has to be at the root to be found.
+
+**`data/` — the database.** Import `db`, never `sqlite`.
+- `data/db.py` — the single import point; re-exports the driver's public API
+  (`db_conn`, `IntegrityError`, `DatabaseError`, `Json`, `load_json`)
+- `data/sqlite.py` — the SQLite engine (translates `%s`→`?`, `now()`→`datetime('now')`, dict rows)
+- `data/schema.py` — schema DDL + seeding + backups
 - `scripts/migrate_to_local_sqlite.py` — one-time import of an old DB into this schema
-- `recurring.py` — recurring/subscription detection over transaction history
-- `networth.py` — net worth tracking (carry-forward over manual account balances; grouped + holdings).
+
+**`services/` — what the app works out.** Plain modules a route calls; none owns
+a blueprint and none imports `routes`.
+- `services/recurring.py` — recurring/subscription detection over transaction history
+- `services/networth.py` — net worth tracking (carry-forward over manual account balances; grouped + holdings).
   Totals come from balances alone: an account you leave out of an update keeps its
   last value, and closing one writes a zero at the closing date rather than hiding
   it, so past months stay true. Never filter `is_archived` in the total queries.
-- `investment_import.py` — Nordnet CSV / Nordea xlsx portfolio parsers (→ holdings + Net Worth)
-- `ai_tools.py` — the seven read-only tools the chat assistant may call, each a
+- `services/investment_import.py` — Nordnet CSV / Nordea xlsx portfolio parsers (→ holdings + Net Worth)
+- `services/enable_banking.py` — the Open Banking client: consent, sessions, fetch
+
+**`ai/` — the assistant.** Imports downwards only: `chat` reads `backends` and
+`tools`, `backends` reads `runtime`, and nothing reads back up.
+- `ai/tools.py` — the seven read-only tools the chat assistant may call, each a
   wrapper over an endpoint the app already serves
-- `ai_chat.py` — the agent loop: system prompt and the tool-call cycle
-- `ai_backends.py` — where the model runs. llama.cpp bundled in the app (the
+- `ai/chat.py` — the agent loop: system prompt and the tool-call cycle
+- `ai/backends.py` — where the model runs. llama.cpp bundled in the app (the
   default), Ollama (for development), and Anthropic (the control), behind one
   interface
-- `model_runtime.py` — the model that ships with the app: where the runtime and
+- `ai/runtime.py` — the model that ships with the app: where the runtime and
   the weights are, fetching the weights once, running the server, and which of
-  the GPU and the CPU it ended up on
+  the GPU and the CPU it ended up on. Its `_bundle_root()` climbs **two**
+  directories in a checkout and none in a bundle, because `sys._MEIPASS` is flat
+  — a difference that cannot show up in the tests and always shows up in the
+  shipped app.
 - `patches/metal-readback.patch` — the one change carried on top of llama.cpp,
   without which every Mac on macOS 13 or older loses the GPU.
   `scripts/fetch_runtime.sh` applies it and compiles the result
@@ -46,6 +77,15 @@
 - `evals/` — the questions the assistant is judged on, the fixture database
   whose answers are known in advance, and the graders. `scripts/eval_ai.py`
   runs them against a real model and scores what comes back
+
+**`Balance.spec` names every module by hand.** PyInstaller follows the static
+imports in each `__init__.py`, but a module it misses fails only in the packaged
+app — never in the tests, never in a run from source. A new module in `ai/`,
+`data/`, `services/` or `routes/` belongs in that list too.
+
+**`docs/` is sorted by what a file is**, not what it is about: `plans/` proposed
+work, `research/` recorded findings, `history/` says what happened and is
+superseded, `mockups/` is the drawings.
 
 **The `routes/` package.** `app.py` held every route until it reached 3,000
 lines; the routes now sit one area per module, and `routes/__init__.py` lists
@@ -118,10 +158,12 @@ The database is a single SQLite file at
 `./scripts/build_app.sh` → `Balance.app` / `Balance.dmg`.
 
 The SQL throughout the app is psycopg-flavoured — `%s` placeholders, `RETURNING`,
-`ON CONFLICT`, dict rows. `db_sqlite` translates that on the way to the driver,
+`ON CONFLICT`, dict rows. `data/sqlite.py` translates that on the way to the driver,
 which is why route code reads the way it does. Driver-specific bits funnel
-through `db`: `db.IntegrityError`, `db.DatabaseError`, `db.Json(...)`,
-`db.load_json(...)` — never import `sqlite3` directly in route code.
+through `db` — `from data import db`, then `db.IntegrityError`,
+`db.DatabaseError`, `db.Json(...)`, `db.load_json(...)`. Never import `sqlite3`
+in route code, and never import `data.sqlite` either: `db` is the seam a driver
+change would happen behind.
 
 > History: this began as a single-user SQLite desktop app, was ported wholesale
 > to multi-user Postgres for a Supabase/Render deployment, then brought back to
@@ -357,7 +399,7 @@ nothing read it.
 
 ### Open Banking Import (Enable Banking)
 Pulls real bank transactions into the **same** staging → review → confirm pipeline as CSV.
-Module: `enable_banking.py`.
+Module: `services/enable_banking.py`.
 
 - **Flow:** Import tab → "Import from bank" → **Connect** (PSD2 consent redirect) → pick
   account + date range → **Fetch** → standard review table (auto-categorised, editable) → **Confirm All**.
@@ -492,7 +534,7 @@ painted red reads as a warning about earning more.
 
 ### Subscriptions (recurring detection)
 
-`recurring.py` groups transactions by merchant, infers a cadence from the median
+`services/recurring.py` groups transactions by merchant, infers a cadence from the median
 gap, and flags each series:
 
 | Status | Means |
@@ -584,7 +626,7 @@ table and not as a fake transaction.
 ### Net Worth & investment holdings
 
 Accounts are kept by hand (`/api/accounts` + `/api/accounts/<id>/balances`), and
-`networth.py` carries the last balance of each forward — the rules that keeps
+`services/networth.py` carries the last balance of each forward — the rules that keeps
 true are in the entry-points table above. Two things sit on top of it:
 
 - **Holdings** are the per-product rows behind an investment account, snapshotted
@@ -597,7 +639,7 @@ true are in the entry-points table above. Two things sit on top of it:
   old snapshot must not invent a data point in the net-worth history. Earlier
   snapshots keep the holding, because they are what was held at the time.
 
-**Investment import** (`investment_import.py`) parses Nordnet CSV and Nordea
+**Investment import** (`services/investment_import.py`) parses Nordnet CSV and Nordea
 `Omistukset.xlsx` exports into broker → account → holding.
 `POST /api/networth/import-investments/preview` parses and **writes nothing**,
 returning the hierarchy plus a dedupe hint per account (`external_id`, then IBAN
@@ -747,7 +789,7 @@ the other.
 
 **A patch that goes missing has to fail loudly**, because nothing about losing
 it looks wrong — the server starts, the assistant answers, and every Mac below
-macOS 14 is quietly back on its processor. `model_runtime.runtime_patched()`
+macOS 14 is quietly back on its processor. `ai.runtime.runtime_patched()`
 reads the marker, a test asserts it, and the release workflow checks it inside
 the finished bundle. The runtime is built *before* the tests run for that
 reason.
@@ -844,7 +886,7 @@ written for a user naming a month; 2b was the first model confused enough to
 name a contradictory one, and 4b and 9b never do. It is left as it is.
 
 **The assistant does not query the database and does not do arithmetic.** It
-picks one of seven read-only tools in `ai_tools.py`, each of which dispatches one
+picks one of seven read-only tools in `ai/tools.py`, each of which dispatches one
 of the app's own GET endpoints in-process — so a number it reports is a number
 the Dashboard would draw, computed by the same SQL through the same
 `_filter_clauses`. Three rules make that hold, and each exists because the
@@ -902,7 +944,7 @@ the thing has to be taught to say it, not given a near-miss.
 
 **The tools read the app's routes, so they have to be on the app.** `core` holds
 the bare Flask object and `routes.register(app)` attaches the blueprints;
-`app.py` calls it on start-up and `ai_tools._call_api` calls it before it
+`app.py` calls it on start-up and `ai.tools._call_api` calls it before it
 dispatches. Without that second call every tool 404s in any process that does
 not import `app.py` — which is `scripts/ask.py`, the harness the model is judged
 with. The suite never saw it, because its `client` fixture imports `app`; the
@@ -931,9 +973,9 @@ sits.
 
 Read-only on purpose — the app has no undo for a hand-edited row.
 
-The loop in `ai_chat.py` is hand-written and knows nothing about which model
+The loop in `ai/chat.py` is hand-written and knows nothing about which model
 answered: it asks a backend for a turn, runs the tools that turn requested, and
-hands the results back. `ai_backends.py` holds the two implementations and all
+hands the results back. `ai/backends.py` holds the two implementations and all
 the wire-format translation, so a third (llama.cpp embedded in the app, once
 this is proven) is a change in one file. `MAX_TOOL_ROUNDS` caps the cycle at
 four — small models circle more readily than large ones — and the final turn
@@ -977,7 +1019,7 @@ thing that must not happen while it thinks.
 
 **The wait is watchable.** `POST /api/chat/stream` sends the same turn as
 server-sent events as it happens: the lookup named before it runs, the months it
-read once it has, then the answer as it is written. `ai_chat.chat()` takes an
+read once it has, then the answer as it is written. `ai.chat.chat()` takes an
 `on_event` callback and is otherwise unchanged, so the plain JSON endpoint and
 every test still go through the same loop. The route runs that loop on a worker
 thread with a queue between them, because a callback pushes and a response has

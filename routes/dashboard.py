@@ -2,7 +2,7 @@
 
 from datetime import datetime
 from flask import Blueprint, request, jsonify
-from database import db_conn
+from data.schema import db_conn
 from core import current_user_id
 
 bp = Blueprint("dashboard", __name__)

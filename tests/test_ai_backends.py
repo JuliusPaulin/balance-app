@@ -11,8 +11,8 @@ from types import SimpleNamespace
 import pytest
 import requests
 
-import ai_backends
-from ai_backends import BackendUnavailable, OllamaBackend
+from ai import backends as ai_backends
+from ai.backends import BackendUnavailable, OllamaBackend
 
 
 def _reply(content="", tool_calls=None, prompt_tokens=120, eval_tokens=30):

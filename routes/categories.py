@@ -1,8 +1,8 @@
 """Spending categories: list, create, rename, delete (with reassignment)."""
 
 from flask import Blueprint, request, jsonify
-import db
-from database import db_conn
+from data import db
+from data.schema import db_conn
 from core import current_user_id, bump_data_version
 
 bp = Blueprint("categories", __name__)

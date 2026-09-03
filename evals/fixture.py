@@ -14,7 +14,7 @@ something. Amounts are fixed, never random: a case says the answer is
 
 from datetime import date
 
-import ai_tools
+from ai import tools as ai_tools
 
 
 def _month_add(month, delta):
@@ -157,7 +157,7 @@ def build(today=None):
     before importing config — the same rule the test suite runs under.
     """
     import config
-    import db
+    from data import db
 
     fx = Fixture(today)
     uid = config.LOCAL_USER_ID

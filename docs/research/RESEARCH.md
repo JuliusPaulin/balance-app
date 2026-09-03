@@ -20,10 +20,10 @@ Single source of truth for feature/QoL research. Read this first before any rese
 User verdict 2026-05-31.
 
 - **R1-04 Recurring transaction detection** — ✅ Accepted. Plan drafted in
-  `RECURRING_DETECTION_PLAN.md`. (Note: subscription-list view R1-05 folded in
+  `../plans/RECURRING_DETECTION_PLAN.md`. (Note: subscription-list view R1-05 folded in
   as the front-end of this feature rather than a separate item.)
 - **R1-08 Net worth tracking** — ✅ Accepted, **to be built as its own dedicated
-  tab**. Plan drafted in `NET_WORTH_PLAN.md`.
+  tab**. Plan drafted in `../plans/NET_WORTH_PLAN.md`.
 
 ## Rejected Recommendations
 
@@ -67,7 +67,7 @@ No verdict given yet on the UX/QoL items — still awaiting user decision.
 - Produced 12 candidate recommendations across Budgeting, Import/Automation, Analytics, UX/QoL. All pending user verdict.
 
 ### 2026-05-31 — Round 1 verdict
-- **Accepted:** R1-04 (recurring detection), R1-08 (net worth, as its own tab). Plans drafted: `RECURRING_DETECTION_PLAN.md`, `NET_WORTH_PLAN.md`.
+- **Accepted:** R1-04 (recurring detection), R1-08 (net worth, as its own tab). Plans drafted: `../plans/RECURRING_DETECTION_PLAN.md`, `../plans/NET_WORTH_PLAN.md`.
 - **Rejected:** R1-01/02/03 (no interest in budgeting); R1-05, R1-06 (import/categorization already good — R1-05's list folded into R1-04).
 - **Deferred (needs concrete examples):** R1-07, R1-09 — user open to analytics but wants sharper, specific proposals next round.
 - **Still pending:** R1-10, R1-11, R1-12 (UX/QoL) — no verdict yet.

@@ -15,14 +15,24 @@ datas = [('templates', 'templates'), ('static', 'static'), ('VERSION', '.'),
          # the model, so they ship and are copied beside the weights.
          ('licences', 'licences')]
 binaries = []
-hiddenimports = ['webview', 'webview.platforms.cocoa', 'flask', 'flask_limiter', 'dateutil', 'db_sqlite', 'database', 'investment_import', 'openpyxl', 'ai_tools', 'ai_chat', 'ai_backends', 'model_runtime']
-# The routes live in a package now. PyInstaller does follow the static imports in
-# routes/__init__.py, but a miss here only shows up in the packaged app, so the
-# modules are named outright.
-hiddenimports += ['core', 'routes'] + [
+hiddenimports = ['webview', 'webview.platforms.cocoa', 'flask', 'flask_limiter',
+                 'dateutil', 'openpyxl']
+# The app's own code lives in four packages. PyInstaller does follow the static
+# imports in each __init__.py, but a miss here only shows up in the packaged
+# app — never in the tests, never in a run from source — so every module is
+# named outright. A new module in any of these lists belongs here too.
+hiddenimports += ['core', 'config', 'ai', 'data', 'services', 'routes'] + [
     'routes.' + m for m in (
         'bank_import', 'categories', 'csv_import', 'dashboard', 'merchant_rules',
         'chat', 'net_worth', 'notes', 'subscriptions', 'system', 'transactions',
+    )
+] + [
+    'ai.' + m for m in ('backends', 'chat', 'tools', 'runtime')
+] + [
+    'data.' + m for m in ('db', 'sqlite', 'schema')
+] + [
+    'services.' + m for m in (
+        'networth', 'recurring', 'investment_import', 'enable_banking',
     )
 ]
 tmp_ret = collect_all('webview')

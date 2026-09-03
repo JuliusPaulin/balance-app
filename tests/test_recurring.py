@@ -13,7 +13,7 @@ Run: python3 -m pytest test_recurring.py
 """
 from datetime import date, timedelta
 
-from recurring import detect_recurring, signature
+from services.recurring import detect_recurring, signature
 
 TODAY = date(2026, 5, 1)
 

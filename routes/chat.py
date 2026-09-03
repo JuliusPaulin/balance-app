@@ -11,8 +11,8 @@ import threading
 from flask import Blueprint, Response, jsonify, request, stream_with_context
 
 import config
-from ai_backends import BackendUnavailable
-from ai_chat import chat as run_chat, status as backend_status
+from ai.backends import BackendUnavailable
+from ai.chat import chat as run_chat, status as backend_status
 
 bp = Blueprint("chat", __name__)
 
@@ -36,7 +36,7 @@ def chat_status():
     # Asking whether it is ready is also when to make it so. The panel polls
     # this while it says "starting", and until now nothing was listening.
     if state.get("state") == "starting":
-        from model_runtime import nudge
+        from ai.runtime import nudge
         nudge()
     return jsonify({
         "configured": config.ai_configured() and state["reachable"]
@@ -56,7 +56,7 @@ def chat_download():
     if config.AI_BACKEND != "bundled":
         return jsonify({"error": "This build does not download its own model",
                         "code": "not_bundled"}), 400
-    from model_runtime import start_download
+    from ai.runtime import start_download
     return jsonify(start_download())
 
 

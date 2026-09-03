@@ -1,4 +1,4 @@
-"""Unit tests for networth.py — against the Postgres ``expense_test`` DB.
+"""Unit tests for services/networth.py — against the Postgres ``expense_test`` DB.
 
 Uses the ``user_conn`` fixture (see conftest.py): each test gets a fresh user
 and a live psycopg connection, and all of that user's data is cascade-deleted on
@@ -8,7 +8,7 @@ Run: python3 -m pytest test_networth.py
 """
 from datetime import date
 
-import networth
+from services import networth
 
 TODAY = date(2026, 5, 15)
 
@@ -48,7 +48,7 @@ def test_carry_forward_and_summary(user_conn):
     hist = networth.compute_history(conn, uid, months=4, today=TODAY)
     by_month = {p["month"]: p for p in hist}
     # Months before the first recorded balance are dropped, not shown as 0
-    # (see DESIGN_CHANGES.md #17) — the series starts at 2026-03.
+    # (see docs/history/DESIGN_CHANGES.md #17) — the series starts at 2026-03.
     assert "2026-02" not in by_month
     assert by_month["2026-03"]["net_worth"] == -5000   # 10000 - 15000
     assert by_month["2026-04"]["net_worth"] == 20000   # (10000+25000) - 15000

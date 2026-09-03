@@ -2,7 +2,7 @@
 backups and quit."""
 
 from flask import Blueprint, request, jsonify, render_template
-from database import db_conn, backup_db, list_backups
+from data.schema import db_conn, backup_db, list_backups
 import config
 from core import current_user_id, _ensure_csrf_token
 

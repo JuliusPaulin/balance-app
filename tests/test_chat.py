@@ -9,12 +9,12 @@ otherwise would make these a decoration. That question is what
 
 import pytest
 
-import ai_backends
-import ai_chat
-import ai_tools
+from ai import backends as ai_backends
+from ai import chat as ai_chat
+from ai import tools as ai_tools
 import config
 import routes.chat
-from ai_backends import Turn
+from ai.backends import Turn
 
 
 # ── A fake model ──────────────────────────────────────────────────────────

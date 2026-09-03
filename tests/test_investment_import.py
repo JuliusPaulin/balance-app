@@ -1,4 +1,4 @@
-"""Unit tests for investment_import.py — the Nordnet CSV / Nordea xlsx parsers.
+"""Unit tests for services/investment_import.py — the Nordnet CSV / Nordea xlsx parsers.
 
 These are pure-function tests: no Flask, no database. They matter because the
 input is a file format nobody here controls. A broker renaming a column or
@@ -12,7 +12,7 @@ Sample files are built by ``tests/helpers.py`` in the real shape.
 """
 import pytest
 
-import investment_import as ii
+from services import investment_import as ii
 from helpers import NORDEA_HEADER, nordea_xlsx_bytes, nordnet_csv_bytes
 
 STOCKS_FILE = "Osaketaulukko salkkunro 18318444 24.5.2026.csv"

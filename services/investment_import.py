@@ -17,7 +17,7 @@ Real-format notes (verified against the actual exports):
   headers; Type = Custody (investment) | CashAccount (deposit). EUR value =
   "Value in base currency" (custody) / "Value on account level" (cash).
 
-Run `python3 investment_import.py` to verify parsing against the files in
+Run `python3 -m services.investment_import` to verify parsing against the files in
 ~/Downloads (read-only, no DB writes).
 """
 

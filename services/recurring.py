@@ -6,7 +6,7 @@ gap between occurrences, scores confidence on gap/amount regularity, predicts
 the next due date, and flags a status (active / due_soon / overdue / stopped /
 price_changed).
 
-See RECURRING_DETECTION_PLAN.md. Phase 2 adds: fuzzy merging of duplicate
+See docs/plans/RECURRING_DETECTION_PLAN.md. Phase 2 adds: fuzzy merging of duplicate
 merchant variants, separation of transfer/investment series from the expense
 total, and filtering of user-dismissed series.
 """
@@ -41,7 +41,7 @@ _OVERDUE_GRACE = {label: high - ideal for label, ideal, _low, high in CADENCES}
 _STOPPED_MISSED_CYCLES = 3
 _PRICE_CHANGE_PCT = 0.10
 _MIN_CONFIDENCE = 0.5
-# Subscription gates (see RECURRING_DETECTION_PLAN.md "subscription-focused"):
+# Subscription gates (see docs/plans/RECURRING_DETECTION_PLAN.md "subscription-focused"):
 _MAX_AMOUNT_COV = 0.40     # reject wildly variable amounts (e.g. restaurants)
 _FREQ_SLACK = 1.4          # reject merchants firing far more often than 1×/interval
 _STABLE_COV = 0.10         # a series this amount-stable can flag a real price change
@@ -613,7 +613,7 @@ def detect_recurring(conn, user_id, lookback_months: int = 18,
 if __name__ == "__main__":  # manual smoke run against the live DB
     import sys
 
-    import db
+    from data import db
 
     with db.db_conn() as conn:
         row = conn.execute("SELECT min(id) AS uid FROM users").fetchone()

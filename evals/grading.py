@@ -18,7 +18,7 @@ import re
 import unicodedata
 from collections import namedtuple
 
-import ai_tools
+from ai import tools as ai_tools
 
 # `advisory` marks a finding worth seeing that is not a wrong answer. A run
 # whose headline number is dominated by punctuation is a run nobody reads, and

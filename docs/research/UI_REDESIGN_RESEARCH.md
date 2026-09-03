@@ -16,7 +16,7 @@ light and a dark theme with a user-facing light/dark toggle. Interactive mockups
 built in `mockups/` (`index.html` chooser + `ui-01-dark-fintech.html`,
 `ui-01-light-fintech.html`, and UI-02..05). The light variant
 (`ui-01-light-fintech.html`) is the source of truth for the light palette; the
-dark variant for the dark palette. Implementation brief: `UI_FINTECH_IMPLEMENTATION.md`.
+dark variant for the dark palette. Implementation brief: `../plans/UI_FINTECH_IMPLEMENTATION.md`.
 Handed to the code-agent to execute on branch `feat/fintech-theme`.
 
 UI-02..UI-05 were NOT selected this round but are NOT rejected — they remain
@@ -89,11 +89,11 @@ available for future rounds (no permanent exclusions recorded).
 
 ## Accepted Directions
 - **UI-01 Dark Fintech** — accepted 2026-05-31, to ship as light + dark themes with a
-  toggle. See `UI_FINTECH_IMPLEMENTATION.md`.
+  toggle. See `../plans/UI_FINTECH_IMPLEMENTATION.md`.
 
 ## Rejected Directions
 _(none — UI-02..05 not selected but still available for future rounds)_
 
 ## Research Log
 - 2026-05-31 — Round 1. Researched bold whole-app redesign directions via web search (Dribbble, Mobbin, Bloomberg UX, LogRocket, design-trend writeups). Produced 5 distinct directions UI-01..UI-05 spanning dark/clean, modular, editorial, dense-pro, and expressive-glass. All pending the owner's verdict. No implementation, no handoff.
-- 2026-05-31 — Built interactive HTML mockups for all 5 directions in `mockups/` (shared sample data, real Chart.js, cross-link switcher). The owner reviewed, liked UI-01, requested a light variant → built `ui-01-light-fintech.html`. **Verdict: UI-01 accepted, ship light + dark with toggle.** Wrote `UI_FINTECH_IMPLEMENTATION.md` and handed to code-agent on branch `feat/fintech-theme`.
+- 2026-05-31 — Built interactive HTML mockups for all 5 directions in `mockups/` (shared sample data, real Chart.js, cross-link switcher). The owner reviewed, liked UI-01, requested a light variant → built `ui-01-light-fintech.html`. **Verdict: UI-01 accepted, ship light + dark with toggle.** Wrote `../plans/UI_FINTECH_IMPLEMENTATION.md` and handed to code-agent on branch `feat/fintech-theme`.

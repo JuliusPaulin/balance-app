@@ -22,8 +22,8 @@ import json
 import pytest
 
 import config
-import db
-import enable_banking as eb
+from data import db
+from services import enable_banking as eb
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -615,7 +615,7 @@ def test_disconnect_deletes_row(client, login, make_user):
 
 def test_init_db_creates_bank_sessions():
     """init_db() is idempotent and leaves bank_sessions present with its index."""
-    import database
+    from data import schema as database
 
     database.init_db()
     with db.db_conn() as conn:

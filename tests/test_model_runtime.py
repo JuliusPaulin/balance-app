@@ -12,7 +12,7 @@ import os
 import pytest
 
 import config
-import model_runtime
+from ai import runtime as model_runtime
 
 
 def write_model(path):

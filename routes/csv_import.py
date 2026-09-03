@@ -8,8 +8,8 @@ import hashlib
 from datetime import date
 from dateutil import parser as date_parser
 from flask import Blueprint, request, jsonify
-import db
-from database import get_db, db_conn, backup_db
+from data import db
+from data.schema import get_db, db_conn, backup_db
 from core import limiter, current_user_id, bump_data_version
 from routes.merchant_rules import _rebuild_merchant_rules
 

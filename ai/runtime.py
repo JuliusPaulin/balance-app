@@ -218,9 +218,16 @@ def _fit_args(level):
 
 
 def _bundle_root():
-    """Where the app's own files are: the unpacked bundle, or the checkout."""
+    """Where the app's own files are: the unpacked bundle, or the checkout.
+
+    In a bundle that is ``sys._MEIPASS``, which is flat — ``vendor/llama/``
+    sits directly under it whatever package this module was written in. In a
+    checkout it is the repo root, which is now one level *above* this file,
+    because this module lives in ``ai/``. Getting that second case wrong is
+    invisible in the packaged app and breaks every run from source.
+    """
     return getattr(sys, "_MEIPASS", None) or os.path.dirname(
-        os.path.abspath(__file__))
+        os.path.dirname(os.path.abspath(__file__)))
 
 
 def server_binary():

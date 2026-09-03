@@ -10,7 +10,7 @@ import os
 import secrets
 from datetime import timedelta
 from flask import Flask, request, jsonify, session
-from database import init_db
+from data.schema import init_db
 import config
 
 # Single source of truth for the local server port. Now sourced from config
@@ -42,7 +42,7 @@ app.config["PERMANENT_SESSION_LIFETIME"] = timedelta(days=30)
 # so the app is usable on first launch and every user-scoped query has a valid
 # user to attach to. Both are idempotent, and both run at import so the app is
 # ready however it was started.
-from database import seed_local_user
+from data.schema import seed_local_user
 
 try:
     init_db()

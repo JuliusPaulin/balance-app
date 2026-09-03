@@ -1,7 +1,7 @@
 """Where the model actually runs. One interface, two implementations.
 
 The assistant is meant to run on the user's own Mac (see
-``docs/LOCAL_AI_RESEARCH.md``), so the provider is the part most likely to
+``docs/research/LOCAL_AI_RESEARCH.md``), so the provider is the part most likely to
 change — first Ollama, later a llama.cpp embedded in the app itself. Everything
 above this file works in one neutral vocabulary and never learns which model
 answered.
@@ -398,7 +398,7 @@ class LlamaCppBackend:
         but still loading — three different sentences and only one of them asks
         the user for anything.
         """
-        from model_runtime import runtime_state
+        from ai.runtime import runtime_state
         return runtime_state(self.host, self.model_path)
 
     def available(self):
@@ -471,7 +471,7 @@ class LlamaCppBackend:
         # Cheap when the server is already up — one call to /health — and the
         # difference between an answer and an error when it is not. The app
         # starts it at launch; this is for every case where that did not happen.
-        from model_runtime import ensure_running
+        from ai.runtime import ensure_running
         if not ensure_running():
             raise BackendUnavailable(
                 "Balance AI could not start. Its model may still be downloading.")

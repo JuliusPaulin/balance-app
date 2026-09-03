@@ -14,9 +14,9 @@ sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."
 from collections import defaultdict
 
 # Reuse the app's DB connection helper so this script resolves the database by
-# absolute path (relative to database.py), never relative to the current working
+# absolute path (relative to data/schema.py), never relative to the current working
 # directory — running it from any folder hits the same expenses.db.
-from database import get_db
+from data.schema import get_db
 
 NOISE_STORES = {"Other", "Rent", "Missing info", "Monthly fee", "Korko", ""}
 CONFIDENCE_THRESHOLD = 70.0
