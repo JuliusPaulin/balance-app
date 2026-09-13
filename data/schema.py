@@ -76,6 +76,20 @@ CREATE TABLE IF NOT EXISTS users (
     decided_by    INTEGER REFERENCES users(id)
 );
 
+CREATE TABLE IF NOT EXISTS import_preferences (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    default_currency TEXT NOT NULL DEFAULT 'EUR'
+);
+
+CREATE TABLE IF NOT EXISTS import_exchange_rates (
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    currency TEXT NOT NULL,
+    requested_date TEXT NOT NULL,
+    rate_date TEXT NOT NULL,
+    rate TEXT NOT NULL,
+    PRIMARY KEY (user_id, currency, requested_date)
+);
+
 CREATE TABLE IF NOT EXISTS categories (
     id         INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id    INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -285,6 +299,12 @@ def _ensure_sqlite_columns():
     missing. Idempotent; runs on every startup.
     """
     with db.db_conn() as conn:
+        for table, column in (("import_staging", "import_fx"),
+                              ("transactions", "import_fx"),
+                              ("import_batches", "import_summary")):
+            columns = {r["name"] for r in conn.execute(f"PRAGMA table_info({table})").fetchall()}
+            if column not in columns:
+                conn.execute(f"ALTER TABLE {table} ADD COLUMN {column} TEXT")
         cols = {r["name"] for r in conn.execute("PRAGMA table_info(categories)").fetchall()}
         if "color" not in cols:
             conn.execute("ALTER TABLE categories ADD COLUMN color TEXT")

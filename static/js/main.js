@@ -34,6 +34,7 @@ async function init() {
     // A first load that fails must not take the rest of the shell with it: the
     // toast says what happened and the app is still there to try again from.
     try {
+        await loadImportCurrency();
         await loadCategories();
         await loadDashboard();
     } catch (e) {

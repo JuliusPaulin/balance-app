@@ -5,6 +5,7 @@ import io
 import re
 import difflib
 import hashlib
+from decimal import Decimal
 from datetime import date
 from dateutil import parser as date_parser
 from flask import Blueprint, request, jsonify
@@ -12,8 +13,33 @@ from data import db
 from data.schema import get_db, db_conn, backup_db
 from core import limiter, current_user_id, bump_data_version
 from routes.merchant_rules import _rebuild_merchant_rules
+from services.exchange_rates import currency_code, convert, money
 
 bp = Blueprint("csv_import", __name__)
+
+
+def _default_currency(conn, uid):
+    row = conn.execute("SELECT default_currency FROM import_preferences WHERE user_id = %s",
+                       (uid,)).fetchone()
+    return row["default_currency"] if row else "EUR"
+
+
+@bp.route("/api/import/preferences", methods=["GET", "PUT"])
+def import_preferences():
+    uid = current_user_id()
+    with db_conn() as conn:
+        if request.method == "PUT":
+            try:
+                payload = request.get_json(silent=True)
+                if not isinstance(payload, dict):
+                    raise ValueError("Expected a default_currency setting")
+                code = currency_code(payload.get("default_currency"))
+            except ValueError as exc:
+                return jsonify({"error": str(exc)}), 400
+            conn.execute("INSERT INTO import_preferences (user_id, default_currency) VALUES (%s, %s) "
+                         "ON CONFLICT (user_id) DO UPDATE SET default_currency = EXCLUDED.default_currency",
+                         (uid, code))
+        return jsonify({"default_currency": _default_currency(conn, uid), "target_currency": "EUR"})
 
 
 def parse_date(date_str):
@@ -29,6 +55,14 @@ def parse_date(date_str):
     if not date_str:
         return None
     s = date_str.strip()
+
+    # Revolut uses ISO timestamps. dateutil(dayfirst=True) swaps September 11
+    # into November 9, so take the date part before the generic fallback.
+    if re.fullmatch(r"\d{4}-\d{2}-\d{2}[ T]\d{2}:\d{2}:\d{2}(?:\.\d+)?", s):
+        try:
+            return date.fromisoformat(s[:10]).isoformat()
+        except ValueError:
+            return None
 
     # YYYY-MM-DD or YYYY/MM/DD — unambiguous (4-digit year leads), parse directly
     m = re.match(r'^(\d{4})[-/](\d{1,2})[-/](\d{1,2})$', s)
@@ -180,6 +214,7 @@ def suggest_category(store_name, conn, user_id, txn_type=None):
 
 
 COLUMN_ALIASES = {
+    "currency": ["currency", "valuutta", "valuta", "currency code"],
     "date": ["date", "datum", "päivä", "pvm", "transaction date", "trans date", "booking date",
              "date of payment", "tapahtumapäivä", "kirjauspäivä"],
     "store": ["store", "merchant", "description", "payee", "kauppa", "saaja", "memo", "name",
@@ -236,6 +271,18 @@ FINNAIR_SIGNATURE_HEADERS = {"date of payment", "location of purchase"}
 def _is_finnair_format(headers):
     normalized = {h.strip().lower() for h in headers}
     return FINNAIR_SIGNATURE_HEADERS.issubset(normalized)
+
+
+def _revolut_columns(headers):
+    columns = {h.strip().lower(): i for i, h in enumerate(headers)}
+    required = {"type", "product", "started date", "completed date", "description",
+                "amount", "fee", "currency", "state", "balance"}
+    if not required.issubset(columns):
+        return None
+    return {field: columns[header] for field, header in {
+        "date": "started date", "store": "description", "amount": "amount",
+        "currency": "currency", "state": "state", "revolut_type": "type", "fee": "fee",
+    }.items()}
 
 
 def _decode_csv_bytes(raw):
@@ -305,7 +352,7 @@ def _read_headers(reader):
     return headers
 
 
-def _stage_rows(conn, uid, batch_id, reader, col_map, amount_sign="neg_expense"):
+def _stage_rows(conn, uid, batch_id, reader, col_map, amount_sign="neg_expense", default_currency="EUR"):
     """Parse the remaining rows of ``reader`` and INSERT them into import_staging.
 
     ``col_map`` maps field name -> column index and may contain: ``date`` and
@@ -319,7 +366,10 @@ def _stage_rows(conn, uid, batch_id, reader, col_map, amount_sign="neg_expense")
     Returns the number of rows staged.
     """
     staged = 0
-    for row in reader:
+    memo = {}
+    summary = {"skipped_states": 0, "skipped_exchanges": 0, "converted": 0,
+               "revolut": "revolut_type" in col_map}
+    for line_number, row in enumerate(reader, start=2):
         # Drop trailing empty cells
         while row and not row[-1].strip():
             row = row[:-1]
@@ -327,10 +377,22 @@ def _stage_rows(conn, uid, batch_id, reader, col_map, amount_sign="neg_expense")
         if not row or all(c.strip() == "" for c in row):
             continue
 
+        if summary["revolut"]:
+            if any(index >= len(row) for index in col_map.values()):
+                raise ValueError(f"Incomplete Revolut row {line_number}")
+            if row[col_map["state"]].strip().upper() != "COMPLETED":
+                summary["skipped_states"] += 1
+                continue
+            if row[col_map["revolut_type"]].strip().lower() == "exchange":
+                summary["skipped_exchanges"] += 1
+                continue
+
         if col_map["date"] >= len(row):
             continue
         parsed_date = parse_date(row[col_map["date"]])
         if not parsed_date:
+            if summary["revolut"]:
+                raise ValueError(f"Invalid date on Revolut row {line_number}")
             continue
 
         raw_amount = row[col_map["amount"]].strip() if col_map["amount"] < len(row) else ""
@@ -340,8 +402,32 @@ def _stage_rows(conn, uid, batch_id, reader, col_map, amount_sign="neg_expense")
         else:
             txn_type = "expense" if is_negative else "income"
         amount = parse_amount(raw_amount)
+        fee = Decimal("0")
+        if summary["revolut"]:
+            signed = money(raw_amount)
+            fee = money(row[col_map["fee"]].strip() or "0")
+            if fee < 0:
+                raise ValueError(f"Invalid fee on Revolut row {line_number}")
+            signed -= fee
+            txn_type = "expense" if signed < 0 else "income"
+            amount = abs(signed)
         if amount is None or amount == 0:
             continue
+        amount = money(amount)
+
+        source_currency = default_currency
+        if "currency" in col_map and col_map["currency"] is not None:
+            idx = col_map["currency"]
+            source_currency = row[idx].strip() if idx < len(row) else ""
+            if not source_currency:
+                raise ValueError(f"Missing currency on row {line_number}")
+        source_currency = currency_code(source_currency)
+        fx = None
+        if source_currency != "EUR":
+            amount, fx = convert(conn, uid, amount, source_currency, parsed_date, memo, fee)
+            summary["converted"] += 1
+        else:
+            amount = float(amount)
 
         store = row[col_map["store"]].strip() if "store" in col_map and col_map["store"] is not None and col_map["store"] < len(row) else ""
 
@@ -369,10 +455,12 @@ def _stage_rows(conn, uid, batch_id, reader, col_map, amount_sign="neg_expense")
         suggested = suggest_category(store, conn, uid, txn_type) or csv_category or None
 
         conn.execute("""
-            INSERT INTO import_staging (user_id, date, store, suggested_category, amount, type, import_batch_id)
-            VALUES (%s, %s, %s, %s, %s, %s, %s)
-        """, (uid, parsed_date, store, suggested, amount, txn_type, batch_id))
+            INSERT INTO import_staging (user_id, date, store, suggested_category, amount, type, import_batch_id, import_fx)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+        """, (uid, parsed_date, store, suggested, amount, txn_type, batch_id, db.Json(fx) if fx else None))
         staged += 1
+    conn.execute("UPDATE import_batches SET import_summary = %s WHERE id = %s AND user_id = %s",
+                 (db.Json(summary), batch_id, uid))
     return staged
 
 
@@ -383,11 +471,18 @@ def _staging_response(conn, uid, batch_id):
         "WHERE import_batch_id = %s AND user_id = %s ORDER BY date DESC",
         (batch_id, uid),
     ).fetchall()
-    return jsonify({
+    batch = conn.execute("SELECT import_summary FROM import_batches WHERE id = %s AND user_id = %s",
+                         (batch_id, uid)).fetchone()
+    for row in rows:
+        row["import_fx"] = db.load_json(row["import_fx"])
+    result = {
         "batch_id": batch_id,
         "count": len(rows),
         "items": [dict(r) for r in rows],
-    })
+    }
+    if batch and batch["import_summary"]:
+        result["summary"] = db.load_json(batch["import_summary"])
+    return jsonify(result)
 
 
 @bp.route("/api/import/upload", methods=["POST"])
@@ -422,12 +517,18 @@ def upload_csv():
             return jsonify({"error": "Empty CSV file"}), 400
 
         col_map = detect_columns(headers)
+        default_currency = currency_code(request.form.get("default_currency") or _default_currency(conn, uid))
+        revolut = _revolut_columns(headers)
+        if revolut:
+            col_map = revolut
 
         # Finnair multi-currency rows carry their EUR amount in a fixed column;
         # honor that instead of the generic 'amount' alias (which may be the
         # purchase-currency amount).
         if _is_finnair_format(headers):
             col_map["amount"] = FINNAIR_EUR_AMOUNT_COL
+            col_map.pop("currency", None)
+            default_currency = "EUR"
 
         amount_sign = "neg_expense"
 
@@ -440,7 +541,10 @@ def upload_csv():
                 (uid, signature),
             ).fetchone()
             if learned:
+                currency_col = col_map.get("currency")
                 col_map = {"date": learned["date_col"], "amount": learned["amount_col"]}
+                if currency_col is not None:
+                    col_map["currency"] = currency_col
                 if learned["store_col"] is not None:
                     col_map["store"] = learned["store_col"]
                 amount_sign = learned["amount_sign"]
@@ -459,6 +563,7 @@ def upload_csv():
                 guess = detect_columns(headers)
                 return jsonify({
                     "needs_mapping": True,
+                    "default_currency": default_currency,
                     "signature": signature,
                     "delimiter": delimiter,
                     "headers": headers,
@@ -477,7 +582,7 @@ def upload_csv():
         )
         batch_id = cursor.fetchone()["id"]
 
-        _stage_rows(conn, uid, batch_id, reader, col_map, amount_sign)
+        _stage_rows(conn, uid, batch_id, reader, col_map, amount_sign, default_currency)
         conn.commit()
 
         return _staging_response(conn, uid, batch_id)
@@ -698,6 +803,10 @@ def upload_mapped_csv():
 
         signature = format_signature(headers, delimiter)
         col_map = {"date": date_col, "amount": amount_col}
+        detected_currency = detect_columns(headers).get("currency")
+        if detected_currency is not None:
+            col_map["currency"] = detected_currency
+        default_currency = currency_code(request.form.get("default_currency") or _default_currency(conn, uid))
         if store_col is not None:
             col_map["store"] = store_col
 
@@ -707,7 +816,17 @@ def upload_mapped_csv():
         )
         batch_id = cursor.fetchone()["id"]
 
-        _stage_rows(conn, uid, batch_id, reader, col_map, amount_sign)
+        # A recognized statement keeps its date, state and EUR-column rules
+        # even if a caller posts it to the manual mapping endpoint.
+        revolut = _revolut_columns(headers)
+        if revolut:
+            col_map = revolut
+            amount_sign = "neg_expense"
+        elif _is_finnair_format(headers):
+            col_map["amount"] = FINNAIR_EUR_AMOUNT_COL
+            col_map.pop("currency", None)
+            default_currency = "EUR"
+        _stage_rows(conn, uid, batch_id, reader, col_map, amount_sign, default_currency)
 
         if remember:
             conn.execute("""
@@ -831,10 +950,10 @@ def confirm_imports():
 
                 conn.execute("""
                     INSERT INTO transactions
-                        (user_id, date, store, category_id, amount, type, import_batch_id)
-                    VALUES (%s, %s, %s, %s, %s, %s, %s)
+                        (user_id, date, store, category_id, amount, type, import_batch_id, import_fx)
+                    VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """, (uid, date, store, item["category_id"], amount,
-                      item.get("type") or staging["type"] or "expense", batch_id))
+                      item.get("type") or staging["type"] or "expense", batch_id, staging["import_fx"]))
 
                 if staging_id not in confirmed_staging_ids:
                     conn.execute("""

@@ -37,7 +37,7 @@ hiddenimports += ['core', 'config', 'ai', 'data', 'services', 'routes'] + [
     'data.' + m for m in ('db', 'sqlite', 'schema')
 ] + [
     'services.' + m for m in (
-        'networth', 'recurring', 'investment_import', 'enable_banking',
+        'networth', 'recurring', 'investment_import', 'enable_banking', 'exchange_rates',
     )
 ]
 tmp_ret = collect_all('webview')

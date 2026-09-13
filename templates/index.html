@@ -390,10 +390,15 @@
             </div>
         </div>
         <div class="card mt-4" id="import-upload">
+            <div class="import-currency-controls">
+                <label for="import-currency">Currency when the file doesn't name one</label>
+                <input id="import-currency" class="form-input" value="EUR" maxlength="3" aria-label="Import currency">
+                <p class="hint">Amounts convert to EUR. A currency column takes priority. Finnair's EUR column stays in EUR.</p>
+            </div>
             <div class="drop-zone" id="drop-zone">
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1M12 4v12m0 0l-4-4m4 4l4-4"/></svg>
                 <p>Drop CSV file here or click to browse</p>
-                <p class="hint">Nordea account and card statements, Finnair credit card, or any CSV you map once</p>
+                <p class="hint">Revolut, Nordea account and card statements, Finnair credit card, or any CSV you map once</p>
                 <input type="file" id="csv-input" accept=".csv" style="display:none">
             </div>
         </div>
@@ -416,6 +421,7 @@
             </div>
 
             <!-- Toolbar: selection + bulk assign + utilities -->
+            <p id="import-conversion-summary" class="import-conversion-summary" hidden></p>
             <div class="import-toolbar" id="bulk-bar">
                 <input type="checkbox" class="import-select-all" id="select-all-check" onchange="toggleSelectAll(this.checked)">
                 <span id="bulk-count">0 selected</span>
@@ -835,6 +841,16 @@
             <h1 class="page-title">Settings</h1>
         </div>
         <div style="display:grid;gap:20px;max-width:640px">
+            <div class="card">
+                <div class="card-title">Import currency</div>
+                <p class="hint">Balance totals use EUR. Choose the default for CSV files with no currency column. You can change it for each upload.</p>
+                <label for="default-import-currency">Default import currency</label>
+                <div class="import-currency-setting">
+                    <input id="default-import-currency" class="form-input" value="EUR" maxlength="3" placeholder="EUR">
+                    <button class="btn btn-secondary" onclick="saveImportCurrency()">Save</button>
+                </div>
+                <p class="hint">Use a three-letter code, such as EUR, SEK, USD or GBP. Foreign amounts use ECB daily rates; weekends and holidays use the last published rate. Only dates and currencies are sent to Frankfurter.</p>
+            </div>
             <div class="card">
                 <div class="card-title">Appearance</div>
                 <p style="font-size:var(--text-subhead);color:var(--text-secondary);margin:0 0 16px">Choose a theme. <strong>Auto</strong> follows your system setting.</p>

@@ -5,8 +5,9 @@
 A money app for your Mac. Track what you spend, what you earn, and what you own
 — all of it stored on your own computer.
 
-**Nothing leaves your Mac.** There is no account to make and no server to sign
-in to. Your figures live in one file on your own disk.
+**Your figures stay on your Mac.** There is no account to make and no server to
+sign in to. Currency conversion fetches public rates using only dates and
+currency codes; your amounts and merchant names stay on your disk.
 
 ## Install
 
@@ -44,7 +45,11 @@ figures are untouched — they live outside the app.
 
 - **Transactions** — add, edit, delete and filter expenses and income
 - **CSV import** — Finnish bank statements, Nordea account and Platinum exports,
-  Finnair credit card
+  Finnair credit card, and Revolut account statements
+- **Currency conversion** — foreign CSV amounts convert to EUR at the transaction
+  date's ECB reference rate. Weekends and holidays use the last published rate.
+  Review shows the original amount, rate and rate date. Settings → Import currency
+  sets the fallback for files with no currency column; each upload can override it.
 - **Auto-categories** — merchant rules (exact, contains, fuzzy) sort rows for
   you, with a live preview while you write a rule and one-click re-apply to past
   transactions
@@ -58,6 +63,13 @@ figures are untouched — they live outside the app.
 - **Balance AI** — ask about your money in plain English, answered by a model
   running on your own Mac (see below)
 - **Auto-backup** — a safe snapshot before every import and on quit
+
+Revolut imports use **Started Date** and include only completed rows. Currency
+exchanges are skipped; transfers and refunds remain in review. Fees on imported
+rows reduce the signed amount before conversion. These are reference rates,
+so the EUR value may differ from Revolut's own exchange price. Balance caches
+past rates from [Frankfurter's ECB feed](https://frankfurter.dev/providers/ecb/)
+and stops the import if it cannot get a valid rate. Confirmed amounts stay fixed.
 
 ## Balance AI
 
@@ -120,7 +132,7 @@ Both read the same database, so your figures carry over either way.
 python3 -m pytest tests/
 ```
 
-All 456 pass. They run against a throwaway database in a temp folder — your own
+All 493 pass. They run against a throwaway database in a temp folder — your own
 figures are never opened.
 
 ### Where things live

@@ -27,6 +27,7 @@ async function uploadCSV(file) {
     stagingMeta.filename = file.name;
     const formData = new FormData();
     formData.append("file", file);
+    formData.append("default_currency", document.getElementById("import-currency").value.trim().toUpperCase());
 
     const res = await fetch("/api/import/upload", { method: "POST", body: formData });
     const data = await res.json();
@@ -52,6 +53,15 @@ async function uploadCSV(file) {
 function enterReview(data) {
     stagingBatchId = data.batch_id;
     stagingItems = data.items;
+    const summary = data.summary || {};
+    const notes = [];
+    if (summary.revolut) notes.push("Revolut: completed rows, dated by Started Date.");
+    if (summary.skipped_states) notes.push(`${summary.skipped_states} pending, reverted or other incomplete rows skipped.`);
+    if (summary.skipped_exchanges) notes.push(`${summary.skipped_exchanges} currency exchange${summary.skipped_exchanges === 1 ? '' : 's'} skipped.`);
+    if (summary.converted) notes.push(`${summary.converted} amounts converted to EUR using ECB rates. Each row shows its original conversion; edits and split costs change the EUR amount only.`);
+    const note = document.getElementById("import-conversion-summary");
+    note.textContent = notes.join(" ");
+    note.hidden = !notes.length;
     stagingHalved = false;
     syncHalveButton();
     const history = document.getElementById("import-history");
@@ -223,6 +233,9 @@ function openColumnMappingModal(file, resp) {
                         <option value="pos_expense">Positive = expense</option>
                     </select>
                 </label>
+                <label>Currency when no column names it
+                    <input id="map-currency" class="form-input" maxlength="3" value="${escapeHtml(resp.default_currency || 'EUR')}">
+                </label>
             </div>
             <label style="display:flex;align-items:center;gap:8px;margin-top:14px;font-size:13px;cursor:pointer">
                 <input type="checkbox" id="map-remember" checked> Remember this format
@@ -252,6 +265,7 @@ function openColumnMappingModal(file, resp) {
         fd.append("store_col", overlay.querySelector("#map-store").value);
         fd.append("amount_sign", overlay.querySelector("#map-sign").value);
         fd.append("remember", overlay.querySelector("#map-remember").checked ? "1" : "0");
+        fd.append("default_currency", overlay.querySelector("#map-currency").value.trim().toUpperCase());
         const r = await fetch("/api/import/upload-mapped", { method: "POST", body: fd });
         const d = await r.json();
         if (!r.ok) { toast(d.error || "Import failed"); return; }
@@ -561,6 +575,14 @@ function onStagingAmountChange(inp, itemId) {
     renderStaging();
 }
 
+function importConversionNote(item) {
+    const fx = item.import_fx;
+    if (!fx) return "";
+    const fee = Number(fx.fee) ? ` (includes ${fx.fee} ${fx.currency} fee)` : "";
+    const text = `Original conversion: ${fx.amount} ${fx.currency}${fee} → ${fx.amount_eur} EUR · 1 ${fx.currency} = ${fx.rate} EUR · rate ${fx.rate_date}`;
+    return `<small class="import-fx-note">${escapeHtml(text)}</small>`;
+}
+
 function renderStagingRow(item) {
     const catId  = effCatId(item);
     const type   = effType(item);
@@ -584,6 +606,7 @@ function renderStagingRow(item) {
                    value="${effStore(item).replace(/"/g, "&quot;")}" placeholder="Store"
                    onchange="onStagingStoreChange(this, '${item.id}')">
             ${partBadge}
+            ${importConversionNote(item)}
         </span>
         <span class="chip-cat ${needsCat ? "review" : ""}">
             <button type="button" class="cat-chip-btn" data-staging-cat="${item.id}"
@@ -1069,4 +1092,3 @@ async function removeStagingItem(id) {
     renderStaging();
     syncBulkBar();
 }
-

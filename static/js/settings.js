@@ -6,6 +6,28 @@
 // scope on purpose: index.html wires ~95 inline handlers straight to these
 // names, so these are plain scripts and not modules.
 
+// ── Import currency ──────────────────────────────────────────────────
+async function loadImportCurrency() {
+    const data = await api("/api/import/preferences");
+    document.getElementById("default-import-currency").value = data.default_currency;
+    document.getElementById("import-currency").value = data.default_currency;
+}
+
+async function saveImportCurrency() {
+    const field = document.getElementById("default-import-currency");
+    const currency = field.value.trim().toUpperCase();
+    if (!/^[A-Z]{3}$/.test(currency)) {
+        toast("Use a three-letter currency code, such as EUR or SEK");
+        return;
+    }
+    const data = await api("/api/import/preferences", {
+        method: "PUT", body: { default_currency: currency },
+    });
+    field.value = data.default_currency;
+    document.getElementById("import-currency").value = data.default_currency;
+    toast("Default import currency saved");
+}
+
 // ── Quit ─────────────────────────────────────────────────────────────
 function quitApp() {
     fetch("/api/quit", { method: "POST" });
@@ -128,4 +150,3 @@ function resetGuide() {
     localStorage.removeItem("guide_seen");
     toast("Guide state reset — will show on next launch");
 }
-
