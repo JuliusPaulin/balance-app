@@ -69,7 +69,7 @@ function filterMerchantRulesView() {
         return `<div class="merchant-rule-group ${filtering ? "" : "collapsed"}">
             <div class="merchant-rule-group-header" onclick="this.parentElement.classList.toggle('collapsed')" style="cursor:pointer">
                 <span class="rule-group-caret">▸</span>
-                <span class="category-tag"><span class="cat-dot" style="background:${catDotColor(catId)}"></span>${escapeHtml(catName)}</span>
+                <span class="category-tag">${categoryIcon({ id: catId, name: catName })}${escapeHtml(catName)}</span>
                 <span style="font-size:var(--text-caption);color:var(--text-tertiary);margin-left:6px">${rules.length} rule${rules.length !== 1 ? "s" : ""}</span>
             </div>
             ${rules.map(r => {

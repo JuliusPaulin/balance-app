@@ -535,6 +535,85 @@ function setCategoryPalette(key) {
     rerenderActivePage();
 }
 
+// Shared ChatGPT-style line icons for category rows and cards. The markup is
+// built only from these trusted paths; category names are used as map keys and
+// are never interpolated into the returned SVG.
+const CATEGORY_ICON_PATHS = {
+    groceries: "<path d=\"M4 10h16v9H4zM6 10V7h12v3M8 7V4h8v3M2 19h20\"/>",
+    housing: "<path d=\"m3 11 9-7 9 7M5 10v10h14V10M9 20v-6h6v6\"/>",
+    transport: "<path d=\"M5 16 6.5 7h11l1.5 9M4 16h16v3H4zM7 11h10M7.5 19v2M16.5 19v2M7 16h.01M17 16h.01\"/>",
+    dining: "<path d=\"M6 3v7M4 3v7a2 2 0 0 0 4 0V3M6 12v9M14 3v18M14 3c4 1 5 4 5 7h-5\"/>",
+    utilities: "<path d=\"m13 2-9 12h7l-1 8 9-12h-7z\"/>",
+    health: "<path d=\"M20.8 8.8c0 5.5-8.8 11.2-8.8 11.2S3.2 14.3 3.2 8.8A4.8 4.8 0 0 1 12 6.3a4.8 4.8 0 0 1 8.8 2.5zM12 8v6M9 11h6\"/>",
+    travel: "<path d=\"m3 19 18-7-18-7 4 7zM7 12h10M12 10V5M12 14v5\"/>",
+    shopping: "<path d=\"M5 8h14l-1 12H6zM9 8a3 3 0 0 1 6 0\"/>",
+    work: "<rect x=\"3\" y=\"7\" width=\"18\" height=\"13\" rx=\"2\"/><path d=\"M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18M10 12v2h4v-2\"/>",
+    subscriptions: "<path d=\"M4 7h16v12H4zM8 7V5h8v2M7 12h10M8 16h5\"/>",
+    entertainment: "<circle cx=\"12\" cy=\"12\" r=\"9\"/><path d=\"m10 8 6 4-6 4z\"/>",
+    gifts: "<path d=\"M4 10h16v10H4zM2 6h20v4H2zM12 6v14M12 6H8.5a2.5 2.5 0 1 1 2.5-2.5C11 4.9 12 6 12 6zM12 6h3.5A2.5 2.5 0 1 0 13 3.5C13 4.9 12 6 12 6z\"/>",
+    pets: "<circle cx=\"7.5\" cy=\"7.5\" r=\"1.7\"/><circle cx=\"16.5\" cy=\"7.5\" r=\"1.7\"/><circle cx=\"5.5\" cy=\"12\" r=\"1.7\"/><circle cx=\"18.5\" cy=\"12\" r=\"1.7\"/><path d=\"M12 10c-3 0-5 2-5 5 0 2 1.7 3 5 3s5-1 5-3c0-3-2-5-5-5z\"/>",
+    security: "<path d=\"M12 3 19 6v5c0 4.5-2.7 7.7-7 10-4.3-2.3-7-5.5-7-10V6z\"/><path d=\"m9 12 2 2 4-4\"/>",
+    finance: "<path d=\"M4 7h16v12H4zM4 10h16M8 15h3\"/><path d=\"M7 7V5h10v2\"/>",
+    education: "<path d=\"m3 7 9-4 9 4-9 4zM6 9v6c2 2 10 2 12 0V9M21 8v6\"/>",
+    people: "<circle cx=\"9\" cy=\"8\" r=\"3\"/><path d=\"M3 20c0-3 2.7-5 6-5s6 2 6 5M16 5.5a3 3 0 0 1 0 5.5M17 15c2.3.3 4 2 4 5\"/>",
+    fallback: "<circle cx=\"12\" cy=\"12\" r=\"8\"/><path d=\"M12 8v8M8 12h8\"/>"
+};
+
+const CATEGORY_ICON_NAMES = {
+    groceries: "groceries", "condo fees": "housing", rent: "housing", "home maintenance": "housing",
+    "car charging": "transport", "car maintenance": "transport", "car parking": "transport",
+    "car payment": "transport", gas: "transport", "public transportation": "transport",
+    "going out": "dining", lunch: "dining", restaurant: "dining",
+    utilities: "utilities", telecom: "utilities", insurance: "security",
+    medical: "health", exercise: "health", dog: "pets",
+    entertainment: "entertainment", gifts: "gifts", clothing: "shopping", electronics: "shopping",
+    travel: "travel", work: "work", "side project": "work", investments: "finance", debt: "finance",
+    "expense reimbursement": "finance", kela: "finance",
+    subscriptions: "subscriptions"
+};
+
+// Exact names above preserve the current category language. These semantic
+// groups make names added later land in the same visual family without
+// depending on database IDs or a growing list of one-off IDs.
+const CATEGORY_ICON_KEYWORDS = [
+    ["subscriptions", ["subscription", "recurring", "membership", "streaming"]],
+    ["pets", ["pet", "pets", "dog", "cat", "animal", "vet"]],
+    ["groceries", ["grocery", "groceries", "food", "supermarket", "market"]],
+    ["dining", ["dining", "restaurant", "cafe", "coffee", "lunch", "takeaway"]],
+    ["transport", ["transport", "transit", "car", "parking", "fuel", "gas", "charging"]],
+    ["housing", ["home", "house", "housing", "rent", "mortgage", "condo"]],
+    ["health", ["health", "medical", "medicine", "pharmacy", "wellness", "fitness", "exercise"]],
+    ["entertainment", ["entertainment", "music", "game", "games", "cinema", "hobby", "sport"]],
+    ["gifts", ["gift", "gifts", "donation", "charity"]],
+    ["shopping", ["shopping", "clothing", "electronics", "personal", "retail"]],
+    ["travel", ["travel", "flight", "hotel", "holiday", "trip"]],
+    ["utilities", ["utility", "utilities", "electric", "water", "internet", "telecom"]],
+    ["security", ["insurance", "security", "protection"]],
+    ["education", ["education", "school", "learning", "course", "tuition", "books"]],
+    ["finance", ["finance", "money", "bank", "savings", "investment", "debt", "loan", "tax", "salary", "income"]],
+    ["work", ["work", "office", "business", "job", "career"]]
+];
+
+function categoryIcon(category) {
+    const rawName = typeof category === "string"
+        ? category
+        : category && (category.name ?? category.category_name ?? category.label);
+    const name = String(rawName || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "")
+        .trim().toLowerCase().replace(/[^a-z0-9]+/g, " ").replace(/\s+/g, " ");
+    const words = new Set(name.split(" ").filter(Boolean));
+    const exactIcon = Object.prototype.hasOwnProperty.call(CATEGORY_ICON_NAMES, name)
+        ? CATEGORY_ICON_NAMES[name] : null;
+    const iconName = exactIcon || CATEGORY_ICON_KEYWORDS.find(([, keywords]) =>
+        keywords.some(keyword => words.has(keyword))
+    )?.[0] || "fallback";
+    const path = Object.prototype.hasOwnProperty.call(CATEGORY_ICON_PATHS, iconName)
+        ? CATEGORY_ICON_PATHS[iconName] : CATEGORY_ICON_PATHS.fallback;
+    const id = category && typeof category === "object" ? category.id : null;
+    const savedColor = id && typeof catDotColor === "function" ? catDotColor(id) : "";
+    const color = /^#[0-9a-f]{3,8}$/i.test(savedColor || "") ? savedColor : "var(--accent)";
+    return `<svg class="category-icon" style="color:${color}" viewBox="0 0 24 24" aria-hidden="true" focusable="false" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">${path}</svg>`;
+}
+
 // Build the palette picker rows in Settings (swatches come from the data).
 function renderPaletteOptions() {
     const host = document.getElementById("palette-options");
@@ -674,4 +753,3 @@ function exitFullscreen(card) {
         Object.values(charts).forEach(c => c && c.resize && c.resize());
     });
 }
-

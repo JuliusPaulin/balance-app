@@ -478,7 +478,7 @@ function openCatPicker(anchor, currentId, onPick) {
         const section = (type, label) => {
             const cells = hits.map((c, i) => c.type !== type ? "" :
                 `<button type="button" class="cat-pop-item ${i === cursor ? "on" : ""}" data-i="${i}">
-                    <span class="dot" style="background:${catDotColor(c.id)}"></span>
+                    ${categoryIcon(c)}
                     <span class="n">${escapeHtml(c.name)}</span>
                     ${c.id === currentId ? `<span class="tick">✓</span>` : ""}
                 </button>`).join("");
@@ -526,7 +526,7 @@ function openCatPicker(anchor, currentId, onPick) {
 
 function catChipInner(catId, placeholder) {
     const cat = catById(catId);
-    return `<span class="dot" style="background:${catDotColor(catId)}"></span>
+    return `${categoryIcon(cat || { name: placeholder })}
         <span class="cat-chip-label">${cat ? escapeHtml(cat.name) : placeholder}</span>
         <span class="cat-chip-caret">⌄</span>`;
 }

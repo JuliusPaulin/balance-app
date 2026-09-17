@@ -172,7 +172,7 @@ function renderReportCategoryBars(data) {
             delta = `<span class="${diff <= 0 ? "yoy-positive" : "yoy-negative"}" style="font-size:var(--text-caption)">${diff >= 0 ? "+" : "−"}${dPct}%</span>`;
         }
         return `<div class="cat-bar-row">
-            <div class="cat-bar-label" title="${escapeHtml(item.name)}"><span class="cat-dot" style="background:${catDotColor(cat?.id)}"></span>${escapeHtml(item.name)}</div>
+            <div class="cat-bar-label" title="${escapeHtml(item.name)}">${categoryIcon(cat || { name: item.name })}${escapeHtml(item.name)}</div>
             <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${width}%;background:${rgbaVar("--accent", 0.55)}"></div></div>
             <div class="cat-bar-amount">${fmt(item.total)} <span class="cat-bar-pct-inline">· ${pct}%</span> ${delta}</div>
         </div>`;
@@ -284,7 +284,7 @@ function renderReportIncomeBars(data) {
         const width = Math.max(2, (item.total / max) * 100).toFixed(1);
         const cat = categories.find(c => c.name === item.name && c.type === "income");
         return `<div class="cat-bar-row">
-            <div class="cat-bar-label" title="${escapeHtml(item.name)}"><span class="cat-dot" style="background:${catDotColor(cat?.id)}"></span>${escapeHtml(item.name)}</div>
+            <div class="cat-bar-label" title="${escapeHtml(item.name)}">${categoryIcon(cat || { name: item.name })}${escapeHtml(item.name)}</div>
             <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${width}%;background:${rgbaVar("--green", 0.55)}"></div></div>
             <div class="cat-bar-amount">${fmt(item.total)} <span class="cat-bar-pct-inline">· ${pct}%</span></div>
         </div>`;
@@ -301,7 +301,7 @@ function renderReportTopIncome(data) {
         <td style="color:var(--text-tertiary);font-weight:600">${i + 1}</td>
         <td>${fmtDate(t.date)}</td>
         <td>${escapeHtml(t.store || "—")}</td>
-        <td><span class="category-tag">${escapeHtml(t.category_name)}</span></td>
+        <td><span class="category-tag">${categoryIcon({ id: t.category_id, name: t.category_name })}${escapeHtml(t.category_name)}</span></td>
         <td style="text-align:right" class="amount income">+${fmt2(t.amount)}</td>
     </tr>`).join("");
 }
@@ -316,7 +316,7 @@ function renderReportTopTransactions(data) {
         <td style="color:var(--text-tertiary);font-weight:600">${i + 1}</td>
         <td>${fmtDate(t.date)}</td>
         <td>${escapeHtml(t.store || "—")}</td>
-        <td><span class="category-tag">${escapeHtml(t.category_name)}</span></td>
+        <td><span class="category-tag">${categoryIcon({ id: t.category_id, name: t.category_name })}${escapeHtml(t.category_name)}</span></td>
         <td style="text-align:right" class="amount expense">${fmt2(t.amount)}</td>
     </tr>`).join("");
 }

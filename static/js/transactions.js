@@ -148,7 +148,7 @@ function fmtMonthLabel(key) {
 
 // One row of the rail. `sel` drives both the tick and the weight, so a chosen
 // value reads as chosen without relying on the tick alone.
-function railItem({ key, label, n, sel, max, onclick, box = true }) {
+function railItem({ key, label, n, sel, max, onclick, box = true, icon = "" }) {
     const share = max > 0 ? Math.max(3, Math.round((n / max) * 34)) : 0;
     // A value that would return nothing under the filters already on is a
     // dead click. It stays on the list — vanishing options are worse — but
@@ -156,6 +156,7 @@ function railItem({ key, label, n, sel, max, onclick, box = true }) {
     const dead = n === 0 && !sel ? " empty" : "";
     return `<button class="rail-item ${sel ? "sel" : ""}${dead}" onclick="${onclick}" title="${escapeHtml(label)} — ${n} transaction${n !== 1 ? "s" : ""}">
         ${box ? `<span class="rail-box"></span>` : ""}
+        ${icon}
         <span class="rail-name">${escapeHtml(label)}</span>
         <span class="rail-bar" style="width:${share}px"></span>
         <span class="rail-n">${n.toLocaleString()}</span>
@@ -216,6 +217,7 @@ function renderRailCategories() {
         : collapseKeeping(all, c => selectedCatIds.has(c.id), RAIL_COLLAPSED);
     el.innerHTML = show.map(c => railItem({
         key: c.id, label: c.name, n: c.n, sel: selectedCatIds.has(c.id), max,
+        icon: categoryIcon(c),
         onclick: `toggleCatFilter(${c.id})`,
     })).join("") || `<div class="rail-empty">No category matches</div>`;
     renderRailMoreBtn("rail-cat-more", term ? 0 : all.length - show.length, "cat");
@@ -388,7 +390,7 @@ async function loadTransactions() {
         tbody.innerHTML = data.items.map(t => `<tr class="tx-row" onclick="openEditTransaction(${t.id})">
             <td data-label="Date">${fmtDate(t.date)}</td>
             <td data-label="Store" class="tx-store-cell">${t.store ? escapeHtml(t.store) : "—"}</td>
-            <td data-label="Category"><span class="category-tag"><span class="cat-dot" style="background:${catDotColor(t.category_id)}"></span>${escapeHtml(t.category_name)}</span></td>
+            <td data-label="Category"><span class="category-tag">${categoryIcon({ id: t.category_id, name: t.category_name })}${escapeHtml(t.category_name)}</span></td>
             <td data-label="Amount" class="amount ${t.type}">${t.type === "income" ? "+" : "−"}${fmt2(t.amount)}</td>
             <td class="tx-actions-cell" onclick="event.stopPropagation()">
                 <div class="btn-group">
@@ -587,4 +589,3 @@ function updateTxSortIcons() {
         }
     });
 }
-

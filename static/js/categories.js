@@ -47,7 +47,8 @@ function categoryRow(c) {
         ? `${c.tx_count.toLocaleString()} transaction${c.tx_count === 1 ? "" : "s"}${c.last_used ? " · last " + fmtDate(c.last_used) : ""}`
         : "Not used yet";
     return `<div class="category-row" style="display:flex;align-items:center;gap:10px;padding:7px 0;border-bottom:1px solid var(--bg-secondary)">
-        <button class="cat-swatch" style="background:${catDotColor(c.id)}" title="Change color" onclick="openCatColorPicker(${c.id}, this)"></button>
+        ${categoryIcon(c)}
+        <button class="cat-swatch" style="background:${catDotColor(c.id)}" title="Change color accent" onclick="openCatColorPicker(${c.id}, this)"></button>
         <div style="flex:1;min-width:0">
             <div style="font-size:14px">${escapeHtml(c.name)}</div>
             <div style="font-size:11px;color:var(--text-tertiary)">${used}</div>

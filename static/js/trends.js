@@ -67,6 +67,7 @@ async function loadTrends() {
             return `<div style="padding:5px 10px 2px;font-size:10px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.6px">${label}</div>` +
                 list.map(c => `<label class="trend-option trends-cat-opt" data-name="${escapeHtml(c.name)}" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:6px 10px">
                     <input type="checkbox" value="${c.id}" style="width:14px;height:14px;flex-shrink:0;cursor:pointer">
+                    ${categoryIcon(c)}
                     <span style="font-size:13px">${escapeHtml(c.name)}</span>
                 </label>`).join("");
         };
@@ -83,7 +84,7 @@ function openTrendsDrilldownModal(title, rows, serverTotal = null, serverCount =
         <tr>
             <td style="font-size:13px;white-space:nowrap">${fmtDate(r.date)}</td>
             <td style="font-size:13px">${escapeHtml(r.store || "—")}</td>
-            <td style="font-size:13px"><span class="category-tag">${escapeHtml(r.category_name || "")}</span></td>
+            <td style="font-size:13px"><span class="category-tag">${categoryIcon({ id: r.category_id, name: r.category_name })}${escapeHtml(r.category_name || "")}</span></td>
             <td class="amount" style="font-size:13px;text-align:right;white-space:nowrap">${fmt2(r.amount)}</td>
         </tr>`).join("");
     document.body.insertAdjacentHTML("beforeend", `<div class="modal-overlay" onclick="if(event.target===this)this.remove()">

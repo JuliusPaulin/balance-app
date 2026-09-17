@@ -329,7 +329,7 @@ function renderBreakdownBars(containerId, breakdown, type) {
         const catId = categories.find(c => c.name === item.name && c.type === type)?.id ?? "";
         const { tick, delta, hot } = baselineMarks(item, max, type);
         return `<div class="cat-bar-row" style="cursor:pointer" onclick="openCategoryDrilldown(${catId},${escapeHtml(JSON.stringify(String(item.name)))})">
-        <div class="cat-bar-label"><span class="cat-dot" style="background:${catDotColor(catId)}"></span>${escapeHtml(item.name)}</div>
+        <div class="cat-bar-label">${categoryIcon({ id: catId, name: item.name })}${escapeHtml(item.name)}</div>
             <div class="cat-bar-track"><div class="cat-bar-fill${hot ? " over" : ""}" style="width:${width}%${hot ? "" : `;background:${fill}`}"></div>${tick}</div>
             <div class="cat-bar-amount">${fmt(item.total)} <span class="cat-bar-pct-inline">· ${pct}%</span>${delta}</div>
         </div>`;
@@ -450,7 +450,7 @@ async function openMonthDrilldown(month) {
         <tr>
             <td style="font-size:13px;white-space:nowrap">${fmtDate(r.date)}</td>
             <td style="font-size:13px">${escapeHtml(r.store || "—")}</td>
-            <td style="font-size:13px;color:var(--text-secondary)">${escapeHtml(r.category_name || "—")}</td>
+            <td style="font-size:13px;color:var(--text-secondary)">${categoryIcon({ id: r.category_id, name: r.category_name })}${escapeHtml(r.category_name || "—")}</td>
             <td class="amount ${r.type === "income" ? "income" : ""}" style="font-size:13px;white-space:nowrap;text-align:right">${r.type === "income" ? "+" : "−"}${fmt2(r.amount)}</td>
         </tr>`).join("")
         : `<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--text-tertiary)">No transactions this month</td></tr>`;
@@ -795,7 +795,7 @@ async function openDayDrilldown(dateStr) {
     const tableRows = rows.map(r => `
         <tr>
             <td style="font-size:13px">${escapeHtml(r.store || "—")}</td>
-            <td style="font-size:13px"><span class="category-tag">${escapeHtml(r.category_name || "")}</span></td>
+            <td style="font-size:13px"><span class="category-tag">${categoryIcon({ id: r.category_id, name: r.category_name })}${escapeHtml(r.category_name || "")}</span></td>
             <td class="amount" style="font-size:13px;white-space:nowrap;text-align:right">${fmt2(r.amount)}</td>
         </tr>`).join("");
 

@@ -686,7 +686,7 @@ tbody tr:last-child td {
     align-items: center;
     justify-content: center;
     z-index: 1000;
-    animation: fadeIn 0.15s ease;
+    animation: fadeIn 0.32s ease;
 }
 
 .modal {
@@ -696,11 +696,11 @@ tbody tr:last-child td {
     width: 100%;
     max-width: 440px;
     box-shadow: 0 20px 60px rgba(0, 0, 0, 0.18), 0 0 0 0.5px rgba(0, 0, 0, 0.05);
-    animation: modalIn 0.3s var(--transition-spring);
+    animation: modalIn 0.44s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 @keyframes modalIn {
-    from { transform: scale(0.95) translateY(10px); opacity: 0; }
+    from { transform: scale(0.985) translateY(8px); opacity: 0; }
     to { transform: scale(1) translateY(0); opacity: 1; }
 }
 
@@ -1262,6 +1262,14 @@ tbody tr:last-child td {
     overflow: hidden;
     text-overflow: ellipsis;
 }
+.rail-item .category-icon {
+    width: 16px;
+    height: 16px;
+    flex: none;
+    color: var(--text-tertiary);
+}
+.rail-item.sel .category-icon,
+.rail-item:hover .category-icon { color: var(--accent); }
 /* The share bar is the reason the rail doubles as a summary — it reads at a
    glance even when the number does not. */
 .rail-bar {
@@ -1439,6 +1447,12 @@ tbody tr:last-child td {
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
+}
+.cat-bar-label .category-icon {
+    width: 18px;
+    height: 18px;
+    flex: none;
+    color: var(--accent);
 }
 
 .cat-bar-track {
@@ -1685,6 +1699,13 @@ tbody tr:last-child td {
     cursor: pointer;
     flex-shrink: 0;
 }
+.trend-option .category-icon {
+    width: 17px;
+    height: 17px;
+    flex: none;
+    color: var(--text-secondary);
+}
+.trend-option:hover .category-icon { color: var(--accent); }
 
 /* ── Sortable Table Headers ──────────────────────────────────────── */
 .tx-th {
@@ -1888,6 +1909,7 @@ tbody tr:last-child td {
 @media (prefers-reduced-motion: reduce) {
     .float-pill { transition: opacity var(--transition); transform: none; }
     .float-dock.shown .float-pill { transform: none; }
+    .modal-overlay, .modal, .toast, .chat-step { animation: none; }
 }
 
 @media (max-width: 1024px) {
@@ -2109,14 +2131,19 @@ tbody tr:last-child td {
 .import-currency-setting { display: flex; gap: 12px; margin: 10px 0; }
 .cell-store-wrap .cell-input { font-weight: 500; }
 
-/* Category chip: colored dot + borderless select */
+/* Category chip: line icon + borderless select */
 .chip-cat {
     display: flex;
     align-items: center;
     gap: 7px;
     min-width: 0;
 }
-.chip-cat .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.chip-cat .category-icon {
+    width: 17px;
+    height: 17px;
+    flex: none;
+    color: var(--accent);
+}
 
 /* The chip that opens the category picker (import rows + bulk bar). */
 .cat-chip-btn {
@@ -2142,10 +2169,15 @@ tbody tr:last-child td {
     border-color: var(--accent);
     box-shadow: 0 0 0 3px var(--accent-ring);
 }
-/* The dot is sized by .chip-cat on import rows; the bulk chip and the picker
+/* The icon is sized by .chip-cat on import rows; the bulk chip and the picker
    sit outside that wrapper and need their own sizing. */
-.cat-chip-btn .dot,
-.cat-pop-item .dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+.cat-chip-btn .category-icon,
+.cat-pop-item .category-icon {
+    width: 17px;
+    height: 17px;
+    flex: none;
+    color: var(--accent);
+}
 .cat-chip-label { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .cat-chip-caret { margin-left: auto; color: var(--text-tertiary); flex-shrink: 0; }
 .chip-cat.review .cat-chip-btn {
@@ -2309,13 +2341,14 @@ tbody tr:last-child td {
     cursor: pointer;
 }
 
-/* ── Category identity (design #2, #20) ───────────────────────────── */
-.cat-dot {
+/* ── Category identity (ChatGPT line icons + optional color accent) ───── */
+.category-icon {
     display: inline-block;
-    width: 8px;
-    height: 8px;
-    border-radius: 50%;
-    flex-shrink: 0;
+    width: 20px;
+    height: 20px;
+    flex: 0 0 auto;
+    vertical-align: middle;
+    color: var(--accent);
 }
 
 .cat-swatch {
@@ -3624,19 +3657,27 @@ body.fs-active { overflow: hidden; }
                 0 2px 8px rgba(16, 24, 40, 0.06);
     /* Past its own inset as well as its width, or it would park with a 16px
        sliver of itself still showing against the right edge. */
-    transform: translateX(calc(100% + var(--chat-inset)));
+    opacity: 0;
+    transform: translateX(calc(100% + var(--chat-inset))) scale(0.985);
     visibility: hidden;
     /* `visibility` as well as the transform: a panel merely slid off the screen
        still takes Tab focus, so tabbing from a closed one lands the caret
-       somewhere nobody can see. It is switched, never eased — hiding waits for
-       the slide out to finish, showing happens at once, or the panel would be
-       invisible for the whole of its own animation. */
-    transition: transform var(--transition-spring), visibility 0s linear 0.35s;
+       somewhere nobody can see. Visibility is switched rather than eased:
+       closing waits for the motion to finish, while opening makes the panel
+       focusable immediately as opacity and transform animate. */
+    transition: transform 0.46s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.32s ease, visibility 0s linear 0.46s;
 }
 .chat-panel.open {
-    transform: translateX(0);
+    opacity: 1;
+    transform: translateX(0) scale(1);
     visibility: visible;
-    transition: transform var(--transition-spring), visibility 0s;
+    transition: transform 0.46s cubic-bezier(0.16, 1, 0.3, 1),
+                opacity 0.32s ease, visibility 0s;
+}
+
+@media (prefers-reduced-motion: reduce) {
+    .chat-panel, .chat-panel.open { transition: none; }
 }
 
 @media (max-width: 1024px) {
@@ -3997,4 +4038,9 @@ body.chat-open .chat-fab {
     color: var(--text-tertiary);
     text-align: right;
     margin-bottom: 12px;
+}
+
+/* Keep the accessibility override after the chat component declarations. */
+@media (prefers-reduced-motion: reduce) {
+    .chat-step { animation: none; }
 }

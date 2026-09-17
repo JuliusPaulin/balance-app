@@ -174,6 +174,24 @@ def _warm_model():
         pass
 
 
+def _launch_screen():
+    """Return the screen geometry for a full-size launch, when requested.
+
+    pywebview applies ``maximized=True`` in ``first_show()`` — after it has
+    already shown the 1200x800 window and started laying out the page. That
+    second resize is the visible launch jerk. Supplying the screen-sized frame
+    up front keeps the web view at one size from its first paint onward.
+    """
+    if not (config.START_MAXIMIZED or config.START_FULLSCREEN):
+        return None
+    try:
+        screens = webview.screens
+        return screens[0] if screens else None
+    except Exception as exc:  # pragma: no cover - macOS display setup only
+        print(f"[balance] could not determine launch screen: {exc}")
+        return None
+
+
 if __name__ == "__main__":
     # Tell the page it is running inside the desktop window. It uses this to
     # relay its theme, so the title bar can be drawn to match.
@@ -194,17 +212,24 @@ if __name__ == "__main__":
     if config.AI_BACKEND == "bundled":
         threading.Thread(target=_warm_model, daemon=True).start()
 
-    # Fill the screen on launch. The 1200x800 box was a starting size nobody
-    # kept: the Transactions rail beside its table, and the dashboard's cards,
-    # both want the width. width/height stay as the size to fall back to when
-    # the window is un-maximized. See config.START_MAXIMIZED / START_FULLSCREEN.
+    # Fill the screen on launch. Resolve the geometry before creating the
+    # window: pywebview's maximized=True resizes after first_show(), which
+    # makes the page paint at 1200x800 and then jump to the screen size.
+    # width/height remain the fallback size when the window is un-maximized.
+    # See config.START_MAXIMIZED / START_FULLSCREEN.
+    launch_screen = _launch_screen()
+    launch_width = launch_screen.width if launch_screen else 1200
+    launch_height = launch_screen.height if launch_screen else 800
     window = webview.create_window(
         "Balance.",
         f"http://127.0.0.1:{SERVER_PORT}",
-        width=1200,
-        height=800,
+        width=launch_width,
+        height=launch_height,
         min_size=(900, 600),
-        maximized=config.START_MAXIMIZED,
+        screen=launch_screen,
+        # The initial frame is already screen-sized. Passing maximized=True
+        # would apply another resize after the window becomes visible.
+        maximized=False,
         fullscreen=config.START_FULLSCREEN,
         # No title bar at all. A native one is drawn by macOS in macOS's own
         # grey and cannot be given the app's colours — the page does not reach

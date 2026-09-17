@@ -1,0 +1,413 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="theme-color" content="#10141c">
+<title>Balance — Category icon study</title>
+<style>
+  :root {
+    color-scheme: dark;
+    --canvas: #0d1118;
+    --canvas-deep: #090c11;
+    --surface: rgba(22, 28, 39, .84);
+    --surface-solid: #171d28;
+    --surface-raised: #202938;
+    --surface-soft: rgba(255,255,255,.055);
+    --surface-softer: rgba(255,255,255,.032);
+    --ink: #f2f5f8;
+    --ink-2: #a7b0bf;
+    --ink-3: #6f7b8d;
+    --line: rgba(255,255,255,.095);
+    --line-strong: rgba(255,255,255,.17);
+    --green: #00e599;
+    --green-dim: #05bd82;
+    --green-wash: rgba(0,229,153,.11);
+    --red: #ff6b7d;
+    --blue: #83a8ff;
+    --purple: #b593ff;
+    --yellow: #f8c96d;
+    --shadow: 0 26px 80px rgba(0,0,0,.34), 0 2px 8px rgba(0,0,0,.2);
+    --shadow-soft: 0 12px 36px rgba(0,0,0,.2);
+    --r-xs: 8px;
+    --r-sm: 12px;
+    --r: 17px;
+    --r-lg: 24px;
+    --font: -apple-system, BlinkMacSystemFont, "SF Pro Display", "SF Pro Text", "Helvetica Neue", Arial, sans-serif;
+    --font-mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    --spring: cubic-bezier(.22, 1, .36, 1);
+  }
+
+  :root.light {
+    color-scheme: light;
+    --canvas: #f4f6f8;
+    --canvas-deep: #e9edf2;
+    --surface: rgba(255,255,255,.84);
+    --surface-solid: #fff;
+    --surface-raised: #f8fafc;
+    --surface-soft: rgba(13,19,32,.055);
+    --surface-softer: rgba(13,19,32,.032);
+    --ink: #101620;
+    --ink-2: #626d7e;
+    --ink-3: #98a2b1;
+    --line: rgba(13,19,32,.095);
+    --line-strong: rgba(13,19,32,.16);
+    --green: #00a06b;
+    --green-dim: #008f5f;
+    --green-wash: rgba(0,160,107,.09);
+    --red: #dc5265;
+    --blue: #5b7fdc;
+    --purple: #805ac7;
+    --yellow: #b78623;
+    --shadow: 0 24px 70px rgba(35,48,67,.14), 0 2px 8px rgba(35,48,67,.08);
+    --shadow-soft: 0 12px 36px rgba(35,48,67,.1);
+  }
+
+  * { box-sizing: border-box; }
+  html { min-height: 100%; background: var(--canvas-deep); }
+  body {
+    min-height: 100vh;
+    margin: 0;
+    overflow-x: hidden;
+    color: var(--ink);
+    background:
+      radial-gradient(900px 560px at 72% -8%, rgba(0,229,153,.105), transparent 64%),
+      radial-gradient(760px 620px at -16% 84%, rgba(101,129,255,.08), transparent 64%),
+      var(--canvas);
+    font-family: var(--font);
+    -webkit-font-smoothing: antialiased;
+  }
+  button { font: inherit; }
+  button:focus-visible { outline: 2px solid var(--green); outline-offset: 3px; }
+  .icon-defs { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+  .lab-bar {
+    position: sticky;
+    z-index: 20;
+    top: 0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    min-height: 68px;
+    padding: 14px clamp(18px, 4vw, 58px);
+    border-bottom: 1px solid var(--line);
+    background: color-mix(in srgb, var(--canvas) 74%, transparent);
+    -webkit-backdrop-filter: blur(22px) saturate(1.25);
+    backdrop-filter: blur(22px) saturate(1.25);
+  }
+  .lab-brand { display: flex; align-items: center; gap: 11px; min-width: 210px; }
+  .lab-mark { display: grid; place-items: center; width: 28px; height: 28px; border-radius: 9px; color: #071e17; background: var(--green); font-size: 14px; font-weight: 800; box-shadow: 0 0 24px rgba(0,229,153,.28); }
+  .lab-brand strong { font-size: 14px; letter-spacing: -.02em; }
+  .lab-brand span { color: var(--ink-3); font-size: 12px; }
+  .lab-title { text-align: center; }
+  .lab-title strong { display: block; font-size: 13px; }
+  .lab-title span { color: var(--ink-3); font-size: 11px; }
+  .lab-actions { display: flex; align-items: center; justify-content: flex-end; gap: 7px; min-width: 210px; }
+  .control-button { padding: 8px 12px; border: 1px solid var(--line); border-radius: 10px; color: var(--ink-2); background: var(--surface-soft); cursor: pointer; transition: transform .28s var(--spring), background .2s ease, border-color .2s ease, color .2s ease; }
+  .control-button:hover { color: var(--ink); border-color: var(--line-strong); background: var(--surface-raised); transform: translateY(-1px); }
+  .control-button.primary { color: #061d16; border-color: transparent; background: var(--green); font-weight: 700; }
+  .control-button.primary:hover { color: #061d16; background: var(--green); box-shadow: 0 6px 20px rgba(0,229,153,.22); }
+
+  .layout { width: min(1440px, 100%); margin: 0 auto; padding: clamp(28px, 5vw, 66px) clamp(18px, 4vw, 58px) 100px; }
+  .intro { max-width: 760px; margin-bottom: 32px; }
+  .eyebrow { color: var(--green); font-size: 11px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+  h1 { margin: 11px 0 12px; font-size: clamp(30px, 5vw, 58px); line-height: 1.02; letter-spacing: -.055em; font-weight: 720; }
+  .intro p { max-width: 700px; margin: 0; color: var(--ink-2); font-size: clamp(14px, 1.7vw, 17px); line-height: 1.6; }
+  .section-label { display: flex; align-items: baseline; gap: 10px; margin: 0 0 13px; }
+  .section-label span { color: var(--ink-3); font-size: 10px; font-weight: 700; letter-spacing: .13em; text-transform: uppercase; }
+  .section-label strong { font-size: 13px; }
+  .section-label em { margin-left: auto; color: var(--ink-3); font-size: 10px; font-style: normal; }
+
+  .directions { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; margin-bottom: 35px; }
+  .direction-card { min-width: 0; padding: 14px; border: 1px solid var(--line); border-radius: var(--r); color: var(--ink-2); background: var(--surface); cursor: pointer; text-align: left; transition: transform .38s var(--spring), border-color .25s ease, background .25s ease, box-shadow .38s var(--spring); }
+  .direction-card:hover { color: var(--ink); border-color: var(--line-strong); background: var(--surface-raised); transform: translateY(-3px); }
+  .direction-card.selected { color: var(--ink); border-color: rgba(0,229,153,.5); background: var(--green-wash); box-shadow: 0 10px 30px rgba(0,229,153,.07), inset 0 0 0 1px rgba(0,229,153,.08); }
+  .direction-number { display: block; color: var(--green); font-family: var(--font-mono); font-size: 10px; }
+  .direction-name { display: block; margin-top: 8px; overflow: hidden; color: var(--ink); font-size: 12px; font-weight: 680; letter-spacing: -.01em; text-overflow: ellipsis; white-space: nowrap; }
+  .direction-description { display: block; min-height: 30px; margin-top: 5px; color: var(--ink-3); font-size: 10px; line-height: 1.45; }
+  .mini-list { display: grid; gap: 5px; margin-top: 14px; padding-top: 11px; border-top: 1px solid var(--line); }
+  .mini-row { display: flex; align-items: center; gap: 6px; min-width: 0; }
+  .mini-row span:nth-child(2) { flex: 1; min-width: 0; overflow: hidden; font-size: 9px; text-overflow: ellipsis; white-space: nowrap; }
+  .mini-row b { color: var(--ink); font-size: 9px; font-weight: 600; font-variant-numeric: tabular-nums; }
+  .mini-icon { display: grid; place-items: center; width: 21px; height: 21px; flex: 0 0 auto; color: var(--ink-2); }
+  .mini-icon svg { width: 13px; height: 13px; }
+
+  /* Five icon systems, all using the same inline SVG symbols. */
+  .direction-card[data-style="chatgpt-line"] .mini-icon { color: var(--green); }
+  .direction-card[data-style="chatgpt-line"] .mini-icon svg { fill: none; stroke: currentColor; stroke-width: 1.65; stroke-linecap: round; stroke-linejoin: round; }
+  .direction-card[data-style="soft-glyph"] .mini-icon { border-radius: 7px; color: var(--green); background: var(--green-wash); }
+  .direction-card[data-style="soft-glyph"] .mini-icon svg { fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; stroke-linejoin: round; }
+  .direction-card[data-style="sf-symbol"] .mini-icon { border-radius: 50%; color: var(--blue); background: rgba(131,168,255,.13); }
+  .direction-card[data-style="sf-symbol"] .mini-icon svg { fill: currentColor; stroke: currentColor; stroke-width: .7; stroke-linecap: round; stroke-linejoin: round; }
+  .direction-card[data-style="gradient-aura"] .mini-icon { border-radius: 50%; color: #061d16; background: linear-gradient(135deg, var(--green), #64d2ff); box-shadow: 0 0 12px rgba(0,229,153,.22); }
+  .direction-card[data-style="gradient-aura"] .mini-icon svg { fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .direction-card[data-style="chat-chip"] .mini-icon { width: auto; padding: 0 6px; border-radius: 99px; color: var(--ink); background: var(--surface-raised); }
+  .direction-card[data-style="chat-chip"] .mini-icon svg { fill: none; stroke: var(--green); stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+
+  .preview-shell { overflow: hidden; border: 1px solid var(--line); border-radius: 27px; background: var(--surface); box-shadow: var(--shadow); }
+  .preview-head { display: flex; align-items: center; justify-content: space-between; gap: 18px; padding: 17px 20px; border-bottom: 1px solid var(--line); background: var(--surface-softer); }
+  .preview-head-copy { display: flex; align-items: center; gap: 11px; min-width: 0; }
+  .preview-orb { display: grid; place-items: center; width: 33px; height: 33px; flex: 0 0 auto; border-radius: 12px; color: #061d16; background: var(--green); box-shadow: 0 0 18px rgba(0,229,153,.2); }
+  .preview-orb svg { width: 17px; height: 17px; fill: none; stroke: currentColor; stroke-width: 1.7; stroke-linecap: round; stroke-linejoin: round; }
+  .preview-head strong { display: block; font-size: 14px; }
+  .preview-head span { display: block; margin-top: 3px; color: var(--ink-3); font-size: 10px; }
+  .preview-actions { display: flex; align-items: center; gap: 7px; }
+  .preview-actions .control-button { padding: 7px 10px; font-size: 11px; }
+  .preview-body { display: grid; grid-template-columns: minmax(0, 1.45fr) minmax(240px, .7fr); gap: 0; min-height: 475px; }
+  .category-pane { min-width: 0; padding: 24px clamp(18px, 4vw, 42px) 30px; border-right: 1px solid var(--line); }
+  .category-pane-head { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 23px; }
+  .category-pane-head strong { font-size: 16px; letter-spacing: -.025em; }
+  .category-pane-head span { color: var(--ink-3); font-size: 10px; }
+  .category-list { display: grid; gap: 4px; }
+  .category-row { position: relative; display: grid; grid-template-columns: 34px minmax(120px, .8fr) minmax(100px, 1.5fr) auto; align-items: center; gap: 12px; width: 100%; padding: 10px 8px; border: 0; border-radius: 13px; color: inherit; background: transparent; font: inherit; text-align: left; cursor: pointer; transition: background .24s ease, transform .35s var(--spring), padding .35s var(--spring); }
+  .category-row:hover, .category-row.selected { background: var(--surface-soft); }
+  .category-row:hover { transform: translateX(3px); }
+  .category-row.selected { box-shadow: inset 2px 0 0 var(--green); }
+  .category-icon { position: relative; display: grid; place-items: center; width: 34px; height: 34px; color: var(--green); background: transparent; }
+  .category-icon svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+  .category-copy { min-width: 0; }
+  .category-copy strong { display: block; overflow: hidden; color: var(--ink); font-size: 12px; font-weight: 620; text-overflow: ellipsis; white-space: nowrap; }
+  .category-copy span { display: block; margin-top: 3px; color: var(--ink-3); font-size: 10px; }
+  .amount-track { position: relative; height: 7px; overflow: hidden; border-radius: 99px; background: var(--surface-soft); }
+  .amount-fill { width: var(--amount); height: 100%; border-radius: inherit; background: linear-gradient(90deg, var(--green-dim), var(--green)); transform-origin: left; transition: width .65s var(--spring), filter .25s ease; }
+  .category-row:hover .amount-fill, .category-row.selected .amount-fill { filter: brightness(1.15); }
+  .category-amount { min-width: 56px; color: var(--ink); font-size: 12px; text-align: right; font-variant-numeric: tabular-nums; }
+  .category-amount small { display: block; margin-top: 3px; color: var(--ink-3); font-size: 9px; }
+
+  /* Large preview versions. Icons stay semantic; colour is supporting
+     context rather than the only way to tell categories apart. */
+  body[data-icons="soft-glyph"] .category-icon { border-radius: 11px; color: var(--green); background: var(--green-wash); }
+  body[data-icons="soft-glyph"] .category-icon svg { stroke-width: 1.85; }
+  body[data-icons="sf-symbol"] .category-icon { border-radius: 50%; color: var(--blue); background: rgba(131,168,255,.13); }
+  body[data-icons="sf-symbol"] .category-icon svg { width: 21px; height: 21px; stroke-width: 2.15; }
+  body[data-icons="gradient-aura"] .category-icon { border-radius: 50%; color: #061d16; background: linear-gradient(135deg, var(--green), #64d2ff); box-shadow: 0 0 20px rgba(0,229,153,.2); }
+  body[data-icons="gradient-aura"] .category-icon svg { stroke-width: 1.75; }
+  body[data-icons="chat-chip"] .category-row { grid-template-columns: auto minmax(120px, .8fr) minmax(100px, 1.5fr) auto; }
+  body[data-icons="chat-chip"] .category-icon { width: auto; min-width: 42px; padding: 0 9px; border-radius: 99px; color: var(--ink); background: var(--surface-raised); }
+  body[data-icons="chat-chip"] .category-icon svg { width: 18px; height: 18px; color: var(--green); stroke-width: 1.75; }
+  body[data-icons="chat-chip"] .category-row.selected .category-icon { color: #061d16; background: var(--green); }
+  body[data-icons="chat-chip"] .category-row.selected .category-icon svg { color: #061d16; }
+  body[data-icons="chatgpt-line"] .category-row.selected .category-icon { color: var(--green); }
+
+  .inspector { display: flex; flex-direction: column; min-width: 0; padding: 24px; background: var(--surface-softer); }
+  .inspector-kicker { color: var(--ink-3); font-size: 10px; font-weight: 700; letter-spacing: .12em; text-transform: uppercase; }
+  .inspector h2 { margin: 10px 0 8px; font-size: 25px; line-height: 1; letter-spacing: -.05em; }
+  .inspector > p { margin: 0; color: var(--ink-2); font-size: 11px; line-height: 1.55; }
+  .inspector-icon-stage { display: grid; place-items: center; width: 92px; height: 92px; margin: 30px 0 21px; border: 1px solid var(--line); border-radius: 26px; background: var(--surface); box-shadow: var(--shadow-soft); }
+  .inspector-icon { display: grid; place-items: center; width: 58px; height: 58px; color: var(--green); }
+  .inspector-icon svg { width: 44px; height: 44px; fill: none; stroke: currentColor; stroke-width: 1.55; stroke-linecap: round; stroke-linejoin: round; }
+  body[data-icons="soft-glyph"] .inspector-icon { border-radius: 17px; color: var(--green); background: var(--green-wash); }
+  body[data-icons="soft-glyph"] .inspector-icon svg { width: 34px; height: 34px; stroke-width: 1.9; }
+  body[data-icons="sf-symbol"] .inspector-icon { border-radius: 50%; color: var(--blue); background: rgba(131,168,255,.13); }
+  body[data-icons="sf-symbol"] .inspector-icon svg { width: 35px; height: 35px; stroke-width: 2.1; }
+  body[data-icons="gradient-aura"] .inspector-icon { border-radius: 50%; color: #061d16; background: linear-gradient(135deg, var(--green), #64d2ff); box-shadow: 0 0 30px rgba(0,229,153,.25); }
+  body[data-icons="gradient-aura"] .inspector-icon svg { width: 34px; height: 34px; stroke-width: 1.8; }
+  body[data-icons="chat-chip"] .inspector-icon { width: auto; padding: 0 15px; border-radius: 99px; color: var(--ink); background: var(--surface-raised); }
+  body[data-icons="chat-chip"] .inspector-icon svg { width: 34px; height: 34px; color: var(--green); stroke-width: 1.8; }
+  .inspector-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: auto; }
+  .inspector-stat { padding: 11px; border-radius: 12px; background: var(--surface-soft); }
+  .inspector-stat span { display: block; color: var(--ink-3); font-size: 9px; }
+  .inspector-stat strong { display: block; margin-top: 5px; color: var(--ink); font-size: 13px; font-variant-numeric: tabular-nums; }
+  .inspector-note { margin-top: 12px; color: var(--ink-3); font-size: 10px; line-height: 1.5; }
+
+  .motion-list .category-row { animation: row-in .45s var(--spring) both; }
+  .motion-list .category-row:nth-child(2) { animation-delay: .045s; }
+  .motion-list .category-row:nth-child(3) { animation-delay: .09s; }
+  .motion-list .category-row:nth-child(4) { animation-delay: .135s; }
+  .motion-list .category-row:nth-child(5) { animation-delay: .18s; }
+  .motion-list .category-row:nth-child(6) { animation-delay: .225s; }
+  .motion-list .category-row:nth-child(7) { animation-delay: .27s; }
+  .motion-list .category-row:nth-child(8) { animation-delay: .315s; }
+  @keyframes row-in { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: translateY(0); } }
+  @keyframes icon-pulse { 0%, 100% { transform: scale(1); } 45% { transform: scale(1.08); } }
+  body[data-icons="gradient-aura"] .inspector-icon { animation: icon-pulse 2.4s ease-in-out infinite; }
+  .principles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 18px; }
+  .principle { padding: 15px 16px; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--surface-softer); }
+  .principle-number { display: inline-grid; place-items: center; width: 21px; height: 21px; margin-bottom: 10px; border-radius: 7px; color: var(--green); background: var(--green-wash); font-family: var(--font-mono); font-size: 10px; }
+  .principle strong { display: block; margin-bottom: 5px; font-size: 12px; }
+  .principle p { margin: 0; color: var(--ink-3); font-size: 11px; line-height: 1.5; }
+
+  @media (max-width: 1080px) {
+    .directions { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .direction-card:nth-child(4), .direction-card:nth-child(5) { margin-top: 0; }
+  }
+  @media (max-width: 820px) {
+    .lab-title { display: none; }
+    .lab-brand, .lab-actions { min-width: 0; }
+    .preview-body { grid-template-columns: 1fr; }
+    .category-pane { border-right: 0; border-bottom: 1px solid var(--line); }
+    .inspector { min-height: 295px; }
+    .inspector-icon-stage { margin-top: 20px; }
+    .principles { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 560px) {
+    .lab-bar { min-height: 58px; padding: 10px 14px; }
+    .lab-brand span, .lab-actions .control-button:first-child { display: none; }
+    .layout { padding: 30px 12px 60px; }
+    .directions { grid-template-columns: 1fr 1fr; gap: 8px; }
+    .direction-card { padding: 12px; }
+    .direction-description { min-height: 44px; }
+    .preview-head { align-items: flex-start; flex-direction: column; }
+    .preview-actions { width: 100%; }
+    .preview-actions .control-button { flex: 1; }
+    .category-pane { padding: 20px 13px 24px; }
+    .category-row { grid-template-columns: 31px minmax(80px, .8fr) minmax(55px, 1.2fr) auto; gap: 8px; padding-right: 4px; padding-left: 4px; }
+    body[data-icons="chat-chip"] .category-row { grid-template-columns: auto minmax(80px, .8fr) minmax(55px, 1.2fr) auto; }
+    .category-icon { width: 31px; height: 31px; }
+    .category-icon svg { width: 18px; height: 18px; }
+    .category-copy strong, .category-amount { font-size: 11px; }
+    .amount-track { height: 6px; }
+    .category-amount { min-width: 45px; }
+    .category-amount small { font-size: 8px; }
+    .inspector { padding: 20px; }
+  }
+  @media (prefers-reduced-motion: reduce) {
+    *, *::before, *::after { animation-duration: .01ms !important; animation-iteration-count: 1 !important; scroll-behavior: auto !important; transition-duration: .01ms !important; }
+  }
+</style>
+</head>
+<body data-icons="chatgpt-line">
+  <svg class="icon-defs" aria-hidden="true" focusable="false">
+    <symbol id="icon-groceries" viewBox="0 0 24 24"><path d="M4 10h16v9H4zM6 10V7h12v3M8 7V4h8v3M2 19h20"/></symbol>
+    <symbol id="icon-housing" viewBox="0 0 24 24"><path d="m3 11 9-7 9 7M5 10v10h14V10M9 20v-6h6v6"/></symbol>
+    <symbol id="icon-transport" viewBox="0 0 24 24"><path d="M5 16 6.5 7h11l1.5 9M4 16h16v3H4zM7 11h10M7.5 19v2M16.5 19v2M7 16h.01M17 16h.01"/></symbol>
+    <symbol id="icon-dining" viewBox="0 0 24 24"><path d="M6 3v7M4 3v7a2 2 0 0 0 4 0V3M6 12v9M14 3v18M14 3c4 1 5 4 5 7h-5"/></symbol>
+    <symbol id="icon-utilities" viewBox="0 0 24 24"><path d="m13 2-9 12h7l-1 8 9-12h-7z"/></symbol>
+    <symbol id="icon-health" viewBox="0 0 24 24"><path d="M20.8 8.8c0 5.5-8.8 11.2-8.8 11.2S3.2 14.3 3.2 8.8A4.8 4.8 0 0 1 12 6.3a4.8 4.8 0 0 1 8.8 2.5zM12 8v6M9 11h6"/></symbol>
+    <symbol id="icon-travel" viewBox="0 0 24 24"><path d="m3 19 18-7-18-7 4 7zM7 12h10M12 10V5M12 14v5"/></symbol>
+    <symbol id="icon-shopping" viewBox="0 0 24 24"><path d="M5 8h14l-1 12H6zM9 8a3 3 0 0 1 6 0"/></symbol>
+    <symbol id="icon-work" viewBox="0 0 24 24"><rect x="3" y="7" width="18" height="13" rx="2"/><path d="M8 7V5a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2M3 12h18M10 12v2h4v-2"/></symbol>
+    <symbol id="icon-subscriptions" viewBox="0 0 24 24"><path d="M4 7h16v12H4zM8 7V5h8v2M7 12h10M8 16h5"/></symbol>
+  </svg>
+
+  <header class="lab-bar">
+    <div class="lab-brand"><div class="lab-mark">B</div><div><strong>Balance.</strong> <span>/ category icon study</span></div></div>
+    <div class="lab-title"><strong>Five icon directions</strong><span>Same categories, different visual language</span></div>
+    <div class="lab-actions"><button class="control-button" id="theme-toggle" type="button">Light mode</button><button class="control-button primary" type="button" onclick="animateList()">Animate list</button></div>
+  </header>
+
+  <main class="layout">
+    <section class="intro">
+      <div class="eyebrow">A category identity study</div>
+      <h1>Recognisable at a glance,<br>quiet enough to trust.</h1>
+      <p>Five ways to replace category-only colour with meaning you can see. The treatments take cues from ChatGPT’s simple line language and Apple’s familiar symbol system, while keeping Balance’s calm, financial tone.</p>
+    </section>
+
+    <div class="section-label"><span>Five directions</span><strong>Choose one to inspect</strong><em>All use the same sample data</em></div>
+    <section class="directions" aria-label="Five category icon directions">
+      <button class="direction-card selected" type="button" data-style="chatgpt-line" aria-pressed="true" onclick="selectStyle('chatgpt-line')">
+        <span class="direction-number">01</span><span class="direction-name">ChatGPT line</span><span class="direction-description">One-weight outline icons. Clear, friendly, low noise.</span>
+        <span class="mini-list"><span class="mini-row"><span class="mini-icon"><svg><use href="#icon-groceries"/></svg></span><span>Groceries</span><b>€612</b></span><span class="mini-row"><span class="mini-icon"><svg><use href="#icon-housing"/></svg></span><span>Housing</span><b>€940</b></span><span class="mini-row"><span class="mini-icon"><svg><use href="#icon-travel"/></svg></span><span>Travel</span><b>€280</b></span></span>
+      </button>
+      <button class="direction-card" type="button" data-style="soft-glyph" aria-pressed="false" onclick="selectStyle('soft-glyph')">
+        <span class="direction-number">02</span><span class="direction-name">Soft glyph</span><span class="direction-description">Rounded tiles give each category a quiet visual home.</span>
+        <span class="mini-list"><span class="mini-row"><span class="mini-icon"><svg><use href="#icon-groceries"/></svg></span><span>Groceries</span><b>€612</b></span><span class="mini-row"><span class="mini-icon"><svg><use href="#icon-housing"/></svg></span><span>Housing</span><b>€940</b></span><span class="mini-row"><span class="mini-icon"><svg><use href="#icon-travel"/></svg></span><span>Travel</span><b>€280</b></span></span>
+      </button>
+      <button class="direction-card" type="button" data-style="sf-symbol" aria-pressed="false" onclick="selectStyle('sf-symbol')">
+        <span class="direction-number">03</span><span class="direction-name">SF symbol</span><span class="direction-description">Bold, familiar marks with a compact system feel.</span>
+        <span class="mini-list"><span class="mini-row"><span class="mini-icon"><svg><use href="#icon-groceries"/></svg></span><span>Groceries</span><b>€612</b></span><span class="mini-row"><span class="mini-icon"><svg><use href="#icon-housing"/></svg></span><span>Housing</span><b>€940</b></span><span class="mini-row"><span class="mini-icon"><svg><use href="#icon-travel"/></svg></span><span>Travel</span><b>€280</b></span></span>
+      </button>
+      <button class="direction-card" type="button" data-style="gradient-aura" aria-pressed="false" onclick="selectStyle('gradient-aura')">
+        <span class="direction-number">04</span><span class="direction-name">Gradient aura</span><span class="direction-description">A little energy and depth for the most expressive option.</span>
+        <span class="mini-list"><span class="mini-row"><span class="mini-icon"><svg><use href="#icon-groceries"/></svg></span><span>Groceries</span><b>€612</b></span><span class="mini-row"><span class="mini-icon"><svg><use href="#icon-housing"/></svg></span><span>Housing</span><b>€940</b></span><span class="mini-row"><span class="mini-icon"><svg><use href="#icon-travel"/></svg></span><span>Travel</span><b>€280</b></span></span>
+      </button>
+      <button class="direction-card" type="button" data-style="chat-chip" aria-pressed="false" onclick="selectStyle('chat-chip')">
+        <span class="direction-number">05</span><span class="direction-name">Chat chip</span><span class="direction-description">Compact icon-label pills, suited to dense lists and filters.</span>
+        <span class="mini-list"><span class="mini-row"><span class="mini-icon"><svg><use href="#icon-groceries"/></svg></span><span>Groceries</span><b>€612</b></span><span class="mini-row"><span class="mini-icon"><svg><use href="#icon-housing"/></svg></span><span>Housing</span><b>€940</b></span><span class="mini-row"><span class="mini-icon"><svg><use href="#icon-travel"/></svg></span><span>Travel</span><b>€280</b></span></span>
+      </button>
+    </section>
+
+    <section class="preview-shell" aria-label="Selected category icon preview">
+      <header class="preview-head"><div class="preview-head-copy"><div class="preview-orb"><svg><use href="#icon-groceries"/></svg></div><div><strong id="preview-title">ChatGPT line</strong><span id="preview-description">One-weight outline icons. Meaning first, decoration second.</span></div></div><div class="preview-actions"><button class="control-button" type="button" onclick="animateList()">Replay entrance</button><button class="control-button primary" type="button" onclick="selectCategory('groceries')">Select Groceries</button></div></header>
+      <div class="preview-body">
+        <div class="category-pane"><div class="category-pane-head"><strong>Expenses by category</strong><span>September 2026 · €2 340</span></div><div class="category-list" id="category-list"></div></div>
+        <aside class="inspector"><span class="inspector-kicker">Selected category</span><h2 id="inspector-title">Groceries</h2><p id="inspector-description">A category should be identifiable before you read the label. The icon carries the meaning; the bar carries the amount.</p><div class="inspector-icon-stage"><div class="inspector-icon" id="inspector-icon"><svg><use href="#icon-groceries"/></svg></div></div><div class="inspector-stats"><div class="inspector-stat"><span>This month</span><strong id="inspector-amount">€612</strong></div><div class="inspector-stat"><span>Share</span><strong id="inspector-share">26.2%</strong></div></div><div class="inspector-note">Click any row to test selection feedback. The bar remains the same across all five directions.</div></aside>
+      </div>
+    </section>
+
+    <section class="principles" aria-label="Icon design principles">
+      <article class="principle"><span class="principle-number">01</span><strong>Meaning over colour</strong><p>Colour can reinforce a category, but it should never be the only way to recognise one.</p></article>
+      <article class="principle"><span class="principle-number">02</span><strong>One icon family</strong><p>The set should share one stroke language, optical weight, and corner character.</p></article>
+      <article class="principle"><span class="principle-number">03</span><strong>Calm in aggregate</strong><p>Thirty-four categories can live together without becoming a wall of competing colour.</p></article>
+    </section>
+  </main>
+
+<script>
+  const categoryData = [
+    { id: 'groceries', name: 'Groceries', detail: 'Weekly shops and everyday food', amount: '€612', share: '26.2%', width: '100%' },
+    { id: 'housing', name: 'Housing', detail: 'Mortgage and home costs', amount: '€540', share: '23.1%', width: '88%' },
+    { id: 'transport', name: 'Transport', detail: 'Fuel, parking and public transit', amount: '€318', share: '13.6%', width: '52%' },
+    { id: 'dining', name: 'Going out', detail: 'Restaurants and coffee', amount: '€246', share: '10.5%', width: '40%' },
+    { id: 'utilities', name: 'Utilities', detail: 'Electricity, telecom and bills', amount: '€214', share: '9.1%', width: '35%' },
+    { id: 'health', name: 'Medical', detail: 'Pharmacy and appointments', amount: '€168', share: '7.2%', width: '27%' },
+    { id: 'travel', name: 'Travel', detail: 'Flights, hotels and trips', amount: '€146', share: '6.2%', width: '24%' },
+    { id: 'shopping', name: 'Shopping', detail: 'Clothing and personal items', amount: '€96', share: '4.1%', width: '16%' }
+  ];
+  const styleData = {
+    'chatgpt-line': { name: 'ChatGPT line', description: 'One-weight outline icons. Meaning first, decoration second.' },
+    'soft-glyph': { name: 'Soft glyph', description: 'Rounded tiles give each category a quiet visual home.' },
+    'sf-symbol': { name: 'SF symbol', description: 'Bold, familiar marks with a compact system feel.' },
+    'gradient-aura': { name: 'Gradient aura', description: 'A little energy and depth for the most expressive option.' },
+    'chat-chip': { name: 'Chat chip', description: 'Compact icon-label pills, suited to dense lists and filters.' }
+  };
+  let selectedStyle = 'chatgpt-line';
+  let selectedCategory = 'groceries';
+
+  function iconSvg(id) {
+    return `<svg aria-hidden="true"><use href="#icon-${id}"></use></svg>`;
+  }
+
+  function renderCategories(animate = false) {
+    const list = document.getElementById('category-list');
+    list.classList.toggle('motion-list', animate);
+    list.innerHTML = categoryData.map(category => `
+      <button class="category-row${category.id === selectedCategory ? ' selected' : ''}" type="button" data-category="${category.id}" onclick="selectCategory('${category.id}')">
+        <span class="category-icon">${iconSvg(category.id)}</span>
+        <span class="category-copy"><strong>${category.name}</strong><span>${category.detail}</span></span>
+        <span class="amount-track"><span class="amount-fill" style="--amount:${category.width}"></span></span>
+        <span class="category-amount">${category.amount}<small>${category.share}</small></span>
+      </button>`).join('');
+    if (animate) window.setTimeout(() => list.classList.remove('motion-list'), 850);
+  }
+
+  function selectStyle(style) {
+    if (!styleData[style]) return;
+    selectedStyle = style;
+    document.body.dataset.icons = style;
+    document.getElementById('preview-title').textContent = styleData[style].name;
+    document.getElementById('preview-description').textContent = styleData[style].description;
+    document.querySelectorAll('[data-style]').forEach(button => {
+      const active = button.dataset.style === style;
+      button.classList.toggle('selected', active);
+      button.setAttribute('aria-pressed', String(active));
+    });
+    renderCategories(true);
+  }
+
+  function selectCategory(id) {
+    const category = categoryData.find(item => item.id === id);
+    if (!category) return;
+    selectedCategory = id;
+    document.getElementById('inspector-title').textContent = category.name;
+    document.getElementById('inspector-amount').textContent = category.amount;
+    document.getElementById('inspector-share').textContent = category.share;
+    document.getElementById('inspector-description').textContent = `${category.detail}. The icon carries the meaning; the bar carries the amount.`;
+    document.getElementById('inspector-icon').innerHTML = iconSvg(category.id);
+    renderCategories();
+  }
+
+  function animateList() {
+    renderCategories(true);
+  }
+
+  document.getElementById('theme-toggle').addEventListener('click', () => {
+    const light = document.documentElement.classList.toggle('light');
+    document.getElementById('theme-toggle').textContent = light ? 'Dark mode' : 'Light mode';
+  });
+
+  renderCategories();
+  window.setTimeout(() => animateList(), 120);
+</script>
+</body>
+</html>
