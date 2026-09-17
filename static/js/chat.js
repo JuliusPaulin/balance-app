@@ -192,8 +192,8 @@ function scrollChatToEnd() {
 function chatEmptyHtml() {
     return `<div class="chat-empty">
         <div class="chat-empty-title">Ask about your money</div>
-        <div class="chat-empty-sub">Runs on this Mac. Nothing leaves the machine,
-            and every answer says which screen it read.</div>
+        <div class="chat-empty-sub">Uses the active Balance AI backend. Local backends keep data on this Mac;
+            Anthropic sends prompts to Anthropic. Every answer says which screen it read.</div>
         <div class="chat-suggestions">
             ${CHAT_SUGGESTIONS.map(q => `
                 <button class="chat-suggestion" onclick="askChat(this.textContent.trim())">${escapeHtml(q)}</button>
@@ -611,4 +611,3 @@ function initChat() {
 
     renderChatLog();
 }
-

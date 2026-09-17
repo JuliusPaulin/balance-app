@@ -132,7 +132,7 @@ Both read the same database, so your figures carry over either way.
 python3 -m pytest tests/
 ```
 
-All 493 pass. They run against a throwaway database in a temp folder — your own
+All 508 pass. They run against a throwaway database in a temp folder — your own
 figures are never opened.
 
 ### Where things live

@@ -1,10 +1,20 @@
 """Transactions: the filtered list, and create / update / delete."""
 
+from datetime import datetime
+
 from flask import Blueprint, request, jsonify
 from data.schema import db_conn
 from core import current_user_id, bump_data_version
 
 bp = Blueprint("transactions", __name__)
+
+
+def _valid_date(value):
+    try:
+        parsed = datetime.strptime(value, "%Y-%m-%d")
+        return parsed.strftime("%Y-%m-%d") == value
+    except (TypeError, ValueError):
+        return False
 
 
 def _filter_clauses(args, uid, omit=()):
@@ -167,14 +177,18 @@ def get_transactions():
 def create_transaction():
     uid = current_user_id()
     data = request.json
+    if not _valid_date(data.get("date")):
+        return jsonify({"error": "date must be YYYY-MM-DD"}), 400
     with db_conn() as conn:
         # The category must belong to this user.
         cat = conn.execute(
-            "SELECT 1 FROM categories WHERE id = %s AND user_id = %s",
+            "SELECT type FROM categories WHERE id = %s AND user_id = %s",
             (data["category_id"], uid),
         ).fetchone()
         if not cat:
             return jsonify({"error": "Category not found"}), 400
+        if data.get("type") != cat["type"]:
+            return jsonify({"error": "transaction type must match category type"}), 400
         cursor = conn.execute(
             """INSERT INTO transactions (user_id, date, store, category_id, amount, type)
                VALUES (%s, %s, %s, %s, %s, %s) RETURNING id""",
@@ -196,13 +210,17 @@ def create_transaction():
 def update_transaction(t_id):
     uid = current_user_id()
     data = request.json
+    if not _valid_date(data.get("date")):
+        return jsonify({"error": "date must be YYYY-MM-DD"}), 400
     with db_conn() as conn:
         cat = conn.execute(
-            "SELECT 1 FROM categories WHERE id = %s AND user_id = %s",
+            "SELECT type FROM categories WHERE id = %s AND user_id = %s",
             (data["category_id"], uid),
         ).fetchone()
         if not cat:
             return jsonify({"error": "Category not found"}), 400
+        if data.get("type") != cat["type"]:
+            return jsonify({"error": "transaction type must match category type"}), 400
         cursor = conn.execute(
             """UPDATE transactions
                SET date = %s, store = %s, category_id = %s, amount = %s, type = %s,

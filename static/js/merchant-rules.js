@@ -18,7 +18,7 @@ function populateMerchantRuleCatFilter() {
     const catNames = [...new Set(merchantRules.map(r => r.category_name))].sort();
     const cur = sel.value;
     sel.innerHTML = `<option value="">All categories (${catNames.length})</option>` +
-        catNames.map(n => `<option value="${n}" ${n === cur ? "selected" : ""}>${n}</option>`).join("");
+        catNames.map(n => `<option value="${escapeHtml(n)}" ${n === cur ? "selected" : ""}>${escapeHtml(n)}</option>`).join("");
 }
 
 function filterMerchantRulesView() {
@@ -69,7 +69,7 @@ function filterMerchantRulesView() {
         return `<div class="merchant-rule-group ${filtering ? "" : "collapsed"}">
             <div class="merchant-rule-group-header" onclick="this.parentElement.classList.toggle('collapsed')" style="cursor:pointer">
                 <span class="rule-group-caret">▸</span>
-                <span class="category-tag"><span class="cat-dot" style="background:${catDotColor(catId)}"></span>${catName}</span>
+                <span class="category-tag"><span class="cat-dot" style="background:${catDotColor(catId)}"></span>${escapeHtml(catName)}</span>
                 <span style="font-size:var(--text-caption);color:var(--text-tertiary);margin-left:6px">${rules.length} rule${rules.length !== 1 ? "s" : ""}</span>
             </div>
             ${rules.map(r => {
@@ -77,9 +77,9 @@ function filterMerchantRulesView() {
                 const dead = hits === 0;
                 const last = r.last_match ? ` · last ${r.last_match}` : "";
                 return `<div class="merchant-rule-row ${dead ? "dead-rule" : ""}">
-                <span class="merchant-rule-pattern" title="${r.pattern}${last}">${highlightMatch(r.pattern, search)}</span>
+                <span class="merchant-rule-pattern" title="${escapeHtml(r.pattern + last)}">${highlightMatch(r.pattern, search)}</span>
                 <div class="merchant-rule-meta">
-                    <span class="rule-hit-badge ${dead ? "dead" : ""}" title="${last ? `Last match: ${r.last_match}` : "No matches in history"}">${hits} hit${hits !== 1 ? "s" : ""}</span>
+                    <span class="rule-hit-badge ${dead ? "dead" : ""}" title="${last ? escapeHtml(`Last match: ${r.last_match}`) : "No matches in history"}">${hits} hit${hits !== 1 ? "s" : ""}</span>
                     <span class="match-type-badge ${r.match_type}">${r.match_type}</span>
                     <div class="btn-group">
                         <button class="btn-icon" onclick="applyRuleToHistory(${r.id})" title="Re-apply to historical transactions">
@@ -139,7 +139,7 @@ function openMerchantRuleModal(rule = null) {
             <div class="modal-title">${isEdit ? "Edit" : "Add"} Merchant Rule</div>
             <div class="form-group">
                 <label class="form-label">Merchant Pattern</label>
-                <input class="form-input" id="modal-rule-pattern" value="${rule ? rule.pattern : ""}" placeholder="e.g. K-Market" oninput="debouncedRulePreview()">
+                <input class="form-input" id="modal-rule-pattern" value="${rule ? escapeHtml(rule.pattern) : ""}" placeholder="e.g. K-Market" oninput="debouncedRulePreview()">
             </div>
             <div class="form-group">
                 <label class="form-label">Category</label>
@@ -245,4 +245,3 @@ async function deleteMerchantRule(id) {
     renderMerchantRules();
     toast("Rule deleted");
 }
-

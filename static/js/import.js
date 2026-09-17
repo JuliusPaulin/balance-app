@@ -603,7 +603,7 @@ function renderStagingRow(item) {
                onchange="onStagingDateChange(this, '${item.id}')">
         <span class="cell-store-wrap">
             <input type="text" class="cell-input" data-staging-store="${item.id}"
-                   value="${effStore(item).replace(/"/g, "&quot;")}" placeholder="Store"
+                   value="${escapeHtml(effStore(item))}" placeholder="Store"
                    onchange="onStagingStoreChange(this, '${item.id}')">
             ${partBadge}
             ${importConversionNote(item)}
@@ -774,7 +774,7 @@ function openSplitModal(itemId) {
     const html = `<div class="modal-overlay" onclick="if(event.target===this)this.remove()">
         <div class="modal" style="max-width:520px">
             <div class="modal-title">Split Transaction — ${fmt(total)}</div>
-            <p style="font-size:var(--text-subhead);color:var(--text-tertiary);margin-bottom:14px">${item.store || "—"} &nbsp;·&nbsp; ${fmtDate(item.date)}</p>
+            <p style="font-size:var(--text-subhead);color:var(--text-tertiary);margin-bottom:14px">${escapeHtml(item.store || "—")} &nbsp;·&nbsp; ${fmtDate(item.date)}</p>
             <div id="split-rows-wrap">
                 ${splitRowHtml(0, half, catOpts)}
                 ${splitRowHtml(1, half, catOpts)}
@@ -796,7 +796,7 @@ function openSplitModal(itemId) {
 function splitRowHtml(idx, amount, catOpts) {
     return `<div class="split-row" data-split-idx="${idx}">
         <span style="font-size:var(--text-caption);color:var(--text-tertiary);width:20px;flex-shrink:0">${idx + 1}.</span>
-        <input type="number" class="form-input split-amount-input" step="0.01" min="0.01" value="${amount}"
+        <input type="text" inputmode="decimal" class="form-input split-amount-input" step="0.01" min="0.01" value="${amount}"
                style="width:110px;flex-shrink:0" oninput="onSplitAmountInput(this)">
         <select class="form-select split-cat-select" style="flex:1">${catOpts}</select>
         ${idx > 1 ? `<button class="btn-icon" onclick="this.closest('.split-row').remove();updateSplitRemaining()">
@@ -828,8 +828,8 @@ function onSplitAmountInput(input) {
     const total = parseFloat(el?.dataset.total) || 0;
     if (inputs.length === 2 && total > 0) {
         const other = inputs.find(i => i !== input);
-        const v = parseFloat(input.value);
-        if (other && !isNaN(v)) {
+        const v = parseAmountInput(input.value);
+        if (other && v !== null) {
             other.value = Math.max(0, Math.round((total - v) * 100) / 100).toFixed(2);
         }
     }
@@ -839,7 +839,7 @@ function onSplitAmountInput(input) {
 function updateSplitRemaining(total) {
     const modal = topModal();
     const inputs = modal.querySelectorAll(".split-amount-input");
-    const sum = [...inputs].reduce((s, i) => s + (parseFloat(i.value) || 0), 0);
+    const sum = [...inputs].reduce((s, i) => s + (parseAmountInput(i.value) || 0), 0);
     const el  = modal.querySelector("#split-remaining");
     if (!el) return;
     if (total !== undefined) el.dataset.total = total;
@@ -856,7 +856,7 @@ function confirmSplit(itemId, totalAmount) {
     const catSels = [...modal.querySelectorAll(".split-cat-select")];
 
     const parts = inputs.map((inp, i) => ({
-        amount: parseFloat(inp.value) || 0,
+        amount: parseAmountInput(inp.value) || 0,
         category_id: parseInt(catSels[i].value),
     })).filter(p => p.amount > 0);
 
@@ -1054,18 +1054,28 @@ async function undoImport(batchId, count) {
 // here — a confirmed batch is the record of what was imported.
 async function discardImport() {
     const id = stagingBatchId;
-    cancelImport();
-    if (id == null) return;
+    // Hide the review first, but do not start the history read yet. If
+    // cancelImport() starts it before DELETE finishes, the old pending batch
+    // can win the race and remain visible until the user navigates away.
+    cancelImport(false);
+    if (id == null) {
+        loadBankStatus();
+        loadImportHistory();
+        return;
+    }
     try {
         await api(`/api/import/batch/${id}`, { method: "DELETE" });
+        toast("Unfinished import discarded");
     } catch (e) {
         // The rows are already off the screen; a failed cleanup is not worth
         // dragging the user back into a review they asked to leave.
         console.warn("Could not discard import batch", id, e);
     }
+    loadBankStatus();
+    loadImportHistory();
 }
 
-function cancelImport() {
+function cancelImport(refreshHistory = true) {
     stagingBatchId = null;
     stagingItems = [];
     stagingMeta = { filename: "" };
@@ -1075,10 +1085,12 @@ function cancelImport() {
     if (bar) bar.classList.add("hidden");
     csvInput.value = "";
     // Restore the bank card (enterReview hid it) to its state-driven view.
-    loadBankStatus();
-    // Leaving a review always changes the history: a batch was just confirmed,
-    // discarded, or left unfinished.
-    loadImportHistory();
+    if (refreshHistory) {
+        loadBankStatus();
+        // Leaving a review always changes the history: a batch was just
+        // confirmed, discarded, or left unfinished.
+        loadImportHistory();
+    }
 }
 
 async function removeStagingItem(id) {

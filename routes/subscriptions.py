@@ -25,6 +25,8 @@ def recurring():
 
     lookback = _int_arg("lookback_months", 18)
     min_occ = _int_arg("min_occurrences", 3)
+    if min_occ < 2:
+        return jsonify({"error": "min_occurrences must be at least 2"}), 400
 
     key = (uid, lookback, min_occ)
     cached = core.recurring_cache.get(key)

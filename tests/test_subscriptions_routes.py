@@ -143,3 +143,10 @@ def test_history_months_are_clamped(client):
     assert len(client.get("/api/recurring/history?months=0").get_json()["months"]) == 1
     assert len(client.get("/api/recurring/history?months=999").get_json()["months"]) == 36
     assert len(client.get("/api/recurring/history?months=nope").get_json()["months"]) == 12
+
+
+def test_recurring_rejects_minimum_occurrences_below_two(client):
+    for minimum in (0, 1):
+        res = client.get(f"/api/recurring?min_occurrences={minimum}")
+        assert res.status_code == 400
+        assert "at least 2" in res.get_json()["error"]

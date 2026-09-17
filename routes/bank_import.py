@@ -8,6 +8,7 @@ from data.schema import get_db, db_conn
 import config
 from services import enable_banking
 from services.enable_banking import BankAuthError, BankConfigMissing, BankError, SessionExpired
+from services.exchange_rates import ExchangeRateError, convert
 from core import app, limiter, current_user_id
 from routes.csv_import import suggest_category, _staging_response, _cleanup_import_batch
 
@@ -197,8 +198,8 @@ def bank_fetch():
         return jsonify({"error": "session_expired"}), 401
 
     # Guard: the requested account must belong to this user's stored session.
-    account_uids = {a.get("uid") for a in (db.load_json(row["accounts"]) or []) if isinstance(a, dict)}
-    if account_uids and account_uid not in account_uids:
+    account_uids = _cached_account_uids(row["accounts"])
+    if account_uids is None or account_uid not in account_uids:
         return jsonify({"error": "unknown account for this connection"}), 400
 
     try:
@@ -227,20 +228,39 @@ def bank_fetch():
         )
         batch_id = cursor.fetchone()["id"]
 
+        fx_memo = {}
         for txn in txns:
             # Same rule as the CSV path: the suggestion is scoped to the type
             # the bank said the row is (DBIT/CRDT), so a type-blind merchant
             # rule cannot flip a credit into spending. See suggest_category.
+            amount = txn["amount"]
+            fx = None
+            if (txn.get("currency") or "").upper() != "EUR":
+                try:
+                    amount, fx = convert(
+                        conn, uid, amount, txn.get("currency"), txn["date"], fx_memo
+                    )
+                except ValueError as exc:
+                    raise ExchangeRateError(
+                        f"Could not convert bank transaction to EUR: {exc} "
+                        "No transactions were imported."
+                    ) from exc
             suggested = suggest_category(txn["store"], conn, uid, txn["type"])
             conn.execute(
                 "INSERT INTO import_staging "
-                "(user_id, date, store, suggested_category, amount, type, import_batch_id) "
-                "VALUES (%s, %s, %s, %s, %s, %s, %s)",
-                (uid, txn["date"], txn["store"], suggested, txn["amount"],
-                 txn["type"], batch_id),
+                "(user_id, date, store, suggested_category, amount, type, import_batch_id, import_fx) "
+                "VALUES (%s, %s, %s, %s, %s, %s, %s, %s)",
+                (uid, txn["date"], txn["store"], suggested, amount,
+                 txn["type"], batch_id, db.Json(fx) if fx else None),
             )
         conn.commit()
         return _staging_response(conn, uid, batch_id)
+    except ExchangeRateError as e:
+        conn.rollback()
+        if batch_id is not None:
+            _cleanup_import_batch(conn, batch_id, uid)
+            conn.commit()
+        return jsonify({"error": str(e)}), 400
     except Exception as e:
         conn.rollback()
         if batch_id is not None:
@@ -272,3 +292,22 @@ def _valid_iso_date(value):
         return True
     except ValueError:
         return False
+
+
+def _cached_account_uids(raw_json):
+    """Return cached account UIDs, or None when metadata cannot authorize."""
+    try:
+        accounts = db.load_json(raw_json)
+    except (TypeError, ValueError):
+        return None
+    if not isinstance(accounts, list) or not accounts:
+        return None
+    uids = set()
+    for account in accounts:
+        if not isinstance(account, dict):
+            return None
+        uid = account.get("uid")
+        if not isinstance(uid, str) or not uid.strip():
+            return None
+        uids.add(uid)
+    return uids or None

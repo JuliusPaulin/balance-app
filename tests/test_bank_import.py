@@ -587,6 +587,64 @@ def test_fetch_bad_dates(client, login, make_user):
     assert r.status_code == 400
 
 
+@pytest.mark.parametrize("accounts", [[], {"uid": "acc-1"}, [{"name": "missing uid"}]])
+def test_fetch_fails_closed_for_empty_or_malformed_cached_accounts(
+    client, login, make_user, accounts
+):
+    uid = make_user()
+    _insert_bank_session(uid, accounts=accounts)
+    login(client, uid)
+    r = client.post("/api/import/bank/fetch", json={
+        "account_uid": "acc-1", "date_from": "2025-01-01", "date_to": "2025-01-31",
+    })
+    assert r.status_code == 400
+    assert r.get_json()["error"] == "unknown account for this connection"
+
+
+def test_fetch_converts_non_eur_with_dated_provenance_before_staging(
+    client, login, make_user, monkeypatch
+):
+    uid = make_user()
+    _insert_bank_session(uid)
+    login(client, uid)
+    monkeypatch.setattr(eb, "get_transactions", lambda *args: [{
+        "date": "2025-01-05", "store": "K-Market", "amount": 10,
+        "type": "expense", "currency": "SEK", "reference": "r1",
+    }])
+    from routes import bank_import as bank_route
+    monkeypatch.setattr(bank_route, "convert", lambda conn, user, amount, currency, day, memo: (
+        0.88, {"amount": "10", "currency": currency, "date": day,
+               "rate": "0.088", "rate_date": "2025-01-03", "provider": "ECB"}
+    ))
+    r = client.post("/api/import/bank/fetch", json={
+        "account_uid": "acc-1", "date_from": "2025-01-01", "date_to": "2025-01-31",
+    })
+    assert r.status_code == 200
+    assert r.get_json()["items"][0]["amount"] == 0.88
+    assert r.get_json()["items"][0]["import_fx"]["rate_date"] == "2025-01-03"
+
+
+def test_fetch_rejects_unconvertible_non_eur_before_staging(
+    client, login, make_user, monkeypatch
+):
+    uid = make_user()
+    _insert_bank_session(uid)
+    login(client, uid)
+    monkeypatch.setattr(eb, "get_transactions", lambda *args: [{
+        "date": "2025-01-05", "store": "K-Market", "amount": 10,
+        "type": "expense", "currency": "SEK", "reference": "r1",
+    }])
+    from routes import bank_import as bank_route
+    monkeypatch.setattr(bank_route, "convert", lambda *args: (_ for _ in ()).throw(
+        ValueError("rate unavailable")
+    ))
+    r = client.post("/api/import/bank/fetch", json={
+        "account_uid": "acc-1", "date_from": "2025-01-01", "date_to": "2025-01-31",
+    })
+    assert r.status_code == 400
+    assert "No transactions were imported" in r.get_json()["error"]
+
+
 def test_disconnect_deletes_row(client, login, make_user):
     uid = make_user()
     _insert_bank_session(uid)

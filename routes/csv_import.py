@@ -915,22 +915,52 @@ def confirm_imports():
     # Read up front: every row written below is stamped with it, which is what
     # makes an import undoable as one thing.
     batch_id = data.get("batch_id")
+    if batch_id is None:
+        return jsonify({"error": "Missing import batch"}), 400
 
     try:
         with db_conn() as conn:
+            # SQLite's default deferred transaction leaves the read checks
+            # below open to a concurrent confirmation observing the same
+            # pending batch. Claim the write lock before checking status so
+            # only one request can confirm a batch.
+            conn.execute("BEGIN IMMEDIATE")
+            batch = conn.execute(
+                "SELECT status FROM import_batches WHERE id = %s AND user_id = %s",
+                (batch_id, uid),
+            ).fetchone()
+            if not batch:
+                return jsonify({"error": "No such import"}), 404
+            if batch["status"] != "pending":
+                return jsonify({"error": "That import was already confirmed"}), 409
+
             confirmed_staging_ids = set()
+            seen_staging_ids = set()
 
             for item in items:
+                if not isinstance(item, dict):
+                    raise ValueError("Import item must be an object")
                 # splits pass staging_id; normal items pass id
                 staging_id = item.get("staging_id") or item.get("id")
                 if staging_id is None:
                     raise ValueError("Item is missing a staging id")
+                is_split = item.get("staging_id") is not None
+                if staging_id in seen_staging_ids and not is_split:
+                    raise ValueError(f"Duplicate import item {staging_id}")
+                seen_staging_ids.add(staging_id)
                 staging = conn.execute(
-                    "SELECT * FROM import_staging WHERE id = %s AND user_id = %s",
-                    (staging_id, uid),
+                    "SELECT * FROM import_staging WHERE id = %s AND user_id = %s "
+                    "AND import_batch_id = %s",
+                    (staging_id, uid, batch_id),
                 ).fetchone()
                 if not staging:
-                    continue
+                    raise ValueError("Import item does not belong to this batch")
+                # A split sends several virtual parts for one staging row. The
+                # first part marks that row confirmed; later parts in this
+                # same atomic request must still be allowed. A row that was
+                # already confirmed before this request remains a replay.
+                if staging["confirmed"] and staging_id not in confirmed_staging_ids:
+                    raise ValueError(f"Import item {staging_id} was already confirmed")
 
                 amount = item.get("amount", staging["amount"])
                 store  = item.get("store",  staging["store"])
@@ -941,19 +971,22 @@ def confirm_imports():
                     raise ValueError(f"Unrecognized date on item {staging_id}")
 
                 # The target category must belong to this user.
+                txn_type = item.get("type") or staging["type"] or "expense"
                 cat = conn.execute(
-                    "SELECT 1 FROM categories WHERE id = %s AND user_id = %s",
+                    "SELECT type FROM categories WHERE id = %s AND user_id = %s",
                     (item["category_id"], uid),
                 ).fetchone()
                 if not cat:
                     raise ValueError("Invalid category for import item")
+                if txn_type not in ("expense", "income") or cat["type"] != txn_type:
+                    raise ValueError("Category type does not match transaction type")
 
                 conn.execute("""
                     INSERT INTO transactions
                         (user_id, date, store, category_id, amount, type, import_batch_id, import_fx)
                     VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
                 """, (uid, date, store, item["category_id"], amount,
-                      item.get("type") or staging["type"] or "expense", batch_id, staging["import_fx"]))
+                      txn_type, batch_id, staging["import_fx"]))
 
                 if staging_id not in confirmed_staging_ids:
                     conn.execute("""

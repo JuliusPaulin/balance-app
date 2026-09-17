@@ -399,6 +399,8 @@ def detect_recurring(conn, user_id, lookback_months: int = 18,
     Each item carries a ``signature`` and an ``is_transfer`` flag. Transfer /
     investment series are detected but excluded from the summary expense total.
     """
+    if min_occurrences < 2:
+        raise ValueError("min_occurrences must be at least 2")
     today = today or date.today()
     cutoff = today - timedelta(days=int(lookback_months * 30.4))
 
@@ -457,7 +459,7 @@ def detect_recurring(conn, user_id, lookback_months: int = 18,
 
         gaps = [(dates[i] - dates[i - 1]).days for i in range(1, len(dates))]
         gaps = [gp for gp in gaps if gp > 0]  # drop same-day duplicates
-        if len(gaps) < min_occurrences - 1:
+        if not gaps or len(gaps) < min_occurrences - 1:
             continue
 
         median_gap = statistics.median(gaps)

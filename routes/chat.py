@@ -13,6 +13,7 @@ from flask import Blueprint, Response, jsonify, request, stream_with_context
 import config
 from ai.backends import BackendUnavailable
 from ai.chat import chat as run_chat, status as backend_status
+from core import limiter
 
 bp = Blueprint("chat", __name__)
 
@@ -95,6 +96,7 @@ def _read_conversation(body):
 
 
 @bp.route("/api/chat", methods=["POST"])
+@limiter.limit("30/hour")
 def chat():
     """Answer one turn. Body: {"messages": [{"role", "content"}, ...]}."""
     cleaned, error = _read_conversation(request.get_json(silent=True) or {})
@@ -125,6 +127,7 @@ def _sse(event):
 
 
 @bp.route("/api/chat/stream", methods=["POST"])
+@limiter.limit("30/hour")
 def chat_stream():
     """The same turn, watchable while it happens.
 

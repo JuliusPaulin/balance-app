@@ -21,7 +21,7 @@ function openNoteModal(month) {
             <div class="modal">
                 <div class="modal-title">Note for ${label}</div>
                 <div class="form-group">
-                    <textarea class="note-textarea" id="modal-note-text" placeholder="Add a note for this month…">${note}</textarea>
+                <textarea class="note-textarea" id="modal-note-text" placeholder="Add a note for this month…">${escapeHtml(note)}</textarea>
                 </div>
                 <div class="modal-actions">
                     <button class="btn btn-secondary" onclick="this.closest('.modal-overlay').remove()">Cancel</button>
@@ -328,8 +328,8 @@ function renderBreakdownBars(containerId, breakdown, type) {
         // on both sides, and the wrong id would drill into the wrong category.
         const catId = categories.find(c => c.name === item.name && c.type === type)?.id ?? "";
         const { tick, delta, hot } = baselineMarks(item, max, type);
-        return `<div class="cat-bar-row" style="cursor:pointer" onclick="openCategoryDrilldown(${catId},'${item.name.replace(/'/g,"\\'")}')">
-            <div class="cat-bar-label"><span class="cat-dot" style="background:${catDotColor(catId)}"></span>${item.name}</div>
+        return `<div class="cat-bar-row" style="cursor:pointer" onclick="openCategoryDrilldown(${catId},${escapeHtml(JSON.stringify(String(item.name)))})">
+        <div class="cat-bar-label"><span class="cat-dot" style="background:${catDotColor(catId)}"></span>${escapeHtml(item.name)}</div>
             <div class="cat-bar-track"><div class="cat-bar-fill${hot ? " over" : ""}" style="width:${width}%${hot ? "" : `;background:${fill}`}"></div>${tick}</div>
             <div class="cat-bar-amount">${fmt(item.total)} <span class="cat-bar-pct-inline">· ${pct}%</span>${delta}</div>
         </div>`;
@@ -392,20 +392,20 @@ async function openCategoryDrilldown(catId, catName) {
     if (!catId) return;
     let url = `/api/transactions?category_ids=${catId}&sort=amount&dir=desc&per_page=500`;
     if (breakdownMonths.length > 0) url += `&months=${breakdownMonths.join(",")}`;
-    const data = await api(url);
+    const data = await fetchAllDashboardTransactions(url);
     const rows = data.items || [];
-    const total = rows.reduce((s, r) => s + r.amount, 0);
+    const total = data.sum_expense + data.sum_income;
 
     const tableRows = rows.map(r => `
         <tr>
             <td style="font-size:13px;white-space:nowrap">${fmtDate(r.date)}</td>
-            <td style="font-size:13px">${r.store || "—"}</td>
+            <td style="font-size:13px">${escapeHtml(r.store || "—")}</td>
             <td class="amount" style="font-size:13px;white-space:nowrap">${fmt2(r.amount)}</td>
         </tr>`).join("");
 
     const html = `<div class="modal-overlay" onclick="if(event.target===this)this.remove()">
         <div class="modal" style="max-width:560px">
-            <div class="modal-title">${catName}</div>
+            <div class="modal-title">${escapeHtml(catName)}</div>
             <div style="max-height:420px;overflow-y:auto;margin:0 -4px">
                 <table style="width:100%">
                     <thead><tr>
@@ -428,16 +428,29 @@ async function openCategoryDrilldown(catId, catName) {
     document.body.insertAdjacentHTML("beforeend", html);
 }
 
+async function fetchAllDashboardTransactions(url) {
+    const first = await api(url);
+    const items = [...(first.items || [])];
+    const pageSize = Number(new URLSearchParams(url.split("?")[1] || "").get("per_page")) || 50;
+    const pages = Math.ceil((first.total || items.length) / pageSize);
+    for (let page = 2; page <= pages; page++) {
+        const sep = url.includes("?") ? "&" : "?";
+        const next = await api(`${url}${sep}page=${page}`);
+        items.push(...(next.items || []));
+    }
+    return { ...first, items };
+}
+
 // Clicking a Monthly Summary row lists everything in that month.
 async function openMonthDrilldown(month) {
-    const data = await api(`/api/transactions?months=${month}&sort=date&dir=desc&per_page=1000`);
+    const data = await fetchAllDashboardTransactions(`/api/transactions?months=${month}&sort=date&dir=desc&per_page=1000`);
     const rows = data.items || [];
 
     const tableRows = rows.length ? rows.map(r => `
         <tr>
             <td style="font-size:13px;white-space:nowrap">${fmtDate(r.date)}</td>
-            <td style="font-size:13px">${r.store || "—"}</td>
-            <td style="font-size:13px;color:var(--text-secondary)">${r.category_name || "—"}</td>
+            <td style="font-size:13px">${escapeHtml(r.store || "—")}</td>
+            <td style="font-size:13px;color:var(--text-secondary)">${escapeHtml(r.category_name || "—")}</td>
             <td class="amount ${r.type === "income" ? "income" : ""}" style="font-size:13px;white-space:nowrap;text-align:right">${r.type === "income" ? "+" : "−"}${fmt2(r.amount)}</td>
         </tr>`).join("")
         : `<tr><td colspan="4" style="text-align:center;padding:24px;color:var(--text-tertiary)">No transactions this month</td></tr>`;
@@ -614,7 +627,7 @@ function renderSummaryTable(monthly) {
     function noteBtn(month) {
         const hasNote = monthsWithNotes.has(month);
         // stopPropagation: the row itself now opens the month.
-        return `<button class="note-btn ${hasNote ? "has-note" : ""}" onclick="event.stopPropagation();openNoteModal('${month}')" title="${hasNote ? "View/edit note" : "Add note"}">
+        return `<button class="note-btn ${hasNote ? "has-note" : ""}" onclick="event.stopPropagation();openNoteModal(${escapeHtml(JSON.stringify(String(month)))})" title="${hasNote ? "View/edit note" : "Add note"}">
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
                 <path d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5"/>
                 <path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/>
@@ -639,7 +652,7 @@ function renderSummaryTable(monthly) {
             const collapsed = yearViewCollapsed[year] ?? true;
             const chevron = collapsed ? "collapsed" : "";
 
-            html += `<tr class="row-year" onclick="toggleYear('${year}')">
+            html += `<tr class="row-year" onclick="toggleYear(${escapeHtml(JSON.stringify(String(year)))})">
                 <td><span class="year-chevron ${chevron}">&#9660;</span>${year}</td>
                 <td style="text-align:right" class="amount income">+${fmt(y.income)}</td>
                 <td style="text-align:right" class="amount">${fmt(y.expense)}</td>
@@ -648,7 +661,7 @@ function renderSummaryTable(monthly) {
             </tr>`;
 
             y.months.reverse().forEach(d => {
-                html += `<tr class="row-month row-clickable ${collapsed ? "hidden" : ""}" data-year="${year}" onclick="openMonthDrilldown('${d.month}')">
+                html += `<tr class="row-month row-clickable ${collapsed ? "hidden" : ""}" data-year="${escapeHtml(year)}" onclick="openMonthDrilldown(${escapeHtml(JSON.stringify(String(d.month)))})">
                     <td style="padding-left:36px">${monthLabel(d.month)}<span class="row-go">&#8250;</span></td>
                     <td style="text-align:right" class="amount income">+${fmt(d.income)}</td>
                     <td style="text-align:right" class="amount">${fmt(d.expense)}</td>
@@ -660,7 +673,7 @@ function renderSummaryTable(monthly) {
 
         tbody.innerHTML = html;
     } else {
-        tbody.innerHTML = monthData.slice().reverse().map(d => `<tr class="row-clickable" onclick="openMonthDrilldown('${d.month}')">
+        tbody.innerHTML = monthData.slice().reverse().map(d => `<tr class="row-clickable" onclick="openMonthDrilldown(${escapeHtml(JSON.stringify(String(d.month)))})">
             <td>${monthLabel(d.month)}<span class="row-go">&#8250;</span></td>
             <td style="text-align:right" class="amount income">+${fmt(d.income)}</td>
             <td style="text-align:right" class="amount">${fmt(d.expense)}</td>
@@ -781,8 +794,8 @@ async function openDayDrilldown(dateStr) {
     const total = rows.reduce((s, r) => s + r.amount, 0);
     const tableRows = rows.map(r => `
         <tr>
-            <td style="font-size:13px">${r.store || "—"}</td>
-            <td style="font-size:13px"><span class="category-tag">${r.category_name}</span></td>
+            <td style="font-size:13px">${escapeHtml(r.store || "—")}</td>
+            <td style="font-size:13px"><span class="category-tag">${escapeHtml(r.category_name || "")}</span></td>
             <td class="amount" style="font-size:13px;white-space:nowrap;text-align:right">${fmt2(r.amount)}</td>
         </tr>`).join("");
 
@@ -810,4 +823,3 @@ async function openDayDrilldown(dateStr) {
     </div>`;
     document.body.insertAdjacentHTML("beforeend", html);
 }
-

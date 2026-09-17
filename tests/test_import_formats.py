@@ -11,6 +11,7 @@ so each user's data is created in committed `db.db_conn()` blocks via the
 """
 
 import io
+from concurrent.futures import ThreadPoolExecutor
 
 from data import db
 
@@ -370,10 +371,11 @@ def test_discard_refuses_a_confirmed_batch(client, login, make_user, fresh_conn)
     login(uid)
     batch_id = _upload(client, FINNISH_BANK_CSV).get_json()["batch_id"]
     staged = fresh_conn(lambda c: c.execute(
-        "SELECT id FROM import_staging WHERE user_id = %s", (uid,)).fetchall())
-    cat = fresh_conn(lambda c: c.execute(
-        "SELECT id FROM categories WHERE user_id = %s LIMIT 1", (uid,)).fetchone())["id"]
-    items = [{"id": r["id"], "category_id": cat} for r in staged]
+        "SELECT id, type FROM import_staging WHERE user_id = %s", (uid,)).fetchall())
+    cats = fresh_conn(lambda c: c.execute(
+        "SELECT id, type FROM categories WHERE user_id = %s", (uid,)).fetchall())
+    cat = {c["type"]: c["id"] for c in cats}
+    items = [{"id": r["id"], "category_id": cat[r["type"]]} for r in staged]
     assert client.post("/api/import/confirm",
                        json={"items": items, "batch_id": batch_id}).status_code == 200
 
@@ -394,10 +396,11 @@ def _confirm(client, fresh_conn, uid, batch_id):
     staged = fresh_conn(lambda c: c.execute(
         "SELECT id, type FROM import_staging WHERE import_batch_id = %s AND user_id = %s",
         (batch_id, uid)).fetchall())
-    cat = fresh_conn(lambda c: c.execute(
-        "SELECT id FROM categories WHERE user_id = %s LIMIT 1", (uid,)).fetchone())["id"]
+    cats = fresh_conn(lambda c: c.execute(
+        "SELECT id, type FROM categories WHERE user_id = %s", (uid,)).fetchall())
+    cat = {c["type"]: c["id"] for c in cats}
     return client.post("/api/import/confirm", json={
-        "items": [{"id": r["id"], "category_id": cat, "type": r["type"]} for r in staged],
+        "items": [{"id": r["id"], "category_id": cat[r["type"]], "type": r["type"]} for r in staged],
         "batch_id": batch_id,
     })
 
@@ -441,19 +444,125 @@ def test_confirm_keeps_the_staged_type_when_the_client_omits_it(client, login, m
     login(uid)
     batch_id = _upload(client, FINNISH_BANK_CSV).get_json()["batch_id"]
     staged = fresh_conn(lambda c: c.execute(
-        "SELECT id FROM import_staging WHERE user_id = %s", (uid,)).fetchall())
-    cat = fresh_conn(lambda c: c.execute(
-        "SELECT id FROM categories WHERE user_id = %s LIMIT 1", (uid,)).fetchone())["id"]
+        "SELECT id, type FROM import_staging WHERE user_id = %s", (uid,)).fetchall())
+    cats = fresh_conn(lambda c: c.execute(
+        "SELECT id, type FROM categories WHERE user_id = %s", (uid,)).fetchall())
+    cat = {c["type"]: c["id"] for c in cats}
     # No "type" on any item: staging already knows which row was the salary,
     # so defaulting the lot to expense would throw that away.
     client.post("/api/import/confirm", json={
-        "items": [{"id": r["id"], "category_id": cat} for r in staged],
+        "items": [{"id": r["id"], "category_id": cat[r["type"]]} for r in staged],
         "batch_id": batch_id,
     })
     kinds = fresh_conn(lambda c: c.execute(
         "SELECT type, count(*) n FROM transactions WHERE user_id = %s GROUP BY type",
         (uid,)).fetchall())
     assert {r["type"]: r["n"] for r in kinds} == {"expense": 1, "income": 1}
+
+
+def test_confirm_rejects_staging_row_from_another_batch(client, login, make_user, fresh_conn):
+    uid = make_user()
+    login(client, uid)
+    first = _upload(client, FINNAIR_CSV).get_json()["batch_id"]
+    second = _upload(client, FINNISH_BANK_CSV).get_json()["batch_id"]
+    row = fresh_conn(lambda c: c.execute(
+        "SELECT id, type FROM import_staging WHERE import_batch_id = %s", (first,)).fetchone())
+    cat = fresh_conn(lambda c: c.execute(
+        "SELECT id FROM categories WHERE user_id = %s AND type = %s", (uid, row["type"])).fetchone())["id"]
+    response = client.post("/api/import/confirm", json={
+        "batch_id": second, "items": [{"id": row["id"], "category_id": cat}],
+    })
+    assert response.status_code == 400
+    assert "does not belong" in response.get_json()["error"]
+
+
+def test_confirm_rejects_replay_of_confirmed_staging_row(client, login, make_user, fresh_conn):
+    uid = make_user()
+    login(client, uid)
+    batch_id = _upload(client, FINNAIR_CSV).get_json()["batch_id"]
+    assert _confirm(client, fresh_conn, uid, batch_id).status_code == 200
+    row = fresh_conn(lambda c: c.execute(
+        "SELECT id, type, final_category_id FROM import_staging WHERE import_batch_id = %s",
+        (batch_id,)).fetchone())
+    response = client.post("/api/import/confirm", json={
+        "batch_id": batch_id,
+        "items": [{"id": row["id"], "category_id": row["final_category_id"], "type": row["type"]}],
+    })
+    assert response.status_code == 409
+
+
+def test_confirm_rejects_category_type_mismatch(client, login, make_user, fresh_conn):
+    uid = make_user()
+    login(client, uid)
+    batch_id = _upload(client, FINNAIR_CSV).get_json()["batch_id"]
+    row = fresh_conn(lambda c: c.execute(
+        "SELECT id, type FROM import_staging WHERE import_batch_id = %s", (batch_id,)).fetchone())
+    wrong = fresh_conn(lambda c: c.execute(
+        "SELECT id FROM categories WHERE user_id = %s AND type != %s", (uid, row["type"])).fetchone())["id"]
+    response = client.post("/api/import/confirm", json={
+        "batch_id": batch_id, "items": [{"id": row["id"], "category_id": wrong}],
+    })
+    assert response.status_code == 400
+    assert "type does not match" in response.get_json()["error"]
+
+
+def test_confirm_allows_multiple_parts_for_one_staging_row(client, login, make_user, fresh_conn):
+    uid = make_user()
+    login(client, uid)
+    batch_id = _upload(client, FINNAIR_CSV).get_json()["batch_id"]
+    row = fresh_conn(lambda c: c.execute(
+        "SELECT id, type, amount FROM import_staging WHERE import_batch_id = %s",
+        (batch_id,),
+    ).fetchone())
+    cat = fresh_conn(lambda c: c.execute(
+        "SELECT id FROM categories WHERE user_id = %s AND type = %s LIMIT 1",
+        (uid, row["type"]),
+    ).fetchone())["id"]
+    part = row["amount"] / 2
+
+    response = client.post("/api/import/confirm", json={
+        "batch_id": batch_id,
+        "items": [
+            {"staging_id": row["id"], "category_id": cat, "type": row["type"], "amount": part},
+            {"staging_id": row["id"], "category_id": cat, "type": row["type"], "amount": part},
+        ],
+    })
+    assert response.status_code == 200
+    transactions = fresh_conn(lambda c: c.execute(
+        "SELECT amount, import_batch_id FROM transactions WHERE user_id = %s "
+        "AND import_batch_id = %s ORDER BY id",
+        (uid, batch_id),
+    ).fetchall())
+    assert len(transactions) == 2
+    assert sum(r["amount"] for r in transactions) == row["amount"]
+
+
+def test_concurrent_confirm_can_create_only_one_import(client, login, make_user, fresh_conn):
+    uid = make_user()
+    login(client, uid)
+    batch_id = _upload(client, FINNAIR_CSV).get_json()["batch_id"]
+    row = fresh_conn(lambda c: c.execute(
+        "SELECT id, type FROM import_staging WHERE import_batch_id = %s",
+        (batch_id,),
+    ).fetchone())
+    cat = fresh_conn(lambda c: c.execute(
+        "SELECT id FROM categories WHERE user_id = %s AND type = %s LIMIT 1",
+        (uid, row["type"]),
+    ).fetchone())["id"]
+    payload = {
+        "batch_id": batch_id,
+        "items": [{"id": row["id"], "category_id": cat, "type": row["type"]}],
+    }
+
+    def confirm_once():
+        with client.application.test_client() as request_client:
+            return request_client.post("/api/import/confirm", json=payload).status_code
+
+    with ThreadPoolExecutor(max_workers=2) as pool:
+        statuses = sorted(pool.map(lambda _: confirm_once(), range(2)))
+
+    assert statuses == [200, 409]
+    assert _count(fresh_conn, "transactions", uid) == 1
 
 
 def test_undo_refuses_a_review_that_was_never_confirmed(client, login, make_user):

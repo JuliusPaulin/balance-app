@@ -65,7 +65,7 @@ async function loadTrends() {
         const makeSection = (label, list) => {
             if (!list.length) return "";
             return `<div style="padding:5px 10px 2px;font-size:10px;font-weight:700;color:var(--text-tertiary);text-transform:uppercase;letter-spacing:0.6px">${label}</div>` +
-                list.map(c => `<label class="trend-option trends-cat-opt" data-name="${c.name.replace(/"/g,"&quot;")}" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:6px 10px">
+                list.map(c => `<label class="trend-option trends-cat-opt" data-name="${escapeHtml(c.name)}" style="display:flex;align-items:center;gap:8px;cursor:pointer;padding:6px 10px">
                     <input type="checkbox" value="${c.id}" style="width:14px;height:14px;flex-shrink:0;cursor:pointer">
                     <span style="font-size:13px">${escapeHtml(c.name)}</span>
                 </label>`).join("");
@@ -76,18 +76,19 @@ async function loadTrends() {
 }
 
 // ── Shared drilldown modal ────────────────────────────────────────────
-function openTrendsDrilldownModal(title, rows) {
-    const total     = rows.reduce((s, r) => s + r.amount, 0);
+function openTrendsDrilldownModal(title, rows, serverTotal = null, serverCount = null) {
+    const total     = serverTotal ?? rows.reduce((s, r) => s + r.amount, 0);
+    const count     = serverCount ?? rows.length;
     const tableRows = rows.map(r => `
         <tr>
             <td style="font-size:13px;white-space:nowrap">${fmtDate(r.date)}</td>
-            <td style="font-size:13px">${r.store || "—"}</td>
-            <td style="font-size:13px"><span class="category-tag">${r.category_name || ""}</span></td>
+            <td style="font-size:13px">${escapeHtml(r.store || "—")}</td>
+            <td style="font-size:13px"><span class="category-tag">${escapeHtml(r.category_name || "")}</span></td>
             <td class="amount" style="font-size:13px;text-align:right;white-space:nowrap">${fmt2(r.amount)}</td>
         </tr>`).join("");
     document.body.insertAdjacentHTML("beforeend", `<div class="modal-overlay" onclick="if(event.target===this)this.remove()">
         <div class="modal" style="max-width:640px">
-            <div class="modal-title">${title}</div>
+            <div class="modal-title">${escapeHtml(title)}</div>
             <div style="max-height:460px;overflow-y:auto;margin:0 -4px">
                 <table style="width:100%">
                     <thead><tr>
@@ -96,7 +97,7 @@ function openTrendsDrilldownModal(title, rows) {
                     </tr></thead>
                     <tbody>${tableRows}</tbody>
                     <tfoot><tr style="border-top:1px solid var(--border)">
-                        <td colspan="3" style="font-size:13px;font-weight:600;padding-top:8px">Total (${rows.length} transactions)</td>
+                        <td colspan="3" style="font-size:13px;font-weight:600;padding-top:8px">Total (${count} transactions)</td>
                         <td style="font-size:13px;font-weight:600;padding-top:8px;text-align:right" class="amount">${fmt(total)}</td>
                     </tr></tfoot>
                 </table>
@@ -109,9 +110,9 @@ function openTrendsDrilldownModal(title, rows) {
 }
 
 async function openTrendsMonthDrilldown(month) {
-    const res     = await api(`/api/transactions?category_ids=${trendsSelectedCatIds.join(",")}&month=${month}&sort=amount&dir=desc&per_page=500`);
+    const res     = await fetchAllTrendsTransactions(`/api/transactions?category_ids=${trendsSelectedCatIds.join(",")}&month=${month}&sort=amount&dir=desc&per_page=500`);
     const catName = trendsCachedData ? trendsCachedData.category.name : "Category";
-    openTrendsDrilldownModal(`${catName} — ${monthLabelFull(month)}`, res.items || []);
+    openTrendsDrilldownModal(`${catName} — ${monthLabelFull(month)}`, res.items || [], res.sum_expense + res.sum_income, res.total);
 }
 
 async function openTrendsMerchantDrilldown(store) {
@@ -121,8 +122,21 @@ async function openTrendsMerchantDrilldown(store) {
         d.setMonth(d.getMonth() - trendsPeriod);
         url += `&date_from=${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,"0")}-01`;
     }
-    const res = await api(url);
-    openTrendsDrilldownModal(store, res.items || []);
+    const res = await fetchAllTrendsTransactions(url);
+    openTrendsDrilldownModal(store, res.items || [], res.sum_expense + res.sum_income, res.total);
+}
+
+async function fetchAllTrendsTransactions(url) {
+    const first = await api(url);
+    const items = [...(first.items || [])];
+    const pageSize = Number(new URLSearchParams(url.split("?")[1] || "").get("per_page")) || 50;
+    const pages = Math.ceil((first.total || items.length) / pageSize);
+    for (let page = 2; page <= pages; page++) {
+        const sep = url.includes("?") ? "&" : "?";
+        const next = await api(`${url}${sep}page=${page}`);
+        items.push(...(next.items || []));
+    }
+    return { ...first, items };
 }
 
 // ── Utilities ─────────────────────────────────────────────────────────
@@ -317,8 +331,8 @@ function renderTrendsMerchants(data) {
     // than a rainbow (same reasoning as design #8).
     container.innerHTML = data.top_merchants.map(m => {
         const width = Math.max(2, (m.total / max) * 100).toFixed(1);
-        const safe  = m.store.replace(/'/g, "\\'");
-        return `<div class="cat-bar-row" style="cursor:pointer" title="Click to view transactions" onclick="openTrendsMerchantDrilldown('${safe}')">
+        const safe  = escapeHtml(JSON.stringify(String(m.store)));
+        return `<div class="cat-bar-row" style="cursor:pointer" title="Click to view transactions" onclick="openTrendsMerchantDrilldown(${safe})">
             <div class="cat-bar-label" title="${escapeHtml(m.store)}">${escapeHtml(m.store)}</div>
             <div class="cat-bar-track"><div class="cat-bar-fill" style="width:${width}%;background:${rgbaVar("--accent", 0.55)}"></div></div>
             <div class="cat-bar-amount">${fmt(m.total)} <span class="cat-bar-pct-inline">· ${m.count}×</span></div>
@@ -508,8 +522,7 @@ function applyTrendsTopTxSort() {
     tbody.innerHTML = sorted.map((t, i) => `<tr>
         <td style="color:var(--text-tertiary);font-weight:600">${i + 1}</td>
         <td>${fmtDate(t.date)}</td>
-        <td>${t.store || "—"}</td>
+        <td>${escapeHtml(t.store || "—")}</td>
         <td style="text-align:right" class="amount expense">${fmt2(t.amount)}</td>
     </tr>`).join("");
 }
-

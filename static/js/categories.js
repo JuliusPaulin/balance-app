@@ -53,10 +53,10 @@ function categoryRow(c) {
             <div style="font-size:11px;color:var(--text-tertiary)">${used}</div>
         </div>
         <div class="btn-group">
-            <button class="btn-icon" onclick="editCategory(${c.id},'${c.name.replace(/'/g, "\\'")}','${c.type}')" title="Edit">
+            <button class="btn-icon" onclick="editCategory(${c.id},${escapeHtml(JSON.stringify(String(c.name)))},${escapeHtml(JSON.stringify(String(c.type)))})" title="Edit">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M11 4H4a2 2 0 00-2 2v14a2 2 0 002 2h14a2 2 0 002-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 013 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
             </button>
-            <button class="btn-icon" onclick="deleteCategory(${c.id},'${c.name.replace(/'/g, "\\'")}')" title="Delete">
+            <button class="btn-icon" onclick="deleteCategory(${c.id},${escapeHtml(JSON.stringify(String(c.name)))})" title="Delete">
                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 6h18M19 6v14a2 2 0 01-2 2H7a2 2 0 01-2-2V6m3 0V4a2 2 0 012-2h4a2 2 0 012 2v2"/></svg>
             </button>
         </div>
@@ -99,7 +99,7 @@ function openCategoryModal(id = null, name = "", type = "expense") {
             <div class="modal-title">${isEdit ? "Edit" : "Add"} Category</div>
             <div class="form-group">
                 <label class="form-label">Name</label>
-                <input class="form-input" id="modal-cat-name" value="${name}">
+        <input class="form-input" id="modal-cat-name" value="${escapeHtml(name)}">
             </div>
             <div class="form-group">
                 <label class="form-label">Type</label>
@@ -148,7 +148,7 @@ async function deleteCategory(id, name) {
     const txCount = categories.find(c => c.id === id)?.tx_count || 0;
     const html = `<div class="modal-overlay" onclick="if(event.target===this)this.remove()">
         <div class="modal">
-            <div class="modal-title">Delete "${name}"?</div>
+            <div class="modal-title">Delete "${escapeHtml(name)}"?</div>
             <p class="text-sm text-muted mb-4">${txCount ? `Reassign its ${txCount.toLocaleString()} transaction${txCount === 1 ? "" : "s"} to:` : "No transactions use this category. Pick a fallback anyway:"}</p>
             <select class="form-select" id="modal-reassign">${options}</select>
             <div class="modal-actions">
@@ -167,4 +167,3 @@ async function confirmDeleteCategory(id) {
     await loadCategories();
     toast("Category deleted");
 }
-

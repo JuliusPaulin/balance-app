@@ -59,6 +59,32 @@ def test_unknown_category_is_refused(client, login, make_user):
     assert res.get_json()["error"] == "Category not found"
 
 
+def test_transaction_type_must_match_category_type(client, login, make_user):
+    make_user()
+    groceries = cat_id(client, "Groceries")
+    job = cat_id(client, "Job", "income")
+    post = client.post("/api/transactions", json={
+        "date": "2026-04-01", "store": "Salary", "category_id": groceries,
+        "amount": 1.0, "type": "income"})
+    assert post.status_code == 400
+    created = add_tx(client, "2026-04-01", "Salary", job, 1.0, "income")
+    put = client.put(f"/api/transactions/{created['id']}", json={
+        "date": "2026-04-02", "store": "Salary", "category_id": groceries,
+        "amount": 1.0, "type": "income"})
+    assert put.status_code == 400
+
+
+def test_transaction_dates_must_be_real_calendar_dates(client, login, make_user):
+    make_user()
+    groceries = cat_id(client, "Groceries")
+    payload = {"date": "2026-02-30", "store": "x", "category_id": groceries,
+               "amount": 1.0, "type": "expense"}
+    assert client.post("/api/transactions", json=payload).status_code == 400
+    created = add_tx(client, "2026-04-01", "x", groceries, 1.0)
+    payload["date"] = "not-a-date"
+    assert client.put(f"/api/transactions/{created['id']}", json=payload).status_code == 400
+
+
 def test_missing_transaction_is_a_404(client, login, make_user):
     make_user()
     groceries = cat_id(client, "Groceries")

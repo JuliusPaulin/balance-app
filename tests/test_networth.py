@@ -109,3 +109,22 @@ def test_latest_balance_reported(user_conn):
     acc = networth.summary(conn, uid, today=TODAY)["accounts"][0]
     assert acc["latest_balance"] == 300
     assert acc["latest_as_of"] == "2026-05-01"
+
+
+def test_balance_and_close_dates_must_be_real_calendar_dates(client):
+    account = client.post("/api/accounts", json={
+        "name": "Cash", "type": "asset"}).get_json()
+    account_id = account["id"]
+    assert client.post(f"/api/accounts/{account_id}/balances", json={
+        "as_of": "2026-02-30", "balance": 100}).status_code == 400
+    assert client.post(f"/api/accounts/{account_id}/close",
+                       json={"as_of": "2026-02-30"}).status_code == 400
+
+
+def test_investment_confirmation_rejects_impossible_snapshot_date(client):
+    res = client.post("/api/networth/import-investments/confirm", json={
+        "accounts": [{"include": True, "as_of": "2026-02-30",
+                      "external_id": "test", "name": "Test", "kind": "cash",
+                      "type": "asset", "total_eur": 10}]})
+    assert res.status_code == 400
+    assert "as_of must be YYYY-MM-DD" in res.get_json()["error"]

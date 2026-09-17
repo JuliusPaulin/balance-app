@@ -1,6 +1,7 @@
 """Accounts, their balances over time, net worth, holdings and the investment import."""
 
 import re
+from datetime import datetime
 from flask import Blueprint, request, jsonify
 from data.schema import db_conn, backup_db
 from services import networth
@@ -8,6 +9,14 @@ from services import investment_import
 from core import current_user_id
 
 bp = Blueprint("net_worth", __name__)
+
+
+def _valid_date(value):
+    try:
+        datetime.strptime(value, "%Y-%m-%d")
+        return True
+    except (TypeError, ValueError):
+        return False
 
 
 @bp.route("/api/accounts")
@@ -95,7 +104,7 @@ def close_account(account_id):
     uid = current_user_id()
     data = request.json or {}
     as_of = (data.get("as_of") or "").strip()
-    if not _DATE_RE.match(as_of):
+    if not _DATE_RE.match(as_of) or not _valid_date(as_of):
         return jsonify({"error": "as_of must be YYYY-MM-DD"}), 400
     with db_conn() as conn:
         if not conn.execute(
@@ -178,7 +187,7 @@ def set_balance(account_id):
     uid = current_user_id()
     data = request.json or {}
     as_of = (data.get("as_of") or "").strip()
-    if not re.match(r"^\d{4}-\d{2}-\d{2}$", as_of):
+    if not re.match(r"^\d{4}-\d{2}-\d{2}$", as_of) or not _valid_date(as_of):
         return jsonify({"error": "as_of must be YYYY-MM-DD"}), 400
     try:
         balance = float(data["balance"])
@@ -448,7 +457,7 @@ def import_investments_confirm():
 
     for a in selected:
         as_of = (a.get("as_of") or "").strip()
-        if not _DATE_RE.match(as_of):
+        if not _DATE_RE.match(as_of) or not _valid_date(as_of):
             label = a.get("name") or a.get("external_id") or "(account)"
             return jsonify({"error": f"{label}: as_of must be YYYY-MM-DD"}), 400
 
