@@ -11,6 +11,9 @@ PyJWT>=2.8
 cryptography>=42.0
 # Investment import: Nordea Omistukset.xlsx parsing (Nordnet CSVs need nothing).
 openpyxl>=3.1
+# Portfolio covariance and constrained long-only optimisation.
+numpy>=1.24
+scipy>=1.10
 # The AI chat assistant needs nothing extra: it talks to a local Ollama server
 # over HTTP, and `requests` is already here. The optional cloud backend
 # (AI_BACKEND=anthropic, kept as a control to compare answers against) needs

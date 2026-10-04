@@ -13,10 +13,12 @@ datas = [('templates', 'templates'), ('static', 'static'), ('VERSION', '.'),
          ('vendor/llama', 'vendor/llama'),
          # Apache 2.0 asks that its terms and the attribution travel with
          # the model, so they ship and are copied beside the weights.
-         ('licences', 'licences')]
+         ('licences', 'licences'),
+         ('services/portfolio_seed.json', 'services'),
+         ('services/portfolio_sources.json', 'services')]
 binaries = []
 hiddenimports = ['webview', 'webview.platforms.cocoa', 'flask', 'flask_limiter',
-                 'dateutil', 'openpyxl',
+                 'dateutil', 'openpyxl', 'numpy', 'scipy', 'scipy.optimize',
                  # main.py reaches into AppKit for the frameless window: the
                  # drag strip, the window buttons' actions, the appearance.
                  # All three are imported inside functions, and a miss shows
@@ -29,7 +31,7 @@ hiddenimports = ['webview', 'webview.platforms.cocoa', 'flask', 'flask_limiter',
 hiddenimports += ['core', 'config', 'ai', 'data', 'services', 'routes'] + [
     'routes.' + m for m in (
         'bank_import', 'categories', 'csv_import', 'dashboard', 'merchant_rules',
-        'chat', 'net_worth', 'notes', 'subscriptions', 'system', 'transactions',
+        'chat', 'net_worth', 'notes', 'subscriptions', 'system', 'transactions', 'portfolio',
     )
 ] + [
     'ai.' + m for m in ('backends', 'chat', 'tools', 'runtime')
@@ -38,6 +40,7 @@ hiddenimports += ['core', 'config', 'ai', 'data', 'services', 'routes'] + [
 ] + [
     'services.' + m for m in (
         'networth', 'recurring', 'investment_import', 'enable_banking', 'exchange_rates',
+        'portfolio', 'portfolio_catalog', 'portfolio_market', 'portfolio_math',
     )
 ]
 tmp_ret = collect_all('webview')

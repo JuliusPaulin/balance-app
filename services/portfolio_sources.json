@@ -1,0 +1,64 @@
+{
+  "iShares Core MSCI World UCITS ETF USD (Acc)": {
+    "source_url": "https://www.ishares.com/uk/individual/en/products/251882/ishares-core-msci-world-ucits-etf?siteEntryPassthrough=true",
+    "as_of": "2026-10-02",
+    "country_percent": {
+      "United States": 73.01,
+      "Japan": 5.86,
+      "United Kingdom": 3.32,
+      "Canada": 3.28,
+      "France": 2.2,
+      "Switzerland": 2.1,
+      "Germany": 2.04,
+      "Australia": 1.48,
+      "Netherlands": 1.45
+    },
+    "unassigned_percent": {
+      "Other": 4.92,
+      "Cash and/or Derivatives": 0.36
+    },
+    "retrieved_at": "2026-10-04",
+    "note": "Issuer geography is based principally on issuer domicile. The Balance holding has no stored ISIN, so this is a name/share-class match and remains estimated."
+  },
+  "additional_ishares": {
+    "Europe": {
+      "source": "https://www.ishares.com/uk/individual/en/products/251861/ishares-msci-europe-ucits-etf-acc-fund",
+      "date": 20261002,
+      "countries": {
+        "United Kingdom": 22.28,
+        "France": 14.66,
+        "Switzerland": 14.19,
+        "Germany": 13.64,
+        "Netherlands": 9.63,
+        "Spain": 6.15,
+        "Sweden": 5.3,
+        "Italy": 5,
+        "Denmark": 2.45,
+        "Finland": 1.86,
+        "Belgium": 1.7,
+        "Other": 2.59,
+        "Cash and/or Derivatives": 0.55
+      }
+    },
+    "EM": {
+      "source": "https://www.ishares.com/uk/individual/en/products/264659/ishares-msci-emerging-markets-imi-ucits-etf",
+      "date": 20261002,
+      "countries": {
+        "Taiwan": 28.8,
+        "Korea (South)": 21.09,
+        "China": 18.01,
+        "India": 11.6,
+        "Brazil": 3.61,
+        "South Africa": 2.9,
+        "Saudi Arabia": 2.18,
+        "Mexico": 1.54,
+        "Poland": 1.19,
+        "United Arab Emirates": 1.19,
+        "Thailand": 1.12,
+        "Malaysia": 1.08,
+        "Other": 5.140000000000001,
+        "Cash and/or Derivatives": 0.53
+      }
+    }
+  }
+}

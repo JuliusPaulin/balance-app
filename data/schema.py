@@ -252,6 +252,26 @@ CREATE TABLE IF NOT EXISTS bank_sessions (
     UNIQUE (user_id)
 );
 
+CREATE TABLE IF NOT EXISTS portfolio_settings (
+    user_id INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    payload TEXT NOT NULL DEFAULT '{{}}'
+);
+
+CREATE TABLE IF NOT EXISTS portfolio_market_cache (
+    cache_key TEXT PRIMARY KEY,
+    payload TEXT NOT NULL,
+    refreshed_at TEXT NOT NULL DEFAULT {_NOW_SQLITE},
+    status TEXT NOT NULL DEFAULT 'ok'
+);
+
+CREATE TABLE IF NOT EXISTS portfolio_flows (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    account_id INTEGER NOT NULL REFERENCES accounts(id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    amount REAL NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_bank_sessions_user ON bank_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);
@@ -267,6 +287,8 @@ CREATE INDEX IF NOT EXISTS idx_manual_subscriptions_user ON manual_subscriptions
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_external_id
     ON accounts(user_id, external_id) WHERE external_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_holdings_account_asof ON holdings(account_id, as_of);
+CREATE INDEX IF NOT EXISTS idx_portfolio_flows_user_date ON portfolio_flows(user_id, date);
+CREATE INDEX IF NOT EXISTS idx_portfolio_flows_account ON portfolio_flows(account_id);
 """
 
 

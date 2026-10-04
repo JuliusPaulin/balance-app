@@ -292,6 +292,7 @@ document.querySelectorAll(".nav-item[data-page]").forEach(btn => {
             case "subscriptions": loadRecurring(); break;
             case "reports": loadReport(); break;
             case "networth": loadNetWorth(); break;
+            case "portfolio": loadPortfolio(); break;
             case "import": loadBankStatus(); loadImportHistory(); break;
             case "settings": break;
         }
@@ -492,6 +493,7 @@ function rerenderActivePage() {
         case "subscriptions": loadRecurring();   break;
         case "reports":      loadReport();       break;
         case "networth":     loadNetWorth();     break;
+        case "portfolio":    loadPortfolio();    break;
     }
 }
 

@@ -1,0 +1,64 @@
+/* Portfolio owns its layout so the analysis surface can evolve independently. */
+.portfolio-header { align-items: flex-start; }
+.portfolio-subtitle, .portfolio-muted { color: var(--text-secondary); font-size: var(--text-caption); }
+.portfolio-subtitle { margin: 4px 0 0; }
+.portfolio-summary { margin-bottom: 20px; }
+.portfolio-summary .summary-card .value.accent { color: var(--accent); }
+.portfolio-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 20px; }
+.portfolio-span-2 { grid-column: span 2; }
+.portfolio-card { min-width: 0; }
+.portfolio-card-head { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 14px; }
+.portfolio-card-head .card-title { margin: 0; }
+.portfolio-select { width: auto; min-width: 110px; padding: 5px 8px; font-size: 12px; }
+.portfolio-chart { height: 250px; }
+.portfolio-doughnut { height: 190px; }
+.portfolio-legend { display: grid; gap: 7px; margin-top: 12px; }
+.portfolio-legend-row, .portfolio-concentration { display: flex; justify-content: space-between; gap: 12px; font-size: var(--text-caption); }
+.portfolio-legend-row span { display: flex; align-items: center; gap: 7px; }
+.portfolio-legend-row i { width: 8px; height: 8px; border-radius: 50%; }
+.portfolio-quality { display: grid; gap: 14px; }
+.portfolio-meter > div { display: flex; justify-content: space-between; font-size: var(--text-caption); margin-bottom: 5px; }
+.portfolio-meter-track { display: block; background: var(--bg-tertiary); border-radius: 5px; height: 6px; overflow: hidden; }
+.portfolio-meter-track i { display: block; background: var(--accent); height: 100%; border-radius: inherit; }
+.portfolio-note { color: var(--text-secondary); font-size: var(--text-caption); line-height: 1.45; margin: 0; }
+.portfolio-table-wrap { max-height: 370px; overflow: auto; }
+.portfolio-table-wrap table { min-width: 680px; }
+.portfolio-table-wrap td { vertical-align: middle; }
+.portfolio-table-wrap small, .portfolio-account-row small { display: block; color: var(--text-tertiary); font-size: 11px; margin-top: 2px; }
+.portfolio-tag { color: var(--orange) !important; }
+.portfolio-source { color: var(--accent); margin-left: 8px; font-size: 11px; }
+.portfolio-empty { color: var(--text-tertiary); padding: 18px !important; text-align: center; }
+.portfolio-form { display: grid; gap: 10px; }
+.portfolio-form label, .portfolio-assumption-grid label { display: grid; gap: 5px; color: var(--text-secondary); font-size: var(--text-caption); }
+.portfolio-preview-result { border-top: 1px solid var(--separator); margin-top: 14px; padding-top: 12px; line-height: 1.6; min-height: 42px; }
+.portfolio-drift-table { width: 100%; margin: 8px 0; font-size: 11px; border-collapse: collapse; }
+.portfolio-drift-table th, .portfolio-drift-table td { padding: 4px 3px; border-bottom: 1px solid var(--separator); text-align: right; }
+.portfolio-drift-table th:first-child, .portfolio-drift-table td:first-child { text-align: left; }
+.portfolio-targets { border-top: 1px solid var(--separator); margin-top: 14px; padding-top: 12px; display: grid; gap: 7px; }
+.portfolio-target-head { display: flex; justify-content: space-between; align-items: center; font-size: var(--text-caption); font-weight: 600; margin-bottom: 2px; }
+.portfolio-targets label { display: grid; grid-template-columns: 1fr 66px 12px; gap: 5px; align-items: center; color: var(--text-secondary); font-size: var(--text-caption); }
+.portfolio-targets input { padding: 4px 6px; font-size: 12px; }
+.portfolio-source-details { margin-top: 3px; color: var(--text-secondary); font-size: 11px; }
+.portfolio-source-details summary { color: var(--accent); cursor: pointer; }
+.portfolio-assumptions { border-top: 1px solid var(--separator); padding-top: 14px; margin-top: 12px; }
+.portfolio-assumption-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; margin-bottom: 14px; }
+.portfolio-accounts { border-top: 1px solid var(--separator); padding-top: 10px; }
+.portfolio-account-row { display: grid; grid-template-columns: 1fr auto 110px; gap: 12px; align-items: center; padding: 9px 0; border-bottom: 1px solid var(--separator); font-size: var(--text-caption); }
+.portfolio-account-mode { padding: 5px 7px; font-size: 12px; }
+.portfolio-flow-form, .portfolio-flow-complete { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; margin-bottom: 10px; }
+.portfolio-flow-form .form-input { min-width: 135px; flex: 1; }
+.portfolio-flow-complete { border-top: 1px solid var(--separator); padding-top: 10px; color: var(--text-secondary); font-size: 11px; }
+.portfolio-flow-complete .form-input { width: 130px; padding: 5px 7px; font-size: 12px; }
+.portfolio-flow-row { display: grid; grid-template-columns: 1fr auto auto; gap: 10px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--separator); font-size: var(--text-caption); }
+.portfolio-state { padding: 14px 16px; background: color-mix(in srgb, var(--red) 10%, transparent); color: var(--red); border-radius: 10px; margin-bottom: 20px; }
+@media (max-width: 1050px) { .portfolio-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); } .portfolio-span-2 { grid-column: span 2; } }
+@media (max-width: 680px) { .portfolio-grid { grid-template-columns: 1fr; gap: 14px; } .portfolio-span-2 { grid-column: span 1; } .portfolio-assumption-grid { grid-template-columns: 1fr 1fr; } .portfolio-account-row { grid-template-columns: 1fr auto; } .portfolio-account-mode { grid-column: span 2; width: 100%; } }
+
+#page-portfolio > .portfolio-note { margin: -8px 0 16px; }
+#page-portfolio details > summary { cursor: pointer; color: var(--accent); font-size: 12px; margin-top: 10px; }
+.portfolio-methods { margin-top: 12px; line-height: 1.6; color: var(--text-secondary); font-size: 12px; }
+.portfolio-form { grid-template-columns: 2fr 1fr 1fr auto; align-items: end; }
+.portfolio-target-head { gap: 6px; }
+.portfolio-drift-table { font-size: 12px; }
+.portfolio-model-weights { overflow-wrap: anywhere; }
+@media(max-width:680px) { .portfolio-form { grid-template-columns:1fr 1fr; } .portfolio-form label:first-child { grid-column:span 2; } }

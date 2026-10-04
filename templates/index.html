@@ -16,6 +16,7 @@
     })();
     </script>
     <link rel="stylesheet" href="/static/css/style.css">
+    <link rel="stylesheet" href="/static/css/portfolio.css">
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 </head>
 <body>
@@ -81,6 +82,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
             Net Worth
         </button>
+        <button class="nav-item" data-page="portfolio">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M8.5 10.5h5a2 2 0 010 4h-3a2 2 0 010-4h3"/></svg>
+            Portfolio
+        </button>
         <button class="nav-item" data-page="settings">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M12 15a3 3 0 100-6 3 3 0 000 6z"/><path d="M19.4 15a1.65 1.65 0 00.33 1.82l.06.06a2 2 0 010 2.83 2 2 0 01-2.83 0l-.06-.06a1.65 1.65 0 00-1.82-.33 1.65 1.65 0 00-1 1.51V21a2 2 0 01-4 0v-.09A1.65 1.65 0 009 19.4a1.65 1.65 0 00-1.82.33l-.06.06a2 2 0 01-2.83-2.83l.06-.06A1.65 1.65 0 004.68 15a1.65 1.65 0 00-1.51-1H3a2 2 0 010-4h.09A1.65 1.65 0 004.6 9a1.65 1.65 0 00-.33-1.82l-.06-.06a2 2 0 012.83-2.83l.06.06A1.65 1.65 0 009 4.68a1.65 1.65 0 001-1.51V3a2 2 0 014 0v.09a1.65 1.65 0 001 1.51 1.65 1.65 0 001.82-.33l.06-.06a2 2 0 012.83 2.83l-.06.06A1.65 1.65 0 0019.4 9a1.65 1.65 0 001.51 1H21a2 2 0 010 4h-.09a1.65 1.65 0 00-1.51 1z"/></svg>
             Settings
@@ -101,10 +106,73 @@
             Quit
         </button>
     </div>
+
 </aside>
 
 <!-- Main Content -->
 <main class="main">
+    <!-- Portfolio Page -->
+    <div class="page" id="page-portfolio">
+        <div class="page-header portfolio-header">
+            <div><h1 class="page-title">Portfolio</h1><p class="portfolio-subtitle" id="portfolio-status">Allocation, costs and risk</p></div>
+            <button class="btn btn-secondary btn-sm" onclick="refreshPortfolioMarket()">Refresh market data</button>
+        </div>
+        <div id="portfolio-error" class="portfolio-state" hidden></div>
+        <p id="portfolio-dates-note" class="portfolio-note"></p>
+        <div class="summary-row portfolio-summary" id="portfolio-summary"></div>
+        <div class="portfolio-grid">
+            <div class="card portfolio-card">
+                <div class="portfolio-card-head"><div class="card-title">Value over time</div><span class="portfolio-muted" id="portfolio-valuation-date"></span></div>
+                <div class="chart-container portfolio-chart"><canvas id="chart-portfolio-value"></canvas></div>
+                <p class="portfolio-note">Recorded value, including contributions and newly recorded accounts. Value growth is not investment return.</p>
+            </div>
+            <div class="card portfolio-card">
+                <div class="portfolio-card-head"><div class="card-title">Allocation</div><select class="form-input portfolio-select" id="portfolio-allocation-basis" onchange="changePortfolioBasis()"><option value="mandate">Mandate</option><option value="asset_class">Asset class</option><option value="country">Country</option><option value="region">Region</option></select></div>
+                <div class="chart-container portfolio-chart portfolio-doughnut"><canvas id="chart-portfolio-allocation"></canvas></div>
+                <div id="portfolio-allocation-list" class="portfolio-legend"></div>
+                <div id="portfolio-current-drift"></div><details><summary>Set allocation targets</summary><div class="portfolio-targets" id="portfolio-targets"></div></details>
+            </div>
+            <div class="card portfolio-card portfolio-span-2">
+                <div class="portfolio-card-head"><div class="card-title">Allocation over time</div><select class="form-input portfolio-select" id="portfolio-history-basis" onchange="renderPortfolioHistory()"><option value="mandate">Mandate</option><option value="country">Country</option><option value="region">Region</option></select></div>
+                <div class="chart-container portfolio-chart"><canvas id="chart-portfolio-history"></canvas></div>
+            </div>
+            <div class="card portfolio-card">
+                <div class="portfolio-card-head"><div class="card-title">Coverage & concentration</div></div>
+                <div id="portfolio-quality" class="portfolio-quality"></div>
+            </div>
+            <div class="card portfolio-card">
+                <div class="portfolio-card-head"><div class="card-title">Performance</div></div>
+                <div id="portfolio-performance" class="portfolio-quality"></div>
+            </div>
+            <div class="card portfolio-card portfolio-span-2">
+                <div class="portfolio-card-head"><div class="card-title">Holdings</div><span class="portfolio-muted" id="portfolio-cost-total"></span></div>
+                <div class="table-container portfolio-table-wrap"><table><thead><tr><th>Holding</th><th>Mandate</th><th style="text-align:right">Value</th><th style="text-align:right">Weight</th><th>As of</th><th style="text-align:right">Annual cost</th></tr></thead><tbody id="portfolio-holdings"></tbody></table></div>
+            </div>
+            <div class="card portfolio-card portfolio-span-2">
+                <div class="portfolio-card-head"><div class="card-title">Contribution preview</div></div>
+                <div class="portfolio-form"><label>Holding<select class="form-input" id="portfolio-preview-holding"></select></label><label>Amount<input class="form-input" id="portfolio-preview-amount" type="number" min="0" step="100" value="500"></label><label>Monthly steps<input class="form-input" id="portfolio-preview-steps" type="number" min="1" max="120" value="1"></label><button class="btn btn-primary btn-sm" onclick="previewPortfolioContribution()">Preview</button></div>
+                <div id="portfolio-preview-result" class="portfolio-preview-result portfolio-muted">Choose a holding to see the allocation effect.</div>
+            </div>
+            <div class="card portfolio-card portfolio-span-2">
+                <div class="portfolio-card-head"><div class="card-title">Proxy risk & frontier</div><button class="btn btn-secondary btn-sm" onclick="togglePortfolioAssumptions()">Assumptions</button></div>
+                <div id="portfolio-risk-state" class="portfolio-muted">Risk model unavailable until enough dated history is available.</div>
+                <div class="chart-container portfolio-chart"><canvas id="chart-portfolio-model"></canvas></div>
+                <div id="portfolio-model-comparison"></div>
+                <details class="portfolio-methods"><summary>Methods, proxies and sensitivity</summary><div id="portfolio-methods"></div></details>
+                <div id="portfolio-assumptions" class="portfolio-assumptions" hidden></div>
+            </div>
+            <div class="card portfolio-card portfolio-span-2">
+                <div class="portfolio-card-head"><div class="card-title">Accounts</div><button class="btn btn-secondary btn-sm" onclick="togglePortfolioAccounts()">Details</button></div>
+                <div id="portfolio-accounts" class="portfolio-accounts" hidden></div>
+            </div>
+            <div class="card portfolio-card portfolio-span-2">
+                <div class="portfolio-card-head"><div class="card-title">Cash-flow ledger</div><button class="btn btn-secondary btn-sm" onclick="togglePortfolioFlows()">Details</button></div>
+                <div id="portfolio-flows" class="portfolio-flows" hidden></div>
+            </div>
+        </div>
+    </div>
+
+
 
     <!-- Dashboard Page -->
     <div class="page active" id="page-dashboard">
@@ -957,6 +1025,7 @@
 <script src="/static/js/dashboard.js"></script>
 <script src="/static/js/reports.js"></script>
 <script src="/static/js/net-worth.js"></script>
+<script src="/static/js/portfolio.js"></script>
 <script src="/static/js/trends.js"></script>
 <script src="/static/js/subscriptions.js"></script>
 <script src="/static/js/settings.js"></script>
