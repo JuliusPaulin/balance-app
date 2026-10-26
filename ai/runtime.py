@@ -19,6 +19,8 @@ What is deliberately *not* here: anything about prompts, tools or answers. This
 module knows a file path and a port.
 """
 
+import json
+import ntpath
 import os
 import platform
 import re
@@ -100,7 +102,7 @@ def macos_too_old():
 
 
 def runtime_build():
-    """What the bundled runtime says it is — `b10715+metal-readback`, or ""."""
+    """What the bundled runtime says it is, or an empty string if absent."""
     try:
         with open(os.path.join(_bundle_root(), "vendor", "llama",
                                "BUILD.txt")) as handle:
@@ -180,15 +182,17 @@ _fell_back = None
 
 
 def _start_level():
-    """The first level worth trying on this Mac.
+    """The first level worth trying on this computer.
 
     Level 0 puts the model on the GPU, and an unpatched llama.cpp cannot read
     the results back off it below macOS 14 — see `patches/metal-readback.patch`.
     A patched runtime guards that call and level 0 works, which is the whole
-    reason the runtime is built rather than downloaded. So this steps down only
-    when the runtime in the bundle is not the patched one, and the crash stops
-    being part of every launch.
+    reason the Mac runtime is built rather than downloaded. Windows ships the
+    official CPU build, so it starts directly at level 1. On macOS this steps
+    down only when the runtime in the bundle is not patched.
     """
+    if platform.system() == "Windows":
+        return 1
     version = _macos_version()
     if version is not None and version < MIN_MACOS_GPU and not runtime_patched():
         return 1
@@ -239,9 +243,14 @@ def server_binary():
     step is a bug that cannot happen in development and always happens in the
     shipped app.
     """
-    candidate = os.path.join(_bundle_root(), "vendor", "llama", "llama-server")
+    executable = "llama-server.exe" if platform.system() == "Windows" else "llama-server"
+    candidate = os.path.join(_bundle_root(), "vendor", "llama", executable)
     if not os.path.isfile(candidate):
         return None
+    if platform.system() == "Windows":
+        # Windows does not use executable permission bits. The executable's
+        # directory is added to PATH when it starts so its bundled DLLs resolve.
+        return candidate
     # PyInstaller copies data files without their permissions, so the binary can
     # arrive in the bundle unable to run. Cheap to put right, and the failure it
     # prevents reads as "the model server would not start".
@@ -426,12 +435,18 @@ def _server_process():
     Application Support folder, so a process holding it is ours by definition
     and cannot be somebody else's llama.cpp.
     """
+    model = config.model_file()
+    if platform.system() == "Windows":
+        for pid, args, argv in _windows_server_processes():
+            if _is_our_model_process(argv, model):
+                return pid, args
+        return None
+
     try:
         listing = subprocess.run(["ps", "-Ao", "pid=,args="], capture_output=True,
                                  text=True, timeout=5).stdout
     except (OSError, subprocess.SubprocessError):
         return None
-    model = config.model_file()
     for line in listing.splitlines():
         line = line.strip()
         if "llama-server" in line and model in line:
@@ -441,6 +456,91 @@ def _server_process():
             except ValueError:
                 return None
     return None
+
+
+def _windows_server_processes():
+    """Return llama-server.exe processes and their parsed Windows arguments.
+
+    PowerShell asks Windows for process metadata. The fixed executable-name
+    filter and a second argv check keep a similarly named process out of
+    recovery. The helper is called only on Windows, and the query itself has no
+    visible console window.
+    """
+    script = (
+        "[Console]::OutputEncoding = [System.Text.Encoding]::UTF8; "
+        "$items = @(Get-CimInstance -ClassName Win32_Process "
+        "-Filter \"Name='llama-server.exe'\" | "
+        "Select-Object ProcessId, Name, CommandLine); "
+        "ConvertTo-Json -InputObject $items -Compress"
+    )
+    try:
+        result = subprocess.run(
+            ["powershell.exe", "-NoProfile", "-NonInteractive", "-Command", script],
+            capture_output=True, text=True, encoding="utf-8", timeout=5,
+            creationflags=_windows_creation_flags())
+        if result.returncode != 0 or not result.stdout.strip():
+            return []
+        rows = json.loads(result.stdout)
+    except (OSError, subprocess.SubprocessError, ValueError, TypeError):
+        return []
+    if isinstance(rows, dict):
+        rows = [rows]
+    processes = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        name = row.get("Name") or ""
+        command_line = row.get("CommandLine") or ""
+        try:
+            pid = int(row["ProcessId"])
+            argv = _windows_argv(command_line)
+        except (KeyError, TypeError, ValueError, OSError):
+            continue
+        if (name.casefold() == "llama-server.exe" and argv and
+                ntpath.basename(argv[0]).casefold() == "llama-server.exe"):
+            processes.append((pid, command_line, argv))
+    return processes
+
+
+def _windows_argv(command_line):
+    """Split a native Windows process command line into its argv values."""
+    import ctypes
+    from ctypes import wintypes
+
+    count = ctypes.c_int()
+    shell32 = ctypes.WinDLL("shell32", use_last_error=True)
+    kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+    parse = shell32.CommandLineToArgvW
+    parse.argtypes = (wintypes.LPCWSTR, ctypes.POINTER(ctypes.c_int))
+    parse.restype = ctypes.POINTER(wintypes.LPWSTR)
+    free = kernel32.LocalFree
+    free.argtypes = (ctypes.c_void_p,)
+    free.restype = ctypes.c_void_p
+    values = parse(command_line, ctypes.byref(count))
+    if not values:
+        raise OSError(ctypes.get_last_error(), "CommandLineToArgvW failed")
+    try:
+        return [values[index] for index in range(count.value)]
+    finally:
+        free(values)
+
+
+def _is_our_model_process(argv, model_path):
+    """Match only the exact server executable and exact `--model` argument."""
+    if not argv or ntpath.basename(argv[0]).casefold() != "llama-server.exe":
+        return False
+    for index, arg in enumerate(argv[:-1]):
+        if arg == "--model":
+            return os.path.normcase(os.path.realpath(argv[index + 1])) == \
+                os.path.normcase(os.path.realpath(model_path))
+    return False
+
+
+def _windows_creation_flags():
+    """Hide Windows console subprocesses, including in frozen GUI builds."""
+    if platform.system() != "Windows":
+        return 0
+    return getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
 
 
 def _reclaim():
@@ -467,28 +567,33 @@ def _reclaim():
 
     found = _server_process()
     if not found:
-        return
+        return True
     pid, args = found
     wanted = " ".join(_fit_args(_level()))
     if wanted in args:
         _log(f"kept a server already running (pid {pid}): {args}")
-        return
+        return True
 
     _log(f"replacing a leftover server (pid {pid}) started as: {args}")
     try:
         os.kill(pid, signal.SIGTERM)
     except OSError:
-        return
+        return False
     # Give it a moment to let go of the port before we bind it.
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         if not server_responding():
-            return
+            return True
         time.sleep(0.3)
+    if platform.system() == "Windows":
+        # os.kill(..., SIGTERM) maps to Windows process termination. There is
+        # no POSIX SIGKILL escalation, and taskkill would widen the target.
+        return False
     try:
         os.kill(pid, signal.SIGKILL)
     except OSError:
         pass
+    return True
 
 
 def ensure_running():
@@ -502,7 +607,8 @@ def ensure_running():
         # Answering, but not necessarily started by us and not necessarily
         # started the way this version starts one.
         if _server is None:
-            _reclaim()
+            if _reclaim() is False:
+                return False
         if server_responding():
             return True
     binary = server_binary()
@@ -527,14 +633,29 @@ def ensure_running():
             # about: the only record of a machine running at half the speed
             # it should was a file with no reason in it.
             log.write(f"\n=== starting: {' '.join(_fit_args(_level()))} ===\n")
+            system = platform.system()
+            runtime_platform = (f"macOS {platform.mac_ver()[0] or 'unknown'}"
+                                if system == "Darwin" else system or "unknown")
             log.write(f"=== runtime {runtime_build() or 'unknown'}, "
-                      f"macOS {platform.mac_ver()[0] or 'unknown'}, "
-                      f"level {_level()} of {_FIT_LEVELS - 1} ===\n")
-            if _level() > 0 and not _fell_back:
+                      f"{runtime_platform}, level {_level()} of {_FIT_LEVELS - 1} ===\n")
+            if system == "Windows" and _level() > 0:
+                log.write("=== this Windows runtime is CPU-only ===\n")
+            elif _level() > 0 and not _fell_back:
                 log.write("=== the GPU was not tried: this macOS needs the "
                           "metal-readback patch and this runtime has not got "
                           "it ===\n")
             log.flush()
+            binary_dir = os.path.dirname(binary)
+            child_env = os.environ.copy()
+            child_kwargs = {}
+            if system == "Windows":
+                child_env["PATH"] = os.pathsep.join(
+                    entry for entry in (binary_dir, child_env.get("PATH", ""))
+                    if entry)
+                child_kwargs.update(cwd=binary_dir,
+                                    creationflags=_windows_creation_flags())
+            elif system == "Darwin":
+                child_env["DYLD_LIBRARY_PATH"] = binary_dir
             _server = subprocess.Popen(
                 [binary,
                  "--model", config.model_file(),
@@ -542,8 +663,7 @@ def ensure_running():
                  "--port", str(config.LLAMACPP_PORT),
                  *_fit_args(_level())],
                 stdout=log, stderr=subprocess.STDOUT,
-                env={**os.environ,
-                     "DYLD_LIBRARY_PATH": os.path.dirname(binary)})
+                env=child_env, **child_kwargs)
 
     deadline = time.monotonic() + STARTUP_TIMEOUT
     while time.monotonic() < deadline:
@@ -635,11 +755,21 @@ def stop():
     with _lock:
         process, _server = _server, None
     if process and process.poll() is None:
-        process.terminate()
+        try:
+            process.terminate()
+        except OSError:
+            pass
         try:
             process.wait(timeout=10)
         except subprocess.TimeoutExpired:
-            process.kill()
+            try:
+                process.kill()
+            except OSError:
+                pass
+            try:
+                process.wait(timeout=10)
+            except subprocess.TimeoutExpired:
+                _log("the model server did not exit after termination")
 
 
 # ── What the panel is told ────────────────────────────────────────────────
@@ -681,7 +811,7 @@ def runtime_state(host=None, model_path=None):
     if not model_present():
         return _state("needs_download", path, progress=progress, detail=(
             "Balance AI needs a one-off "
-            f"{config.MODEL_BYTES / 1e9:.1f} GB download to run on this Mac."))
+            f"{config.MODEL_BYTES / 1e9:.1f} GB download to run on this computer."))
     if _failed_starts >= MAX_START_ATTEMPTS:
         # It has been tried and it is not coming up. Saying "starting up" past
         # this point is not optimism, it is a screen that never changes.
@@ -706,6 +836,10 @@ def _accelerator():
     """
     if _level() <= 0:
         return "gpu", None
+    if platform.system() == "Windows":
+        if _fell_back:
+            return "cpu", f"The model server stopped during startup: {_fell_back}"
+        return "cpu", "This Windows build runs the model on the CPU."
     # The cause only. That it is on the CPU, and what that costs, is the
     # panel's to say — repeating it here put the same sentence on screen twice.
     if _fell_back:

@@ -150,7 +150,7 @@ def test_an_already_answering_server_is_not_started_twice(models_dir, monkeypatc
 def test_a_leftover_server_started_our_way_is_kept(models_dir, monkeypatch):
     """No reason to spend twenty seconds reloading a server already right."""
     args = f"llama-server --model {config.model_file()} " + \
-        " ".join(model_runtime._fit_args(0))
+        " ".join(model_runtime._fit_args(model_runtime._level()))
     monkeypatch.setattr(model_runtime, "server_responding", lambda host=None: True)
     monkeypatch.setattr(model_runtime, "_server_process", lambda: (4242, args))
     killed = []
@@ -164,6 +164,8 @@ def test_a_leftover_server_started_our_way_is_kept(models_dir, monkeypatch):
 def test_a_leftover_server_started_differently_is_replaced(
         models_dir, runtime_present, monkeypatch):
     """The one that matters: an old fallback on the CPU, outliving its fix."""
+    # This case models a GPU-capable run, including on a CPU-only test host.
+    monkeypatch.setattr(model_runtime, "_fit", 0)
     write_model(models_dir / "model.gguf")
     args = f"llama-server --model {config.model_file()} --n-gpu-layers 0"
     monkeypatch.setattr(model_runtime, "_server_process", lambda: (4242, args))
@@ -500,6 +502,8 @@ def test_the_shipped_runtime_carries_the_metal_patch():
     workflow builds the runtime before it runs the tests so this has something
     to look at.
     """
+    if model_runtime.platform.system() != "Darwin":
+        pytest.skip("the Metal patch marker applies only to the macOS runtime")
     if not model_runtime.server_binary():
         pytest.skip("no runtime in this checkout — scripts/fetch_runtime.sh")
     build = model_runtime.runtime_build()

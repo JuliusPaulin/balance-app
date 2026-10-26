@@ -141,7 +141,7 @@ function updateChatNotice() {
     // second against the GPU's 132 and writes an answer at 25.3 against 31.7 —
     // so roughly twice the wait, and long enough that a question about a whole
     // month can run out of time. Without this the assistant looks hung, which is
-    // exactly how one Mac stayed at half the speed it should be through six
+    // exactly how one computer stayed at half the speed it should be through six
     // releases.
     const notice = document.getElementById("chat-notice");
     if (!chatReady || chatReady.state !== "ready" || chatReady.accelerator !== "cpu") {
@@ -192,7 +192,7 @@ function scrollChatToEnd() {
 function chatEmptyHtml() {
     return `<div class="chat-empty">
         <div class="chat-empty-title">Ask about your money</div>
-        <div class="chat-empty-sub">Uses the active Balance AI backend. Local backends keep data on this Mac;
+        <div class="chat-empty-sub">Uses the active Balance AI backend. Local backends keep data on this computer;
             Anthropic sends prompts to Anthropic. Every answer says which screen it read.</div>
         <div class="chat-suggestions">
             ${CHAT_SUGGESTIONS.map(q => `
@@ -231,7 +231,7 @@ function chatSetupHtml() {
     if (s.state === "needs_download") {
         return `<div class="chat-setup">
             <h4>Balance AI needs its model</h4>
-            <p>${escapeHtml(s.detail || "")} It runs on this Mac afterwards —
+            <p>${escapeHtml(s.detail || "")} It runs on this computer afterwards —
                nothing you ask it leaves the machine, and it works offline.</p>
             <button class="btn btn-primary btn-sm" onclick="downloadModel()">Download</button>
         </div>`;
@@ -249,7 +249,7 @@ function chatSetupHtml() {
 
     if (s.state === "unsupported_os") {
         return `<div class="chat-setup">
-            <h4>This Mac can't run Balance AI</h4>
+            <h4>This computer can't run Balance AI</h4>
             <p>${escapeHtml(s.detail || "")}</p>
         </div>`;
     }
@@ -291,7 +291,7 @@ function chatSetupHtml() {
     const model = s.model;
     let what, how;
     if (s.reachable === false && s.state !== "no_runtime") {
-        what = "Ollama isn't running on this Mac.";
+        what = "Ollama isn't running on this computer.";
         how = "ollama serve";
     } else if (s.model_installed === false && model) {
         what = `Ollama is running, but <strong>${escapeHtml(model)}</strong> isn't installed.`;
@@ -494,9 +494,8 @@ async function streamChat(messages) {
     // A refused conversation is still an ordinary JSON error with a status.
     if (!res.ok) throw await apiError(res);
 
-    // Every browser this ships in reads a response as a stream, but the app
-    // runs inside whatever WebKit the Mac happens to have. Without it the whole
-    // answer still arrives — just all at once, as it did before.
+    // Some supported webviews do not expose a streaming response body. In that
+    // case the whole answer still arrives, just all at once, as it did before.
     if (!res.body || typeof res.body.getReader !== "function") {
         const events = (await res.text()).split("\n\n")
             .map(part => part.split("\n").find(l => l.startsWith("data: ")))

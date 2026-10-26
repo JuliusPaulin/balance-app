@@ -11,6 +11,8 @@ dist/
 .env
 *.local.env
 .DS_Store
+static/icon.ico
+.pytest_cache/
 .claude/
 
 # Design mockups drawn with real statement rows. Never publish these.

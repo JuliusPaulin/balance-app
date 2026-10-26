@@ -2,3 +2,5 @@
 # Tests run against a throwaway SQLite file (see conftest.py); nothing else
 # is needed and your real database is never opened.
 pytest>=8
+# Inspect the packaged Windows WebView2 page during the desktop smoke test.
+websocket-client>=1.8

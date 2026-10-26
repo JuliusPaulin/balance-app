@@ -1,14 +1,142 @@
 """Launch Expense Tracker as a desktop app using pywebview."""
+import os
 import sys
 import threading
+import time
+import traceback
+from urllib.error import URLError
+from urllib.request import urlopen
+
 import webview
 import config
-from app import app, SERVER_PORT
-from data.schema import init_db, seed_local_user, backup_db
+
+SERVER_HOST = "127.0.0.1"
+SERVER_READY_TIMEOUT = 10.0
+_stdio_log = None
 
 
-def start_server():
-    app.run(port=SERVER_PORT, use_reloader=False)
+def _wait_for_server(port, timeout=SERVER_READY_TIMEOUT):
+    """Wait for the local Flask app to answer its DB-free health endpoint."""
+    deadline = time.monotonic() + timeout
+    url = f"http://{SERVER_HOST}:{port}/healthz"
+    last_error = None
+    while time.monotonic() < deadline:
+        remaining = max(0.01, deadline - time.monotonic())
+        try:
+            with urlopen(url, timeout=min(0.5, remaining)) as response:
+                if response.status == 200:
+                    return
+                last_error = RuntimeError(
+                    f"local server returned HTTP {response.status}")
+        except (OSError, URLError) as exc:
+            last_error = exc
+        time.sleep(min(0.05, max(0, deadline - time.monotonic())))
+    raise RuntimeError(
+        f"Balance's local server did not become ready within {timeout:g} seconds"
+    ) from last_error
+
+
+def _start_local_server(port=None, ready_timeout=SERVER_READY_TIMEOUT):
+    """Bind loopback before launching the webview, then wait for Flask health."""
+    from werkzeug.serving import WSGIRequestHandler, make_server
+
+    class QuietRequestHandler(WSGIRequestHandler):
+        def log_message(self, format, *args):
+            # The local UI does not need an access log for every asset request.
+            return
+
+    server_port = SERVER_PORT if port is None else port
+    try:
+        server = make_server(
+            SERVER_HOST, server_port, app,
+            threaded=True, request_handler=QuietRequestHandler)
+    except SystemExit as exc:
+        # Werkzeug exits on bind errors instead of raising its socket error.
+        raise RuntimeError(
+            f"Could not bind Balance's local server to {SERVER_HOST}:{server_port}") from exc
+    thread = threading.Thread(
+        target=server.serve_forever, name="balance-http", daemon=True)
+    try:
+        thread.start()
+        _wait_for_server(server.server_address[1], ready_timeout)
+    except Exception:
+        if thread.is_alive():
+            server.shutdown()
+            thread.join(timeout=2)
+        server.server_close()
+        raise
+    return server, thread
+
+
+def _stop_local_server(server, thread):
+    """Stop the loopback server after the native window closes."""
+    server.shutdown()
+    server.server_close()
+    if thread.is_alive():
+        thread.join(timeout=2)
+
+
+def _windows_log_path():
+    return os.path.join(
+        os.path.dirname(os.path.abspath(config.SQLITE_PATH)), "Balance.log")
+
+
+def _ensure_windows_stdio():
+    """Give no-console Windows builds durable stdout/stderr streams."""
+    global _stdio_log
+    if sys.platform != "win32" or (sys.stdout is not None and sys.stderr is not None):
+        return None
+
+    log_path = _windows_log_path()
+    try:
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        _stdio_log = open(log_path, "a", encoding="utf-8", buffering=1)
+        path = log_path
+    except OSError:
+        _stdio_log = open(os.devnull, "a", encoding="utf-8")
+        path = None
+    if sys.stdout is None:
+        sys.stdout = _stdio_log
+    if sys.stderr is None:
+        sys.stderr = _stdio_log
+    return path
+
+
+# The no-console executable has ``sys.stdout`` and ``sys.stderr`` set to None.
+# Set them before importing Flask's app: its logging handler captures stderr on
+# first use during core.py's schema bootstrap.
+if sys.platform == "win32":
+    _ensure_windows_stdio()
+
+def _load_flask_dependencies():
+    from app import app, SERVER_PORT
+    from data.schema import init_db, seed_local_user, backup_db
+
+    return app, SERVER_PORT, init_db, seed_local_user, backup_db
+
+
+app, SERVER_PORT, init_db, seed_local_user, backup_db = _load_flask_dependencies()
+
+
+def _report_windows_startup_failure(exc, log_path=None):
+    """Write a startup traceback and show a short native error message."""
+    if log_path is None:
+        log_path = _windows_log_path()
+    try:
+        os.makedirs(os.path.dirname(log_path), exist_ok=True)
+        with open(log_path, "a", encoding="utf-8") as log:
+            traceback.print_exception(type(exc), exc, exc.__traceback__, file=log)
+    except OSError:
+        pass
+
+    try:
+        import ctypes
+        location = f"See {log_path} for details." if log_path else "See the app log for details."
+        ctypes.windll.user32.MessageBoxW(
+            None, f"Balance could not start. {location}\n\n{exc}",
+            "Balance.", 0x10)
+    except Exception:
+        pass
 
 
 TITLEBAR_H = 28.0      # the strip the window controls and the drag region sit in
@@ -192,80 +320,135 @@ def _launch_screen():
         return None
 
 
+def _window_options():
+    """Build native window options without using macOS geometry on Windows."""
+    options = {
+        "width": 1200,
+        "height": 800,
+        "min_size": (900, 600),
+        "fullscreen": config.START_FULLSCREEN,
+        "easy_drag": False,
+    }
+    if sys.platform == "darwin":
+        # The frameless Mac window needs a screen-sized frame before first
+        # paint; setting maximized later visibly resizes the page.
+        launch_screen = _launch_screen()
+        options.update(
+            width=launch_screen.width if launch_screen else 1200,
+            height=launch_screen.height if launch_screen else 800,
+            screen=launch_screen,
+            maximized=False,
+            frameless=True,
+        )
+    else:
+        # Let Windows and Linux apply their native maximize behavior. The
+        # decorated frame provides real OS minimize, maximize and close buttons.
+        options.update(maximized=config.START_MAXIMIZED, frameless=False)
+    return options
+
+
+def _webview_gui():
+    """Choose the Windows WebView2 backend; retain pywebview's Mac default."""
+    return "edgechromium" if sys.platform == "win32" else None
+
+
+def _configure_webview_debugging():
+    """Enable the local WebView2 inspector only when explicitly requested."""
+    if sys.platform == "win32":
+        port = os.environ.get("BALANCE_WEBVIEW_DEBUG_PORT", "").strip()
+        if port:
+            port = int(port)
+            if not 1 <= port <= 65535:
+                raise ValueError("BALANCE_WEBVIEW_DEBUG_PORT must be a valid TCP port")
+            webview.settings["REMOTE_DEBUGGING_PORT"] = port
+            webview.settings["OPEN_DEVTOOLS_IN_DEBUG"] = False
+
+
+def _native_window_action(window, action):
+    """Handle a requested action through pywebview's native window API."""
+    if action == "close":
+        window.destroy()
+    elif action == "minimise":
+        window.minimize()
+    elif action == "zoom":
+        window.maximize()
+
+
+def _stop_model():
+    """Stop the bundled model process when the desktop app exits."""
+    try:
+        from ai.runtime import stop
+        stop()
+    except Exception:
+        pass
+
+
+def main():
+    """Initialize local data, serve loopback, and run the native window."""
+    server = None
+    server_thread = None
+    log_path = None
+    try:
+        log_path = _ensure_windows_stdio()
+        # This marks a desktop process. routes.system only enables the custom
+        # HTML title bar on macOS, where the native window remains frameless.
+        config.DESKTOP_SHELL = True
+
+        init_db()
+        backup_db("launch")
+        seed_local_user()
+
+        server, server_thread = _start_local_server()
+
+        # Warm the bundled model while the page draws. A missing model is an
+        # ordinary first run; the assistant panel offers its download.
+        if config.AI_BACKEND == "bundled":
+            threading.Thread(target=_warm_model, daemon=True).start()
+
+        window = webview.create_window(
+            "Balance.",
+            f"http://{SERVER_HOST}:{server.server_address[1]}",
+            **_window_options(),
+        )
+
+        if sys.platform == "darwin":
+            # These hooks keep the frameless Mac window's page-drawn buttons
+            # and title-bar appearance connected to AppKit.
+            config.WINDOW_THEME_HOOK = lambda theme: _match_window_to_theme(window, theme)
+            config.WINDOW_ACTION_HOOK = lambda action: _window_action(window, action)
+
+            def dress_the_window():
+                _match_window_to_theme(window, "light")
+                _add_drag_strip(window)
+
+            window.events.shown += dress_the_window
+        else:
+            config.WINDOW_THEME_HOOK = None
+            config.WINDOW_ACTION_HOOK = lambda action: _native_window_action(window, action)
+
+        _configure_webview_debugging()
+        webview.start(gui=_webview_gui())
+        return 0
+    except Exception as exc:
+        if sys.platform != "win32":
+            raise
+        _report_windows_startup_failure(exc, log_path)
+        return 1
+    except SystemExit as exc:
+        if sys.platform != "win32":
+            raise
+        if exc.code in (None, 0):
+            return 0
+        failure = RuntimeError(f"Desktop startup exited with status {exc.code}")
+        _report_windows_startup_failure(failure, log_path)
+        return exc.code if isinstance(exc.code, int) else 1
+    finally:
+        config.WINDOW_THEME_HOOK = None
+        config.WINDOW_ACTION_HOOK = None
+        _stop_model()
+        if server is not None:
+            _stop_local_server(server, server_thread)
+
+
 if __name__ == "__main__":
-    # Tell the page it is running inside the desktop window. It uses this to
-    # relay its theme, so the title bar can be drawn to match.
-    config.DESKTOP_SHELL = True
-
-    # Local SQLite bootstrap: create the schema, take a safety backup of any
-    # existing DB, and ensure the single local user + default categories exist.
-    init_db()
-    backup_db("launch")
-    seed_local_user()
-
-    server = threading.Thread(target=start_server, daemon=True)
-    server.start()
-
-    # Warm the model up while the dashboard draws, so the first question does
-    # not pay for loading it. Backgrounded and allowed to fail: no model yet is
-    # an ordinary first run, and the panel offers the download itself.
-    if config.AI_BACKEND == "bundled":
-        threading.Thread(target=_warm_model, daemon=True).start()
-
-    # Fill the screen on launch. Resolve the geometry before creating the
-    # window: pywebview's maximized=True resizes after first_show(), which
-    # makes the page paint at 1200x800 and then jump to the screen size.
-    # width/height remain the fallback size when the window is un-maximized.
-    # See config.START_MAXIMIZED / START_FULLSCREEN.
-    launch_screen = _launch_screen()
-    launch_width = launch_screen.width if launch_screen else 1200
-    launch_height = launch_screen.height if launch_screen else 800
-    window = webview.create_window(
-        "Balance.",
-        f"http://127.0.0.1:{SERVER_PORT}",
-        width=launch_width,
-        height=launch_height,
-        min_size=(900, 600),
-        screen=launch_screen,
-        # The initial frame is already screen-sized. Passing maximized=True
-        # would apply another resize after the window becomes visible.
-        maximized=False,
-        fullscreen=config.START_FULLSCREEN,
-        # No title bar at all. A native one is drawn by macOS in macOS's own
-        # grey and cannot be given the app's colours — the page does not reach
-        # that band and neither does the window's background, both tested by
-        # painting them red. Frameless is the only way the sidebar reaches the
-        # top edge. The close, minimise and zoom buttons are drawn by the page
-        # and the strip beside them drags the window; see _add_drag_strip.
-        frameless=True,
-        # pywebview's own easy_drag drags from anywhere in the page, so
-        # selecting a figure would move the window.
-        easy_drag=False,
-    )
-
-    def on_closed():
-        # The model server is a child process, not a thread. Without this,
-        # closing the window leaves three gigabytes resident with nothing left
-        # to talk to it.
-        try:
-            from ai.runtime import stop
-            stop()
-        except Exception:
-            pass
-        sys.exit(0)
-
-    window.events.closed += on_closed
-
-    # How the page tells the window it has changed theme. The Flask server runs
-    # in this very process, so the route can reach AppKit directly.
-    config.WINDOW_THEME_HOOK = lambda theme: _match_window_to_theme(window, theme)
-    config.WINDOW_ACTION_HOOK = lambda action: _window_action(window, action)
-
-    def dress_the_window():
-        _match_window_to_theme(window, "light")
-        _add_drag_strip(window)
-
-    window.events.shown += dress_the_window
-
-    webview.start()
-    sys.exit(0)
+    raise SystemExit(main())
