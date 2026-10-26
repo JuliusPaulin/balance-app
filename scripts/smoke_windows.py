@@ -158,6 +158,11 @@ def smoke(executable, with_ai=False):
                     "await loadTransactions(); return document.body.innerText.includes('Windows smoke ä'); })()")
                 devtools.evaluate("localStorage.setItem('theme', 'dark'); applyThemeAttr('dark'); true")
                 assert devtools.evaluate("document.documentElement.dataset.theme === 'dark'")
+                wait_until(lambda: devtools.evaluate(
+                    "_loadingCount === 0 && !document.documentElement.classList.contains('loading')"),
+                    process)
+                devtools.evaluate("(async () => { await document.fonts.ready; "
+                    "await new Promise(r => setTimeout(r, 400)); return true; })()")
                 if attempt == 1:
                     screenshot = devtools.call("Page.captureScreenshot", {"format": "png"})
                     (output / "desktop.png").write_bytes(base64.b64decode(screenshot["data"]))
@@ -181,6 +186,8 @@ def smoke(executable, with_ai=False):
                         reply.raise_for_status()
                         assert reply.json()["choices"][0]["message"]["content"].strip(), reply.text
                         print("Bundled Windows runtime generated a model reply", flush=True)
+                ctypes.windll.user32.SetForegroundWindow(wintypes.HWND(window))
+                ImageGrab.grab().save(output / "native-desktop.png")
                 devtools.socket.close()
                 devtools = None
                 # A real WM_CLOSE tests the native titlebar's shutdown path.
@@ -195,10 +202,11 @@ def smoke(executable, with_ai=False):
                         raise AssertionError("The model server outlived the desktop app")
             finally:
                 # Keep native-window evidence even if page inspection fails.
-                try:
-                    ImageGrab.grab().save(output / "native-desktop.png")
-                except OSError:
-                    pass
+                if process.poll() is None:
+                    try:
+                        ImageGrab.grab().save(output / "native-desktop.png")
+                    except OSError:
+                        pass
                 if devtools is not None:
                     devtools.socket.close()
                 if process.poll() is None:
