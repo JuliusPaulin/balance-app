@@ -10,6 +10,8 @@ The simplest option is `Balance-Windows-x64-Setup.exe` from the
 [latest release](https://github.com/JuliusPaulin/balance-app/releases/latest). Run setup, then open Balance from the
 Start menu. Setup checks for Microsoft Edge WebView2 Runtime and the Microsoft
 Visual C++ Redistributable (x64), and installs either one if it is missing.
+WebView2 installation needs an internet connection. Installing or updating the
+Visual C++ runtime may show a Windows administrator prompt.
 
 For the portable build, download `Balance-Windows-x64.zip`, choose **Extract
 All**, and keep the extracted folder together. Start `Balance.exe` from that
@@ -67,3 +69,4 @@ installer, then run these commands from the repository folder:
 
 The script fetches and verifies the pinned Windows runtime, builds the app,
 smoke-checks it, and writes the portable ZIP and Setup EXE to `dist/`.
+Add `-TestAI` to also download the model and test the packaged AI process.

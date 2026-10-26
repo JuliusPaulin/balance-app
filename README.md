@@ -56,6 +56,11 @@ developer certificate, so macOS blocks it until you clear the flag.
 
 ## Getting later versions
 
+On Windows, quit Balance and run the newer Setup EXE. For the portable build,
+extract the newer ZIP into a fresh folder. Both keep the database in place.
+
+On macOS, use the updater below.
+
 Quit Balance, then paste this into Terminal:
 
 ```
@@ -162,8 +167,7 @@ You need 64-bit Python 3.11, PowerShell, and Inno Setup 6 to build both Windows
 packages. From the repository folder, run:
 
 ```powershell
-python -m pip install -r requirements-windows.txt
-.\scripts\build_windows.ps1 -SkipInstall
+.\scripts\build_windows.ps1
 ```
 
 The script builds and smoke-checks the Windows app, then writes the portable

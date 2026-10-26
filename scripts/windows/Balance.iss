@@ -59,17 +59,19 @@ end;
 
 function HasVCRuntimeAt(RootKey: Integer): Boolean;
 var
-  Installed, Major, Minor, Build: Cardinal;
+  Installed, Major, Minor, Build, Revision: Cardinal;
 begin
   Result := RegQueryDWordValue(RootKey, VCKey, 'Installed', Installed) and (Installed = 1);
   if not Result then Exit;
   Result := RegQueryDWordValue(RootKey, VCKey, 'Major', Major) and
             RegQueryDWordValue(RootKey, VCKey, 'Minor', Minor) and
-            RegQueryDWordValue(RootKey, VCKey, 'Bld', Build);
+            RegQueryDWordValue(RootKey, VCKey, 'Bld', Build) and
+            RegQueryDWordValue(RootKey, VCKey, 'Rbld', Revision);
   if Result then
     Result := (Major > {#VCMajor}) or
               ((Major = {#VCMajor}) and (Minor > {#VCMinor})) or
-              ((Major = {#VCMajor}) and (Minor = {#VCMinor}) and (Build >= {#VCBuild}));
+              ((Major = {#VCMajor}) and (Minor = {#VCMinor}) and (Build > {#VCBuild})) or
+              ((Major = {#VCMajor}) and (Minor = {#VCMinor}) and (Build = {#VCBuild}) and (Revision >= {#VCRevision}));
 end;
 
 function HasVCRuntime: Boolean;

@@ -26,6 +26,7 @@ if ($TestAI) {
 } else {
     Invoke-Python scripts/smoke_windows.py dist/Balance/Balance.exe
 }
+Copy-Item build/windows-smoke/report.json build/windows-smoke/portable-report.json
 
 $archive = Join-Path (Get-Location) 'dist/Balance-Windows-x64.zip'
 Compress-Archive -Path dist/Balance -DestinationPath $archive -Force
@@ -50,7 +51,7 @@ $vcVersion = [System.Diagnostics.FileVersionInfo]::GetVersionInfo((Join-Path $pr
 $compiler = Join-Path ${env:ProgramFiles(x86)} 'Inno Setup 6/ISCC.exe'
 if (-not (Test-Path $compiler)) { throw 'Install Inno Setup 6 to build the Windows installer.' }
 $version = (Get-Content VERSION -Raw).Trim()
-& $compiler "/DAppVersion=$version" "/DVCMajor=$($vcVersion.FileMajorPart)" "/DVCMinor=$($vcVersion.FileMinorPart)" "/DVCBuild=$($vcVersion.FileBuildPart)" scripts/windows/Balance.iss
+& $compiler "/DAppVersion=$version" "/DVCMajor=$($vcVersion.FileMajorPart)" "/DVCMinor=$($vcVersion.FileMinorPart)" "/DVCBuild=$($vcVersion.FileBuildPart)" "/DVCRevision=$($vcVersion.FilePrivatePart)" scripts/windows/Balance.iss
 if ($LASTEXITCODE -ne 0) { throw 'Windows installer compilation failed.' }
 $setup = Join-Path (Get-Location) 'dist/Balance-Windows-x64-Setup.exe'
 $installTest = Join-Path ([System.IO.Path]::GetTempPath()) ("Balance installer smoke " + [guid]::NewGuid())
