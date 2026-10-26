@@ -227,3 +227,19 @@ def test_quit_route_backs_up_then_closes_the_desktop_window(client, monkeypatch)
 
     assert response.status_code == 204
     assert calls == ["on-quit", "close"]
+
+
+def test_windows_inspector_requires_an_explicit_port(monkeypatch):
+    import main
+
+    monkeypatch.setattr(main.sys, "platform", "win32")
+    monkeypatch.setitem(main.webview.settings, "REMOTE_DEBUGGING_PORT", None)
+    monkeypatch.setitem(main.webview.settings, "OPEN_DEVTOOLS_IN_DEBUG", True)
+    monkeypatch.delenv("BALANCE_WEBVIEW_DEBUG_PORT", raising=False)
+    main._configure_webview_debugging()
+    assert main.webview.settings["REMOTE_DEBUGGING_PORT"] is None
+
+    monkeypatch.setenv("BALANCE_WEBVIEW_DEBUG_PORT", "59224")
+    main._configure_webview_debugging()
+    assert main.webview.settings["REMOTE_DEBUGGING_PORT"] == 59224
+    assert main.webview.settings["OPEN_DEVTOOLS_IN_DEBUG"] is False

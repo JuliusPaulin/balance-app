@@ -352,6 +352,18 @@ def _webview_gui():
     return "edgechromium" if sys.platform == "win32" else None
 
 
+def _configure_webview_debugging():
+    """Enable the local WebView2 inspector only when explicitly requested."""
+    if sys.platform == "win32":
+        port = os.environ.get("BALANCE_WEBVIEW_DEBUG_PORT", "").strip()
+        if port:
+            port = int(port)
+            if not 1 <= port <= 65535:
+                raise ValueError("BALANCE_WEBVIEW_DEBUG_PORT must be a valid TCP port")
+            webview.settings["REMOTE_DEBUGGING_PORT"] = port
+            webview.settings["OPEN_DEVTOOLS_IN_DEBUG"] = False
+
+
 def _native_window_action(window, action):
     """Handle a requested action through pywebview's native window API."""
     if action == "close":
@@ -414,6 +426,7 @@ def main():
             config.WINDOW_THEME_HOOK = None
             config.WINDOW_ACTION_HOOK = lambda action: _native_window_action(window, action)
 
+        _configure_webview_debugging()
         webview.start(gui=_webview_gui())
         return 0
     except Exception as exc:

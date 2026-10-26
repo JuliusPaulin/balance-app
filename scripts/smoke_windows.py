@@ -15,6 +15,7 @@ import time
 
 import requests
 import websocket
+from PIL import ImageGrab
 
 
 def free_port():
@@ -103,8 +104,7 @@ def smoke(executable, with_ai=False):
                    "MODEL_PATH": str(db.parent / "models" / "missing.gguf"),
                    "LLAMACPP_PORT": str(model_port), "AI_BACKEND": "bundled",
                    "START_MAXIMIZED": "0", "CSRF_ENABLED": "1",
-                   "WEBVIEW2_ADDITIONAL_BROWSER_ARGUMENTS":
-                       f"--remote-debugging-port={debug_port}"}
+                   "BALANCE_WEBVIEW_DEBUG_PORT": str(debug_port)}
             process = subprocess.Popen([str(executable)], cwd=home, env=env)
             devtools = None
             try:
@@ -194,6 +194,11 @@ def smoke(executable, with_ai=False):
                     else:
                         raise AssertionError("The model server outlived the desktop app")
             finally:
+                # Keep native-window evidence even if page inspection fails.
+                try:
+                    ImageGrab.grab().save(output / "native-desktop.png")
+                except OSError:
+                    pass
                 if devtools is not None:
                     devtools.socket.close()
                 if process.poll() is None:
