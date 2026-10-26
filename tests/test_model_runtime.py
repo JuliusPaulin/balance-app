@@ -500,6 +500,8 @@ def test_the_shipped_runtime_carries_the_metal_patch():
     workflow builds the runtime before it runs the tests so this has something
     to look at.
     """
+    if model_runtime.platform.system() != "Darwin":
+        pytest.skip("the Metal patch marker applies only to the macOS runtime")
     if not model_runtime.server_binary():
         pytest.skip("no runtime in this checkout — scripts/fetch_runtime.sh")
     build = model_runtime.runtime_build()

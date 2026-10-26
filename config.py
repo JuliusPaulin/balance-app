@@ -4,14 +4,14 @@ Loads settings from environment variables (optionally from a local ``.env``
 file via python-dotenv, if installed). Every value has a safe default, so the
 module imports cleanly with nothing configured at all.
 
-This is a local, single-user Mac app: one SQLite file on your own disk, no
-server, no accounts, no network database.
+This is a local, single-user desktop app: one SQLite file on your own disk, no
+accounts, and no network database.
 
 Environment variables
 ----------------------
 SQLITE_PATH
     Where the database file lives. Defaults to
-    ``~/Library/Application Support/Balance/expenses.db``.
+    the user's local app-data directory.
 FLASK_SECRET_KEY
     Secret used to sign Flask session cookies.
 PORT
@@ -73,23 +73,41 @@ columns survive from an earlier multi-user port and are kept purely as an
 internal anchor, so the query layer needs no rewrite — there is no login, no
 second user, and no way to become one."""
 
-def _default_sqlite_path():
-    """Default SQLite location: a writable, persistent per-user app-data folder.
+def _default_sqlite_path(platform_name=None, environ=None, home=None):
+    """Return a writable, persistent per-user database path for this platform.
 
-    ``~/Library/Application Support/Balance/expenses.db`` on macOS. This keeps the
-    database OUT of the (read-only) app bundle when packaged with PyInstaller and
-    makes the data survive app rebuilds/reinstalls. Override with SQLITE_PATH."""
-    base = os.path.join(
-        os.path.expanduser("~"), "Library", "Application Support", "Balance"
-    )
+    ``%LOCALAPPDATA%/Balance/expenses.db`` on Windows,
+    ``~/Library/Application Support/Balance/expenses.db`` on macOS, and
+    ``$XDG_DATA_HOME/Balance/expenses.db`` (or ``~/.local/share/Balance``) on
+    other platforms. This keeps the database out of a read-only app bundle and
+    makes it survive app rebuilds and reinstalls. Override with ``SQLITE_PATH``.
+
+    The optional arguments keep platform path selection easy to test without
+    changing the process environment.
+    """
+    platform_name = platform_name or sys.platform
+    environ = os.environ if environ is None else environ
+    home = os.path.expanduser("~") if home is None else home
+
+    if platform_name == "win32":
+        base = environ.get("LOCALAPPDATA", "").strip()
+        if not base:
+            base = os.path.join(home, "AppData", "Local")
+        base = os.path.join(base, "Balance")
+    elif platform_name == "darwin":
+        base = os.path.join(home, "Library", "Application Support", "Balance")
+    else:
+        base = environ.get("XDG_DATA_HOME", "").strip()
+        if not base:
+            base = os.path.join(home, ".local", "share")
+        base = os.path.join(base, "Balance")
     return os.path.join(base, "expenses.db")
 
 
 # `or` rather than a default argument: an empty SQLITE_PATH= line in a .env file
 # would otherwise blank the path instead of meaning "use the default".
 SQLITE_PATH = os.environ.get("SQLITE_PATH", "").strip() or _default_sqlite_path()
-"""Filesystem path to the SQLite database file (desktop mode). Defaults to
-``~/Library/Application Support/Balance/expenses.db``; override via SQLITE_PATH."""
+"""Filesystem path to the SQLite database file; override via ``SQLITE_PATH``."""
 
 FLASK_SECRET_KEY = os.environ.get("FLASK_SECRET_KEY", "dev-insecure-secret-change-me")
 """Flask session-signing key. Only signs a local cookie on 127.0.0.1."""

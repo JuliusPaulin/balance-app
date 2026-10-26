@@ -1,6 +1,10 @@
 """The app's own endpoints: the page itself, who the user is, health checks,
 backups and quit."""
 
+import os
+import signal
+import sys
+
 from flask import Blueprint, request, jsonify, render_template
 from data.schema import db_conn, backup_db, list_backups
 import config
@@ -32,12 +36,13 @@ def healthz_db():
 
 @bp.route("/")
 def index():
-    # `desktop_shell` is set by main.py and absent when the server is run on
-    # its own for development. It reserves the strip the window's own
-    # close/minimise/zoom buttons are drawn into, which exists in the app and
-    # not in a browser tab.
+    # Only the macOS frameless window reserves space for HTML-drawn controls.
+    # Windows and Linux use native window chrome, even though main.py marks
+    # them as desktop apps too.
+    desktop_shell = (sys.platform == "darwin"
+                     and getattr(config, "DESKTOP_SHELL", False))
     return render_template(
-        "index.html", desktop_shell=getattr(config, "DESKTOP_SHELL", False))
+        "index.html", desktop_shell=desktop_shell)
 
 
 @bp.route("/api/window/appearance", methods=["POST"])
@@ -113,8 +118,15 @@ def create_backup():
 
 @bp.route("/api/quit", methods=["POST"])
 def quit_app():
-    # Quitting kills the local process — there is only ever the one.
-    import os, signal
     backup_db("on-quit")
+    # Let the desktop window close normally. Its closed event ends the
+    # webview loop, after which main.py shuts down the model and local server.
+    hook = getattr(config, "WINDOW_ACTION_HOOK", None)
+    if hook is not None:
+        hook("close")
+        return "", 204
+
+    # When run as a server without a desktop window, preserve the quit route's
+    # existing local-process behavior.
     os.kill(os.getpid(), signal.SIGTERM)
     return "", 204

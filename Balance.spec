@@ -1,5 +1,6 @@
 # -*- mode: python ; coding: utf-8 -*-
 import pathlib
+import sys
 
 from PyInstaller.utils.hooks import collect_all
 
@@ -17,13 +18,15 @@ datas = [('templates', 'templates'), ('static', 'static'), ('VERSION', '.'),
          ('services/portfolio_seed.json', 'services'),
          ('services/portfolio_sources.json', 'services')]
 binaries = []
-hiddenimports = ['webview', 'webview.platforms.cocoa', 'flask', 'flask_limiter',
-                 'dateutil', 'openpyxl', 'numpy', 'scipy', 'scipy.optimize',
-                 # main.py reaches into AppKit for the frameless window: the
-                 # drag strip, the window buttons' actions, the appearance.
-                 # All three are imported inside functions, and a miss shows
-                 # up only in the packaged app.
-                 'AppKit', 'PyObjCTools', 'PyObjCTools.AppHelper', 'objc']
+hiddenimports = ['webview', 'flask', 'flask_limiter',
+                 'dateutil', 'openpyxl', 'numpy', 'scipy', 'scipy.optimize']
+if sys.platform == 'darwin':
+    # The frameless Mac window imports these inside its decoration hooks.
+    hiddenimports += ['webview.platforms.cocoa', 'AppKit', 'PyObjCTools',
+                      'PyObjCTools.AppHelper', 'objc']
+elif sys.platform == 'win32':
+    hiddenimports += ['webview.platforms.winforms', 'webview.platforms.edgechromium',
+                      'clr', 'pythonnet']
 # The app's own code lives in four packages. PyInstaller does follow the static
 # imports in each __init__.py, but a miss here only shows up in the packaged
 # app — never in the tests, never in a run from source — so every module is
@@ -78,7 +81,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=['static/icon.icns'],
+    icon=['static/icon.ico' if sys.platform == 'win32' else 'static/icon.icns'],
 )
 coll = COLLECT(
     exe,
@@ -89,15 +92,16 @@ coll = COLLECT(
     upx_exclude=[],
     name='Balance',
 )
-app = BUNDLE(
-    coll,
-    name='Balance.app',
-    icon='static/icon.icns',
-    bundle_identifier='com.juliuspaulin.balance',
-    version=VERSION,
-    info_plist={
-        'CFBundleShortVersionString': VERSION,
-        'CFBundleVersion': VERSION,
-        'NSHighResolutionCapable': True,
-    },
-)
+if sys.platform == 'darwin':
+    app = BUNDLE(
+        coll,
+        name='Balance.app',
+        icon='static/icon.icns',
+        bundle_identifier='com.juliuspaulin.balance',
+        version=VERSION,
+        info_plist={
+            'CFBundleShortVersionString': VERSION,
+            'CFBundleVersion': VERSION,
+            'NSHighResolutionCapable': True,
+        },
+    )

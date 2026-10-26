@@ -122,13 +122,37 @@ jobs:
         # The filename is load-bearing — update.sh greps for exactly this.
         run: cd dist && ditto -c -k --keepParent Balance.app Balance-macOS-arm64.zip
 
+      - name: Upload the macOS app
+        uses: actions/upload-artifact@v4
+        with:
+          name: Balance-macOS-arm64
+          path: dist/Balance-macOS-arm64.zip
+          if-no-files-found: error
+
+  windows:
+    uses: ./.github/workflows/windows.yml
+    permissions:
+      contents: read
+
+  publish:
+    needs: [build, windows]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Balance-*
+          path: dist
+          merge-multiple: true
       - name: Publish the release
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           notes_file=$(mktemp)
           {
-            printf 'Apple Silicon build (M1–M4).\n\n'
+            printf 'macOS Apple silicon and Windows 10/11 x64 builds.\n\n'
             # Everything between this tag and the one before it.
             prev=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
             if [ -n "$prev" ]; then
@@ -139,9 +163,16 @@ jobs:
             printf '\n**Update**\n\nQuit Balance, then run:\n\n'
             printf '    curl -fsSL https://raw.githubusercontent.com/%s/main/update.sh | bash\n\n' "$GITHUB_REPOSITORY"
             printf 'Your data in ~/Library/Application Support/Balance/ is not touched.\n'
+            printf '\n**Windows**\n\nRun Balance-Windows-x64-Setup.exe. It installs the app and its prerequisites.\n'
+            printf 'Or extract Balance-Windows-x64.zip and run Balance.exe.\n'
+            printf 'Windows data stays in %%LOCALAPPDATA%%\\Balance\\.\n'
           } > "$notes_file"
 
           gh release create "$GITHUB_REF_NAME" \
             dist/Balance-macOS-arm64.zip \
+            dist/Balance-Windows-x64.zip \
+            dist/Balance-Windows-x64.zip.sha256 \
+            dist/Balance-Windows-x64-Setup.exe \
+            dist/Balance-Windows-x64-Setup.exe.sha256 \
             --title "Balance ${GITHUB_REF_NAME#v}" \
             --notes-file "$notes_file"
