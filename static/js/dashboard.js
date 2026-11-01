@@ -302,6 +302,7 @@ function renderCategoryBars(breakdown) { renderBreakdownBars("category-bars", br
 function renderIncomeBars(breakdown)   { renderBreakdownBars("income-bars",   breakdown, "income"); }
 
 function renderBreakdownBars(containerId, breakdown, type) {
+    dismissBreakdownHoverCard();
     // Capture which months this breakdown covers so drill-down can match
     breakdownMonths = breakdown.months || (breakdown.month ? [breakdown.month] : []);
     document.querySelectorAll(".breakdown-scope-btn").forEach(b =>
@@ -309,6 +310,7 @@ function renderBreakdownBars(containerId, breakdown, type) {
 
     const container = document.getElementById(containerId);
     if (!container) return;
+    ensureBreakdownHoverCard();
     if (!breakdown.items || breakdown.items.length === 0) {
         container.innerHTML = `<div class="empty-state"><p>No ${type === "income" ? "income" : "expenses"} for this period</p></div>`;
         return;
@@ -321,19 +323,220 @@ function renderBreakdownBars(containerId, breakdown, type) {
     // One quiet bar color; the category's identity color lives in the label
     // dot (design #8). Bars keep a minimum width so tail rows stay visible.
     const fill = rgbaVar(type === "income" ? "--green" : "--accent", 0.55);
-    container.innerHTML = breakdown.items.map(item => {
+    const months = (breakdown.months || (breakdown.month ? [breakdown.month] : []))
+        .filter(Boolean).slice().sort();
+    const period = breakdownPeriodLabel(breakdown, months, breakdown.year);
+    container.innerHTML = breakdown.items.map((item, index) => {
         const pct   = ((item.total / total) * 100).toFixed(1);
         const width = Math.max(2, (item.total / max) * 100).toFixed(1);
         // Match the type as well as the name — "Other" and "Investments" exist
         // on both sides, and the wrong id would drill into the wrong category.
         const catId = categories.find(c => c.name === item.name && c.type === type)?.id ?? "";
         const { tick, delta, hot } = baselineMarks(item, max, type);
-        return `<div class="cat-bar-row" style="cursor:pointer" onclick="openCategoryDrilldown(${catId},${escapeHtml(JSON.stringify(String(item.name)))})">
+        const accessibleName = `${item.name}, ${fmt2(item.total)}, ${pct}% of ${type} total. Press Enter or Space to view transactions.`;
+        return `<div class="cat-bar-row" role="button" tabindex="0" aria-label="${escapeHtml(accessibleName)}" data-breakdown-row="${index}">
         <div class="cat-bar-label">${categoryIcon({ id: catId, name: item.name })}${escapeHtml(item.name)}</div>
             <div class="cat-bar-track"><div class="cat-bar-fill${hot ? " over" : ""}" style="width:${width}%${hot ? "" : `;background:${fill}`}"></div>${tick}</div>
             <div class="cat-bar-amount">${fmt(item.total)} <span class="cat-bar-pct-inline">· ${pct}%</span>${delta}</div>
         </div>`;
     }).join("");
+
+    container.querySelectorAll(".cat-bar-row").forEach((row, index) => {
+        const item = breakdown.items[index];
+        const catId = categories.find(c => c.name === item.name && c.type === type)?.id ?? "";
+        row._breakdownHover = { item, type, total, period, months, catId };
+        row.addEventListener("mouseenter", () => {
+            clearTimeout(breakdownHoverHideTimer);
+            showBreakdownHoverCard(row);
+        });
+        row.addEventListener("mouseleave", scheduleBreakdownHoverCardDismissal);
+        row.addEventListener("focus", () => {
+            clearTimeout(breakdownHoverHideTimer);
+            showBreakdownHoverCard(row);
+        });
+        row.addEventListener("blur", scheduleBreakdownHoverCardDismissal);
+        row.addEventListener("keydown", event => {
+            const card = breakdownHoverCardNode;
+            const scrollKeys = ["ArrowDown", "ArrowUp", "PageDown", "PageUp", "Home", "End"];
+            if (breakdownHoverActiveRow === row && card && !card.hidden
+                && card.scrollHeight > card.clientHeight && scrollKeys.includes(event.key)) {
+                event.preventDefault();
+                if (event.key === "Home") card.scrollTop = 0;
+                else if (event.key === "End") card.scrollTop = card.scrollHeight;
+                else {
+                    const step = event.key.startsWith("Page") ? card.clientHeight * 0.8 : 40;
+                    card.scrollTop += ["ArrowUp", "PageUp"].includes(event.key) ? -step : step;
+                }
+                return;
+            }
+            if (["Enter", " "].includes(event.key)) {
+                event.preventDefault();
+                row.click();
+            }
+        });
+        row.addEventListener("click", () => {
+            dismissBreakdownHoverCard();
+            if (catId) openCategoryDrilldown(catId, item.name);
+        });
+    });
+}
+
+let breakdownHoverCardNode = null;
+let breakdownHoverActiveRow = null;
+let breakdownHoverDismissListenersAttached = false;
+let breakdownHoverHideTimer = null;
+
+function ensureBreakdownHoverCard() {
+    if (!breakdownHoverCardNode || !breakdownHoverCardNode.isConnected) {
+        breakdownHoverCardNode = document.getElementById("breakdown-hover-card");
+        if (!breakdownHoverCardNode) {
+            document.body.insertAdjacentHTML("beforeend", `<div id="breakdown-hover-card" class="breakdown-hover-card" role="tooltip" aria-live="polite" aria-hidden="true" hidden>
+                <div class="breakdown-hover-head"><div class="breakdown-hover-category"></div><div class="breakdown-hover-period"></div></div>
+                <div class="breakdown-hover-stats">
+                    <div><span>Period total</span><strong class="breakdown-hover-total"></strong></div>
+                    <div><span>Share of total</span><strong class="breakdown-hover-share"></strong></div>
+                </div>
+                <div class="breakdown-hover-baseline">
+                    <div class="breakdown-hover-baseline-label"></div>
+                    <div class="breakdown-hover-comparison"></div>
+                    <div class="breakdown-hover-baseline-note"></div>
+                </div>
+            </div>`);
+            breakdownHoverCardNode = document.getElementById("breakdown-hover-card");
+        }
+        if (!breakdownHoverDismissListenersAttached) {
+            breakdownHoverDismissListenersAttached = true;
+            breakdownHoverCardNode.addEventListener("mouseenter", () => clearTimeout(breakdownHoverHideTimer));
+            breakdownHoverCardNode.addEventListener("mouseleave", scheduleBreakdownHoverCardDismissal);
+            window.addEventListener("scroll", dismissBreakdownHoverCardOnScroll, true);
+            window.addEventListener("resize", dismissBreakdownHoverCard);
+            document.addEventListener("click", event => {
+                if (event.target.closest(".breakdown-scope-btn, .nav-item[data-page]")) dismissBreakdownHoverCard();
+            });
+            // Capture Escape and stop the fullscreen card handler from also
+            // closing its card when the user only meant to dismiss this popup.
+            document.addEventListener("keydown", event => {
+                if (event.key === "Escape" && breakdownHoverCardNode && !breakdownHoverCardNode.hidden) {
+                    event.preventDefault();
+                    event.stopPropagation();
+                    dismissBreakdownHoverCard();
+                }
+            }, true);
+        }
+    }
+    return breakdownHoverCardNode;
+}
+
+function breakdownPeriodLabel(breakdown, months, year) {
+    if (year) return `Year ${year}`;
+    if (months.length === 1) return monthLabelFull(months[0]);
+    if (months.length < 1) return "Selected period";
+    const indices = months.map(month => Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7)));
+    const contiguous = indices.every((value, index) => index === 0 || value === indices[index - 1] + 1);
+    if (!contiguous) return months.map(monthLabelFull).join(", ");
+    const [firstYear, firstMonth] = months[0].split("-").map(Number);
+    const [lastYear, lastMonth] = months[months.length - 1].split("-").map(Number);
+    const firstName = new Date(firstYear, firstMonth - 1).toLocaleDateString("en-US", { month: "long" });
+    const lastName = new Date(lastYear, lastMonth - 1).toLocaleDateString("en-US", { month: "long" });
+    return firstYear === lastYear
+        ? `${firstName}–${lastName} ${lastYear}`
+        : `${firstName} ${firstYear}–${lastName} ${lastYear}`;
+}
+
+function showBreakdownHoverCard(row) {
+    const card = ensureBreakdownHoverCard();
+    const { item, type, total, period, months, catId } = row._breakdownHover;
+    if (breakdownHoverActiveRow && breakdownHoverActiveRow !== row) {
+        breakdownHoverActiveRow.removeAttribute("aria-describedby");
+    }
+    breakdownHoverActiveRow = row;
+    const amount = Number(item.total) || 0;
+    const share = total > 0 ? amount / total * 100 : 0;
+    card.querySelector(".breakdown-hover-category").innerHTML = `${categoryIcon({ id: catId, name: item.name })}<strong>${escapeHtml(item.name)}</strong>`;
+    card.querySelector(".breakdown-hover-period").textContent = period;
+    card.querySelector(".breakdown-hover-total").textContent = fmt2(amount);
+    card.querySelector(".breakdown-hover-share").textContent = `${share.toLocaleString("fi-FI", { minimumFractionDigits: 1, maximumFractionDigits: 1 })}%`;
+
+    const comparison = card.querySelector(".breakdown-hover-comparison");
+    const note = card.querySelector(".breakdown-hover-baseline-note");
+    const label = card.querySelector(".breakdown-hover-baseline-label");
+    if (item.median == null) {
+        comparison.className = "breakdown-hover-comparison unavailable";
+        label.textContent = "Monthly comparison unavailable";
+        if (months.length > 1 || period.startsWith("Year ")) {
+            comparison.textContent = "This view combines multiple months.";
+            note.textContent = "Choose one month to compare with its previous six-month median.";
+        } else {
+            comparison.textContent = "Not enough prior history.";
+            note.textContent = "At least three prior months with activity are needed.";
+        }
+    } else {
+        const median = Number(item.median) || 0;
+        const difference = amount - median;
+        const direction = difference > 0 ? "above median" : difference < 0 ? "below median" : "at the monthly median";
+        const tone = difference === 0 ? "neutral"
+            : (type === "income" ? difference > 0 : difference < 0) ? "good" : "bad";
+        comparison.className = `breakdown-hover-comparison ${tone}`;
+        comparison.innerHTML = `<strong>${difference === 0 ? "At median" : `${difference > 0 ? "+" : "−"}${fmt2(Math.abs(difference))}`}</strong><span>${difference === 0 ? "" : direction}</span><em>${fmt2(median)} median</em>`;
+        label.textContent = "Compared with monthly median";
+        note.textContent = median === 0
+            ? "Six prior calendar months; a zero median can still include active months."
+            : "Median across the six prior calendar months.";
+    }
+
+    card.hidden = false;
+    card.setAttribute("aria-hidden", "false");
+    row.setAttribute("aria-describedby", card.id);
+    positionBreakdownHoverCard(card, row);
+    card.scrollTop = 0;
+}
+
+function positionBreakdownHoverCard(card, row) {
+    card.style.visibility = "hidden";
+    card.style.left = "12px";
+    card.style.top = "12px";
+    card.style.maxHeight = `${Math.max(0, window.innerHeight - 24)}px`;
+    const rect = row.getBoundingClientRect();
+    const popup = card.getBoundingClientRect();
+    const margin = 12;
+    const left = Math.max(margin, Math.min(rect.left, window.innerWidth - popup.width - margin));
+    const spaceBelow = Math.max(0, window.innerHeight - rect.bottom - 10 - margin);
+    const spaceAbove = Math.max(0, rect.top - 10 - margin);
+    const below = popup.height <= spaceBelow || spaceBelow >= spaceAbove;
+    // Keep long cards beside the row so their pointer surface cannot cover
+    // the row's click target. Extra content scrolls inside the card.
+    card.style.maxHeight = `${below ? spaceBelow : spaceAbove}px`;
+    const height = card.getBoundingClientRect().height;
+    const top = below ? rect.bottom + 10 : rect.top - height - 10;
+    card.style.left = `${left}px`;
+    card.style.top = `${Math.max(margin, top)}px`;
+    card.style.visibility = "visible";
+}
+
+function dismissBreakdownHoverCard() {
+    clearTimeout(breakdownHoverHideTimer);
+    if (breakdownHoverActiveRow) breakdownHoverActiveRow.removeAttribute("aria-describedby");
+    breakdownHoverActiveRow = null;
+    if (breakdownHoverCardNode) {
+        breakdownHoverCardNode.hidden = true;
+        breakdownHoverCardNode.setAttribute("aria-hidden", "true");
+        breakdownHoverCardNode.style.visibility = "";
+    }
+}
+
+function dismissBreakdownHoverCardOnScroll(event) {
+    if (breakdownHoverCardNode?.contains(event.target)) return;
+    dismissBreakdownHoverCard();
+}
+
+function scheduleBreakdownHoverCardDismissal() {
+    clearTimeout(breakdownHoverHideTimer);
+    breakdownHoverHideTimer = setTimeout(() => {
+        const row = breakdownHoverActiveRow;
+        if (row && document.activeElement !== row && !row.matches(":hover") && !breakdownHoverCardNode?.matches(":hover")) {
+            dismissBreakdownHoverCard();
+        }
+    }, 140);
 }
 
 // How far off its median a category has to land before the card says anything
@@ -358,7 +561,7 @@ function baselineMarks(item, max, type) {
     // No usual to be off. Reporting a share of zero would be a divide by
     // nothing dressed up as a percentage.
     if (item.median === 0) {
-        return { ...empty, delta: `<span class="cat-bar-delta flat" title="Nothing in this category in the six months before">unusual</span>` };
+        return { ...empty, delta: `<span class="cat-bar-delta flat">unusual</span>` };
     }
 
     const ratio  = item.total / item.median;
@@ -380,8 +583,8 @@ function baselineMarks(item, max, type) {
         : `${change > 0 ? "+" : ""}${Math.round(change * 100)}%`;
 
     return {
-        tick: `<span class="cat-bar-tick" style="left:${Math.min(100, (item.median / max) * 100).toFixed(1)}%" title="Usual: ${fmt(item.median)}"></span>`,
-        delta: `<span class="cat-bar-delta ${tone}" title="Usual: ${fmt(item.median)} a month">${text}</span>`,
+        tick: `<span class="cat-bar-tick" style="left:${Math.min(100, (item.median / max) * 100).toFixed(1)}%"></span>`,
+        delta: `<span class="cat-bar-delta ${tone}">${text}</span>`,
         // The bar itself only turns colour for a real outlier. Half the card
         // in red says nothing; two rows in red is the card doing its job.
         hot: !good && change >= OUTLIER_BAND,
