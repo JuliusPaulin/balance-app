@@ -41,6 +41,11 @@ curl -fsSL https://raw.githubusercontent.com/JuliusPaulin/balance-app/main/updat
 It fetches the newest release, installs it and clears the macOS block. Your
 figures are untouched — they live outside the app.
 
+Newer versions check for updates in Balance and ask before installing one. If
+you installed an older build without Sparkle, run the command above once to
+install an updater-enabled version; later updates can happen in the app. You do
+not need a Balance account or an Apple Developer account.
+
 ## What it does
 
 - **Transactions** — add, edit, delete and filter expenses and income
@@ -109,7 +114,7 @@ You need Python 3.11 and an Apple silicon Mac.
 git clone https://github.com/JuliusPaulin/balance-app.git
 cd balance-app
 pip3 install -r requirements.txt
-python3 -m PyInstaller Balance.spec --noconfirm --clean
+./scripts/build_app.sh
 ```
 
 The app lands in `dist/Balance.app`. To install what you just built:
@@ -126,14 +131,18 @@ python3 main.py
 
 Both read the same database, so your figures carry over either way.
 
+The release build uses Sparkle's Ed25519 key. Keep a secure backup of the
+private key and set it as the `SPARKLE_PRIVATE_KEY` GitHub Actions secret.
+Never add the private key to the repository.
+
 ### Tests
 
 ```
 python3 -m pytest tests/
 ```
 
-All 508 pass. They run against a throwaway database in a temp folder — your own
-figures are never opened.
+They run against a throwaway database in a temp folder — your own figures are
+never opened.
 
 ### Where things live
 

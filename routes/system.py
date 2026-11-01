@@ -5,6 +5,7 @@ from flask import Blueprint, request, jsonify, render_template
 from data.schema import db_conn, backup_db, list_backups
 import config
 from core import current_user_id, _ensure_csrf_token
+from services import updates
 
 bp = Blueprint("system", __name__)
 
@@ -93,6 +94,64 @@ def me():
     })
 
 
+# ── Native app updates ───────────────────────────────────────────────
+
+def _update_error_response(exc):
+    """Translate updater state errors into a clear local API response."""
+    if isinstance(exc, updates.MainThreadTimeout) and exc.operation_started:
+        return jsonify({
+            "pending": True,
+            "message": "The native update operation is still running; refresh status shortly.",
+        }), 202
+    if isinstance(exc, (updates.UpdateBusy,
+                        updates.UpdatePreferenceNotSupported)):
+        status_code = 409
+    else:
+        status_code = 503
+    return jsonify({"error": str(exc)}), status_code
+
+
+@bp.route("/api/updates")
+def get_update_status():
+    try:
+        return jsonify(updates.status())
+    except updates.MainThreadTimeout as exc:
+        return _update_error_response(exc)
+    except updates.UpdateUnavailable as exc:
+        return _update_error_response(exc)
+
+
+@bp.route("/api/updates/check", methods=["POST"])
+def check_for_updates():
+    """Ask Sparkle to show its native user-initiated update check UI."""
+    try:
+        updates.check_for_updates()
+        return jsonify(updates.status()), 202
+    except (updates.UpdateUnavailable, updates.UpdateBusy,
+            updates.MainThreadTimeout) as exc:
+        return _update_error_response(exc)
+
+
+@bp.route("/api/updates/preferences", methods=["PUT"])
+def update_preferences():
+    """Persist the user's Sparkle automatic-check/download preferences."""
+    body = request.get_json(silent=True)
+    if not isinstance(body, dict) or not body:
+        return jsonify({"error": "A JSON object with update preferences is required."}), 400
+    allowed = {"automatic_checks", "automatic_installation"}
+    if set(body) - allowed:
+        return jsonify({"error": "Unknown update preference."}), 400
+    if any(type(value) is not bool for value in body.values()):
+        return jsonify({"error": "Update preferences must be booleans."}), 400
+    try:
+        updates.set_preferences(body)
+        return jsonify(updates.status())
+    except (updates.UpdateUnavailable, updates.UpdateBusy,
+            updates.UpdatePreferenceNotSupported,
+            updates.MainThreadTimeout) as exc:
+        return _update_error_response(exc)
+
+
 # ── Backups ────────────────────────────────────────────────────────
 
 @bp.route("/api/backups")
@@ -113,7 +172,11 @@ def create_backup():
 
 @bp.route("/api/quit", methods=["POST"])
 def quit_app():
-    # Quitting kills the local process — there is only ever the one.
+    # AppKit must receive the quit so Sparkle can install a queued update.
+    hook = getattr(config, "WINDOW_QUIT_HOOK", None)
+    if hook is not None:
+        hook()
+        return "", 204
     import os, signal
     backup_db("on-quit")
     os.kill(os.getpid(), signal.SIGTERM)

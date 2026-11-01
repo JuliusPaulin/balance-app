@@ -6,6 +6,245 @@
 // scope on purpose: index.html wires ~95 inline handlers straight to these
 // names, so these are plain scripts and not modules.
 
+// ── Updates ─────────────────────────────────────────────────────────
+let updatesState = null;
+let updatesRequestInFlight = false;
+let updatesPreferencesSaving = false;
+let updatesCheckPending = false;
+let updatesPollTimer = null;
+let updatesPollDeadline = 0;
+let updatesPollForCheck = false;
+let updatesLastCheckBeforeRequest = null;
+const UPDATES_POLL_INTERVAL_MS = 3000;
+const UPDATES_POLL_LIMIT_MS = 30000;
+
+function updatesPageIsVisible() {
+    return document.visibilityState === "visible" &&
+        document.getElementById("page-settings")?.classList.contains("active");
+}
+
+function stopUpdatesPolling() {
+    if (updatesPollTimer) clearTimeout(updatesPollTimer);
+    updatesPollTimer = null;
+    updatesPollDeadline = 0;
+    updatesPollForCheck = false;
+}
+
+function formatUpdateCheckTime(value) {
+    if (!value) return "";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return "";
+    return new Intl.DateTimeFormat(undefined, {
+        dateStyle: "medium", timeStyle: "short",
+    }).format(date);
+}
+
+function renderUpdatesSettings() {
+    const state = updatesState;
+    const version = document.getElementById("updates-version");
+    const status = document.getElementById("updates-status");
+    const statusText = document.getElementById("updates-status-text");
+    const checkButton = document.getElementById("updates-check-button");
+    const automaticChecks = document.getElementById("updates-automatic-checks");
+    const automaticInstallation = document.getElementById("updates-automatic-installation");
+    if (!version || !status || !statusText || !checkButton || !automaticChecks || !automaticInstallation) return;
+
+    const available = state?.available === true;
+    version.textContent = state?.version
+        ? `Installed version ${state.version}`
+        : "Installed version unavailable";
+
+    const message = typeof state?.message === "string" ? state.message.trim() : "";
+    const checkedAt = formatUpdateCheckTime(state?.last_check);
+    if (message) {
+        statusText.textContent = message;
+    } else if (!state) {
+        statusText.textContent = "Update settings could not be loaded.";
+    } else if (!available) {
+        statusText.textContent = "Update checks are unavailable in this run.";
+    } else if (state.checking === true) {
+        statusText.textContent = "Checking for updates…";
+    } else if (state.can_check !== true) {
+        statusText.textContent = "An update check is not available right now.";
+    } else if (checkedAt) {
+        statusText.textContent = `Last checked ${checkedAt}`;
+    } else {
+        statusText.textContent = "Ready to check for updates.";
+    }
+
+    status.classList.toggle("is-unavailable", !available);
+    status.classList.toggle("is-checking", state?.checking === true);
+    checkButton.disabled = !available || state?.can_check !== true ||
+        state?.checking === true || updatesCheckPending || updatesPreferencesSaving;
+    if (available && typeof state?.automatic_checks === "boolean") {
+        automaticChecks.checked = state.automatic_checks;
+    }
+    if (available && typeof state?.automatic_installation === "boolean") {
+        automaticInstallation.checked = state.automatic_installation;
+    }
+    automaticChecks.disabled = !available || updatesPreferencesSaving;
+    automaticInstallation.disabled = !available || state?.automatic_checks !== true || updatesPreferencesSaving;
+    automaticChecks.closest(".updates-preference")?.classList.toggle("is-disabled", automaticChecks.disabled);
+    automaticInstallation.closest(".updates-preference")?.classList.toggle("is-disabled", automaticInstallation.disabled);
+}
+
+function mergeUpdatesState(data) {
+    if (!data || typeof data !== "object" || Array.isArray(data)) return false;
+    const fields = [
+        "available", "version", "automatic_checks", "automatic_installation",
+        "can_check", "checking", "last_check", "message",
+    ];
+    const next = { ...(updatesState || {}) };
+    let changed = false;
+    for (const field of fields) {
+        if (Object.prototype.hasOwnProperty.call(data, field)) {
+            next[field] = data[field];
+            changed = true;
+        }
+    }
+    if (!changed) return false;
+    updatesState = next;
+    return true;
+}
+
+function scheduleUpdatesPoll() {
+    if (updatesPollTimer) clearTimeout(updatesPollTimer);
+    updatesPollTimer = null;
+    if (!updatesPageIsVisible()) {
+        stopUpdatesPolling();
+        return;
+    }
+
+    const nativeCheckInProgress = updatesState?.checking === true;
+    const checkWasRequested = updatesPollForCheck;
+    // A native Sparkle session can outlast the short grace window after the
+    // request (for example while its prompt stays open or a download runs).
+    // Keep checking its real state until it ends; the deadline only caps a
+    // request that never reports an active native session.
+    if (!nativeCheckInProgress && Date.now() >= updatesPollDeadline) {
+        stopUpdatesPolling();
+        return;
+    }
+    if (!nativeCheckInProgress && !checkWasRequested) {
+        stopUpdatesPolling();
+        return;
+    }
+
+    // A completed native check has a fresh last_check value. If Sparkle never
+    // reports an active session, the post-request window still lets its result
+    // appear here without leaving a permanent poll running.
+    if (checkWasRequested && !nativeCheckInProgress && updatesState?.can_check === true &&
+        updatesState?.last_check && updatesState.last_check !== updatesLastCheckBeforeRequest) {
+        stopUpdatesPolling();
+        return;
+    }
+
+    updatesPollTimer = setTimeout(async () => {
+        updatesPollTimer = null;
+        await refreshUpdatesSettings({ fromPoll: true });
+    }, UPDATES_POLL_INTERVAL_MS);
+}
+
+async function refreshUpdatesSettings({ fromPoll = false } = {}) {
+    if (!updatesPageIsVisible() || updatesRequestInFlight || updatesPreferencesSaving) return;
+    updatesRequestInFlight = true;
+    try {
+        const data = await api("/api/updates");
+        if (!updatesPageIsVisible()) return;
+        mergeUpdatesState(data);
+        if (data.pending === true) {
+            updatesPollForCheck = true;
+            updatesLastCheckBeforeRequest = updatesState.last_check ?? null;
+            updatesPollDeadline = Date.now() + UPDATES_POLL_LIMIT_MS;
+        }
+        renderUpdatesSettings();
+        if (!fromPoll && updatesState?.checking === true) {
+            updatesPollDeadline = Date.now() + UPDATES_POLL_LIMIT_MS;
+        }
+        scheduleUpdatesPoll();
+    } catch (error) {
+        if (!updatesState) renderUpdatesSettings();
+        else if (fromPoll) {
+            const statusText = document.getElementById("updates-status-text");
+            if (statusText) statusText.textContent = "Update status could not be refreshed.";
+        }
+        if (fromPoll) stopUpdatesPolling();
+    } finally {
+        updatesRequestInFlight = false;
+    }
+}
+
+async function loadUpdatesSettings() {
+    if (!updatesPageIsVisible()) return;
+    await refreshUpdatesSettings();
+}
+
+async function saveUpdatePreference(field, input) {
+    const oldValue = updatesState?.[field];
+    if (!updatesState || updatesState.available !== true || typeof oldValue !== "boolean") {
+        renderUpdatesSettings();
+        return;
+    }
+
+    const value = input.checked;
+    if (value === oldValue) return;
+    updatesState[field] = value;
+    updatesPreferencesSaving = true;
+    renderUpdatesSettings();
+    try {
+        const data = await api("/api/updates/preferences", {
+            method: "PUT", body: { [field]: value },
+        });
+        mergeUpdatesState(data);
+        if (data.pending === true) {
+            updatesPollForCheck = true;
+            updatesLastCheckBeforeRequest = updatesState.last_check ?? null;
+            updatesPollDeadline = Date.now() + UPDATES_POLL_LIMIT_MS;
+        }
+        renderUpdatesSettings();
+    } catch (error) {
+        updatesState[field] = oldValue;
+        renderUpdatesSettings();
+        toast(`Couldn't save update settings: ${error.message}`);
+    } finally {
+        updatesPreferencesSaving = false;
+        renderUpdatesSettings();
+        scheduleUpdatesPoll();
+    }
+}
+
+async function checkForUpdates() {
+    if (updatesState?.available !== true || updatesState.can_check !== true ||
+        updatesState.checking === true || updatesCheckPending) return;
+
+    updatesCheckPending = true;
+    updatesLastCheckBeforeRequest = updatesState.last_check ?? null;
+    renderUpdatesSettings();
+    try {
+        const result = await api("/api/updates/check", { method: "POST" });
+        mergeUpdatesState(result);
+        updatesPollForCheck = true;
+        updatesPollDeadline = Date.now() + UPDATES_POLL_LIMIT_MS;
+        renderUpdatesSettings();
+        await refreshUpdatesSettings();
+        scheduleUpdatesPoll();
+    } catch (error) {
+        toast(`Couldn't start the update check: ${error.message}`);
+        await refreshUpdatesSettings();
+    } finally {
+        updatesCheckPending = false;
+        renderUpdatesSettings();
+    }
+}
+
+document.addEventListener("visibilitychange", () => {
+    if (!updatesPageIsVisible()) {
+        stopUpdatesPolling();
+        return;
+    }
+    loadUpdatesSettings();
+});
+
 // ── Import currency ──────────────────────────────────────────────────
 async function loadImportCurrency() {
     const data = await api("/api/import/preferences");

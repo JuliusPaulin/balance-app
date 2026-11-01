@@ -931,6 +931,38 @@
                 <p style="font-size:var(--text-subhead);color:var(--text-secondary);margin:0 0 12px">Optional color accents for category icons, breakdown bars and trend charts.</p>
                 <div class="palette-options" id="palette-options"></div>
             </div>
+            <div class="card updates-card" aria-labelledby="updates-title">
+                <div class="updates-card-head">
+                    <div>
+                        <div class="card-title" id="updates-title">Updates</div>
+                        <p class="updates-intro">Keep Balance up to date.</p>
+                    </div>
+                    <div class="updates-version" id="updates-version">Installed version —</div>
+                </div>
+                <div class="updates-status" id="updates-status" role="status" aria-live="polite">
+                    <span class="updates-status-dot" aria-hidden="true"></span>
+                    <span id="updates-status-text">Update settings will load when you open this page.</span>
+                </div>
+                <div class="updates-actions">
+                    <button class="btn btn-secondary" id="updates-check-button" type="button" onclick="checkForUpdates()" disabled>Check for updates</button>
+                </div>
+                <div class="updates-preferences" aria-label="Automatic update preferences">
+                    <label class="updates-preference" for="updates-automatic-checks">
+                        <span class="updates-preference-copy">
+                            <span class="updates-preference-title">Check automatically</span>
+                            <span class="updates-preference-hint">Check for new versions in the background.</span>
+                        </span>
+                        <input class="updates-toggle" id="updates-automatic-checks" type="checkbox" checked disabled onchange="saveUpdatePreference('automatic_checks', this)">
+                    </label>
+                    <label class="updates-preference" for="updates-automatic-installation">
+                        <span class="updates-preference-copy">
+                            <span class="updates-preference-title">Download and install automatically</span>
+                            <span class="updates-preference-hint">The downloaded update installs when you quit Balance.</span>
+                        </span>
+                        <input class="updates-toggle" id="updates-automatic-installation" type="checkbox" disabled onchange="saveUpdatePreference('automatic_installation', this)">
+                    </label>
+                </div>
+            </div>
             <div class="card">
                 <div class="card-title">Help</div>
                 <p style="font-size:var(--text-subhead);color:var(--text-secondary);margin:0 0 16px">View the app guide to learn how everything works.</p>

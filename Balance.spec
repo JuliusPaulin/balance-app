@@ -1,11 +1,16 @@
 # -*- mode: python ; coding: utf-8 -*-
 import pathlib
+import json
+import subprocess
+import sys
 
 from PyInstaller.utils.hooks import collect_all
 
 # VERSION is the single source of truth: it is bundled so the running app can
 # report itself, and stamped into the plist so Finder's Get Info agrees.
-VERSION = pathlib.Path('VERSION').read_text(encoding='utf-8').strip() or 'dev'
+ROOT = pathlib.Path(SPECPATH).resolve()
+VERSION = (ROOT / 'VERSION').read_text(encoding='utf-8').strip() or 'dev'
+UPDATE_CONFIG = json.loads((ROOT / 'services/update_config.json').read_text(encoding='utf-8'))
 
 datas = [('templates', 'templates'), ('static', 'static'), ('VERSION', '.'),
          # llama.cpp's server travels in the bundle; the weights do not and
@@ -14,6 +19,7 @@ datas = [('templates', 'templates'), ('static', 'static'), ('VERSION', '.'),
          # Apache 2.0 asks that its terms and the attribution travel with
          # the model, so they ship and are copied beside the weights.
          ('licences', 'licences'),
+         ('services/update_config.json', 'services'),
          ('services/portfolio_seed.json', 'services'),
          ('services/portfolio_sources.json', 'services')]
 binaries = []
@@ -41,6 +47,7 @@ hiddenimports += ['core', 'config', 'ai', 'data', 'services', 'routes'] + [
     'services.' + m for m in (
         'networth', 'recurring', 'investment_import', 'enable_banking', 'exchange_rates',
         'portfolio', 'portfolio_catalog', 'portfolio_market', 'portfolio_math',
+        'updates',
     )
 ]
 tmp_ret = collect_all('webview')
@@ -99,5 +106,22 @@ app = BUNDLE(
         'CFBundleShortVersionString': VERSION,
         'CFBundleVersion': VERSION,
         'NSHighResolutionCapable': True,
+        'LSMinimumSystemVersion': '12.0.0',
+        'SUFeedURL': UPDATE_CONFIG['feed_url'],
+        'SUPublicEDKey': UPDATE_CONFIG['public_key'],
+        'SUEnableAutomaticChecks': True,
+        'SUAutomaticallyUpdate': False,
+        'SUVerifyUpdateBeforeExtraction': True,
+        'SURequireSignedFeed': True,
+        'SUEnableSystemProfiling': False,
     },
 )
+
+# Sparkle contains signed XPC helpers and nested binaries. Copy the framework
+# only after PyInstaller has finished processing and signing the other binaries.
+subprocess.run([
+    sys.executable,
+    str(ROOT / 'scripts/bundle_sparkle.py'),
+    '--app',
+    str(app.name),
+], check=True)

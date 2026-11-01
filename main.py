@@ -95,6 +95,9 @@ def _window_action(window, action):
                 native = window.native
                 if action == "minimise":
                     native.miniaturize_(None)
+                elif action == "quit":
+                    import AppKit
+                    AppKit.NSApplication.sharedApplication().terminate_(None)
                 elif action == "close":
                     window.destroy()
                 elif action == "zoom":
@@ -254,18 +257,43 @@ if __name__ == "__main__":
             pass
         sys.exit(0)
 
+    def prepare_for_update(reason="before-update"):
+        """Stop local work and back up the database before Sparkle relaunches."""
+        try:
+            from ai.runtime import stop
+            stop()
+        except Exception as exc:
+            print(f"[balance] could not stop the local model before update: {exc}")
+        try:
+            backup_db(reason)
+        except Exception as exc:
+            print(f"[balance] could not back up the database before update: {exc}")
+
     window.events.closed += on_closed
+    window.events.closing += lambda: prepare_for_update("on-quit")
 
     # How the page tells the window it has changed theme. The Flask server runs
     # in this very process, so the route can reach AppKit directly.
     config.WINDOW_THEME_HOOK = lambda theme: _match_window_to_theme(window, theme)
     config.WINDOW_ACTION_HOOK = lambda action: _window_action(window, action)
+    if sys.platform == "darwin":
+        config.WINDOW_QUIT_HOOK = lambda: _window_action(window, "quit")
 
     def dress_the_window():
         _match_window_to_theme(window, "light")
         _add_drag_strip(window)
+        # Sparkle must be created on AppKit's main thread, and only after the
+        # native window has appeared. Source runs and browser mode remain
+        # updater-free inside services.updates.
+        from services.updates import initialize_native_updater
+        initialize_native_updater(prepare_for_update)
 
     window.events.shown += dress_the_window
 
     webview.start()
+    # Closing pywebview's last window stops its run loop without sending the
+    # AppKit termination notification Sparkle needs to install a queued update.
+    if sys.platform == "darwin":
+        import AppKit
+        AppKit.NSApplication.sharedApplication().terminate_(None)
     sys.exit(0)

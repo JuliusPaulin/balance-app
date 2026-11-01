@@ -279,6 +279,7 @@ document.addEventListener("keydown", e => {
 // active tab or blank the page.
 document.querySelectorAll(".nav-item[data-page]").forEach(btn => {
     btn.addEventListener("click", () => {
+        if (btn.dataset.page !== "settings") stopUpdatesPolling();
         document.querySelectorAll(".nav-item[data-page]").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
         document.querySelectorAll(".page").forEach(p => p.classList.remove("active"));
@@ -294,7 +295,7 @@ document.querySelectorAll(".nav-item[data-page]").forEach(btn => {
             case "networth": loadNetWorth(); break;
             case "portfolio": loadPortfolio(); break;
             case "import": loadBankStatus(); loadImportHistory(); break;
-            case "settings": break;
+            case "settings": loadUpdatesSettings(); break;
         }
 
         // Tapping a nav tab closes the mobile drawer (no-op on desktop).

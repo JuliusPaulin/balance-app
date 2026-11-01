@@ -18,6 +18,9 @@ pip3 install pyinstaller --quiet
 echo "=== Fetching the model runtime ==="
 ./scripts/fetch_runtime.sh
 
+echo "=== Fetching Sparkle ==="
+./scripts/fetch_sparkle.sh
+
 echo "=== Building ${APP_NAME}.app ==="
 # From Balance.spec, which is the build. This used to pass the whole
 # configuration on the command line instead, and PyInstaller writes a spec out
@@ -39,6 +42,9 @@ EXPECTED=$(tr -d '[:space:]' < VERSION)
 test -f "${DIST_DIR}/${APP_NAME}.app/Contents/Frameworks/vendor/llama/llama-server" \
   || test -f "${DIST_DIR}/${APP_NAME}.app/Contents/Resources/vendor/llama/llama-server" \
   || { echo "No llama-server in the bundle — Balance AI would not run."; exit 1; }
+test -d "${DIST_DIR}/${APP_NAME}.app/Contents/Frameworks/Sparkle.framework" \
+  || { echo "Sparkle.framework is missing from the bundle."; exit 1; }
+codesign --verify --deep --strict --verbose=2 "${DIST_DIR}/${APP_NAME}.app"
 echo "Version ${BUILT}, runtime present"
 
 echo "=== Creating DMG ==="
@@ -52,7 +58,7 @@ rm -f "${DMG_PATH}"
 STAGING="${BUILD_DIR}/dmg_staging"
 rm -rf "${STAGING}"
 mkdir -p "${STAGING}"
-cp -R "${DIST_DIR}/${APP_NAME}.app" "${STAGING}/"
+ditto "${DIST_DIR}/${APP_NAME}.app" "${STAGING}/${APP_NAME}.app"
 ln -s /Applications "${STAGING}/Applications"
 
 hdiutil create -volname "${APP_NAME}" \

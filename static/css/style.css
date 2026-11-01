@@ -3142,6 +3142,101 @@ body.fs-active { overflow: hidden; }
     opacity: 1;
 }
 
+/* ── Updates (Settings) ──────────────────────────────────────────── */
+.updates-card-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    margin-bottom: 14px;
+}
+.updates-intro {
+    margin-top: -10px;
+    color: var(--text-secondary);
+    font-size: var(--text-subhead);
+}
+.updates-version {
+    flex-shrink: 0;
+    padding: 5px 9px;
+    border: 0.5px solid var(--separator);
+    border-radius: 999px;
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    font-size: var(--text-footnote);
+    font-variant-numeric: tabular-nums;
+}
+.updates-status {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    padding: 12px;
+    border: 0.5px solid var(--separator);
+    border-radius: var(--radius-sm);
+    color: var(--text-secondary);
+    background: var(--bg-secondary);
+    font-size: var(--text-subhead);
+    line-height: 1.45;
+}
+.updates-status-dot {
+    width: 8px;
+    height: 8px;
+    flex: 0 0 8px;
+    margin-top: 5px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+.updates-status.is-unavailable .updates-status-dot { background: var(--text-tertiary); }
+.updates-status.is-checking .updates-status-dot { animation: updates-pulse 1.4s ease-in-out infinite; }
+@keyframes updates-pulse {
+    50% { opacity: 0.35; }
+}
+.updates-actions { margin-top: 12px; }
+.updates-preferences {
+    margin-top: 14px;
+    border-top: 0.5px solid var(--separator);
+}
+.updates-preference {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 16px;
+    padding: 13px 2px;
+    border-bottom: 0.5px solid var(--separator);
+    cursor: pointer;
+}
+.updates-preference:last-child { border-bottom: 0; }
+.updates-preference-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+    min-width: 0;
+}
+.updates-preference-title {
+    color: var(--text-primary);
+    font-size: var(--text-callout);
+    font-weight: 600;
+}
+.updates-preference-hint {
+    color: var(--text-tertiary);
+    font-size: var(--text-footnote);
+    line-height: 1.4;
+}
+.updates-toggle {
+    width: 18px;
+    height: 18px;
+    flex: 0 0 18px;
+    margin: 0 2px 0 0;
+    accent-color: var(--accent);
+    cursor: pointer;
+}
+.updates-toggle:disabled { cursor: default; }
+.updates-preference.is-disabled { cursor: default; }
+
+@media (max-width: 640px) {
+    .updates-card-head { flex-direction: column; gap: 8px; }
+    .updates-version { align-self: flex-start; }
+}
+
 /* ════════════════════════════════════════════════════════════════════
    RESPONSIVE / MOBILE
    All rules below are additive and live inside @media blocks so the
