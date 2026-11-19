@@ -260,7 +260,11 @@ uses. Fixtures are synthetic CSV strings, not bank files.
 - The server object lists these tools with the read-only hints, and
   `list_categories` through `call_tool` returns the seeded Groceries category.
 
-`python3 -m pytest tests/` stays green. The server is not started as a
+`python3 -m pytest tests/test_mcp.py` covers the server. The rest of the suite
+is unchanged by it. Three subscription cases in `tests/test_ai_tools.py` fail
+when the clock is past early November 2026, because their fixtures stop in
+August and the detector then marks the series stopped. That failure is present
+on main and is not caused by this server. The server is not started as a
 subprocess in the suite; `call_tool` on the in-process server covers the SDK
 wiring, and stdio is the default of `MCPServer.run`.
 
