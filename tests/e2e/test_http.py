@@ -2,15 +2,17 @@
 
 Synthetic transaction only. The database is the suite's throwaway file.
 
-The server is started the way ``main.py`` starts it, ``app.run()``, and that
-has one slow step a test client never sees. Werkzeug binds the port, then asks
-for the name of the bind address (``socket.getfqdn("127.0.0.1")``), and only
-then listens. On a Mac where ``/etc/hosts`` gives 127.0.0.1 no name, as on the
-GitHub macOS runners, that lookup goes out to DNS and takes 35 seconds. While a
-socket is bound but not listening, macOS drops a connection instead of refusing
-it, so the wait below sees connect timeouts, not "connection refused". CI puts
-``localhost`` back on 127.0.0.1; the deadline here is long enough not to depend
-on it, and a failure says which of the two states the server was in.
+The server is started the way ``main.py`` starts it, ``app.run()``, with one
+step taken out. Werkzeug binds the port, then asks for the name of the bind
+address (``socket.getfqdn("127.0.0.1")``), and only then listens. The name only
+fills in a default ``SERVER_NAME``. On a normal Mac the lookup is instant, but
+on some GitHub macOS runners the first reverse lookup waits on the runner's
+upstream DNS and takes 35 seconds, even with 127.0.0.1 in /etc/hosts. While a
+socket is bound but not listening, macOS drops a connection instead of
+refusing it, so the test saw connect timeouts and gave up: that is what failed
+the v1.16.0 release. The child below answers the lookup itself, so the test is
+about the app, not about the machine's DNS. The deadline is still long, and a
+failure says which state the server was in.
 """
 
 import os
@@ -58,8 +60,8 @@ def _wait(session, url, proc, log):
     output = _output(log)
     hint = ""
     if "Running on" not in output:
-        hint = ("\nThe server never reached listen(). Werkzeug resolves the bind "
-                "address first: check that /etc/hosts maps 127.0.0.1 to localhost.")
+        hint = ("\nThe server never reached listen(): it was still importing "
+                "the app or binding the port.")
     raise AssertionError(
         f"server did not answer {url} in {STARTUP_DEADLINE}s: {last}{hint}\n{output}")
 
@@ -78,6 +80,10 @@ def test_a_local_server_accepts_a_transaction():
     proc = subprocess.Popen(
         [
             sys.executable, "-c",
+            # Werkzeug resolves the bind address's name before it listens; see
+            # the module docstring. Answer it here instead of from DNS.
+            "import socket\n"
+            "socket.getfqdn = lambda name='': name or 'localhost'\n"
             "import app\n"
             "app.app.run(host='127.0.0.1', port=app.SERVER_PORT, use_reloader=False)",
         ],

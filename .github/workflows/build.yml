@@ -60,29 +60,6 @@ jobs:
             requirements-dev.txt
             constraints.txt
 
-      - name: Give 127.0.0.1 its name back
-        # The macOS runner's /etc/hosts lists 127.0.0.1 with no name, so a
-        # reverse lookup of it goes out to DNS and takes 35 seconds. Werkzeug
-        # does that lookup between binding its port and listening on it, which
-        # is what failed tests/e2e/test_http.py on the v1.16.0 tag. Every Mac
-        # Balance runs on maps 127.0.0.1 to localhost; make this one match.
-        run: |
-          if ! grep -Eq '^127\.0\.0\.1[[:space:]]+([^#]*[[:space:]])?localhost([[:space:]]|$)' /etc/hosts; then
-            echo "127.0.0.1 localhost" | sudo tee -a /etc/hosts >/dev/null
-            sudo dscacheutil -flushcache || true
-            sudo killall -HUP mDNSResponder || true
-            echo "Added '127.0.0.1 localhost' to /etc/hosts"
-          fi
-          python3 - <<'PY'
-          import socket, time
-          started = time.monotonic()
-          name = socket.getfqdn("127.0.0.1")
-          took = time.monotonic() - started
-          print(f"getfqdn('127.0.0.1') = {name!r} in {took:.2f}s")
-          if took > 2:
-              raise SystemExit("Reverse lookup of 127.0.0.1 is still slow.")
-          PY
-
       - name: Check VERSION and the changelog
         # The release publishes the CHANGELOG.md section for VERSION, and
         # scripts/release.sh refuses to tag without one. Check it here, where
