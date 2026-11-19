@@ -28,6 +28,10 @@ def _filter_clauses(args, uid, omit=()):
 
     "period" covers `month`, `months` and the date range together, because the
     rail shows them as one section and each of them undoes the others.
+
+    `merchant` matches the store only. The screen does not send it; the local
+    MCP server does, so a shop filter does not also hit a category that happens
+    to share the word. Absent, it changes nothing.
     """
     # The driving table (transactions) is always scoped to the requesting user.
     conditions, params = ["t.user_id = %s"], [uid]
@@ -49,6 +53,10 @@ def _filter_clauses(args, uid, omit=()):
         # preserve the original case-insensitive search behaviour.
         conditions.append("(t.store ILIKE %s OR c.name ILIKE %s)")
         params += [f"%{q}%", f"%{q}%"]
+    merchant = (args.get("merchant") or "").strip()
+    if merchant and "merchant" not in omit:
+        conditions.append("t.store ILIKE %s")
+        params.append(f"%{merchant}%")
     if cat_ids and "category" not in omit:
         ids = [x.strip() for x in cat_ids.split(",") if x.strip()]
         if ids:

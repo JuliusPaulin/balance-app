@@ -287,8 +287,24 @@ CREATE INDEX IF NOT EXISTS idx_manual_subscriptions_user ON manual_subscriptions
 CREATE UNIQUE INDEX IF NOT EXISTS idx_accounts_external_id
     ON accounts(user_id, external_id) WHERE external_id IS NOT NULL;
 CREATE INDEX IF NOT EXISTS idx_holdings_account_asof ON holdings(account_id, as_of);
+-- Writes made by the local MCP server, and the payload that reverses each one.
+-- Additive: an older app build ignores the table, and init_db creates it on
+-- the next launch. Nothing else in the schema points at it.
+CREATE TABLE IF NOT EXISTS mcp_audit (
+    id           INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id      INTEGER NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    created_at   TEXT NOT NULL DEFAULT {_NOW_SQLITE},
+    action       TEXT NOT NULL,
+    summary      TEXT NOT NULL,
+    undone       INTEGER NOT NULL DEFAULT 0,
+    undone_at    TEXT,
+    undo_kind    TEXT NOT NULL,
+    undo_payload TEXT NOT NULL
+);
+
 CREATE INDEX IF NOT EXISTS idx_portfolio_flows_user_date ON portfolio_flows(user_id, date);
 CREATE INDEX IF NOT EXISTS idx_portfolio_flows_account ON portfolio_flows(account_id);
+CREATE INDEX IF NOT EXISTS idx_mcp_audit_user_created ON mcp_audit(user_id, created_at);
 """
 
 

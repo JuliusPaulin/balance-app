@@ -137,6 +137,9 @@ _HISTORY_CONFIDENCE = 0.70
 def suggest_category(store_name, conn, user_id, txn_type=None):
     """Name of the category to suggest for ``store_name``, or None.
 
+    See :func:`suggest_category_detail` for where the name came from. The name
+    itself is unchanged from the rule-then-history behaviour below.
+
     ``txn_type`` is the expense/income the row was read as, from the sign on the
     statement. When given, only categories of that type can be suggested.
 
@@ -153,6 +156,17 @@ def suggest_category(store_name, conn, user_id, txn_type=None):
     ``POST /api/merchant-rules/<id>/apply`` has always refused to re-categorise
     rows of the other type for the same reason. This is that rule, applied where
     the category is first proposed.
+    """
+    found = suggest_category_detail(store_name, conn, user_id, txn_type)
+    return found["name"] if found else None
+
+
+def suggest_category_detail(store_name, conn, user_id, txn_type=None):
+    """The suggestion for ``store_name``, and whether a rule or history produced it.
+
+    Returns ``{"name", "source"}`` with ``source`` of ``"rule"`` or ``"history"``,
+    or None when nothing clears the bar. ``suggest_category`` is this without
+    the source, and every caller that only wants the name stays on that.
     """
     if not store_name:
         return None
@@ -176,9 +190,9 @@ def suggest_category(store_name, conn, user_id, txn_type=None):
         pattern_lower = rule["pattern"].lower()
         mt = rule["match_type"]
         if mt == "exact" and store_lower == pattern_lower:
-            return rule["category_name"]
+            return {"name": rule["category_name"], "source": "rule"}
         elif mt == "contains" and pattern_lower in store_lower:
-            return rule["category_name"]
+            return {"name": rule["category_name"], "source": "rule"}
         elif mt == "smart":
             ratio = difflib.SequenceMatcher(None, store_lower, pattern_lower).ratio()
             if ratio >= 0.72:
@@ -186,7 +200,7 @@ def suggest_category(store_name, conn, user_id, txn_type=None):
 
     if smart_candidates:
         smart_candidates.sort(reverse=True)
-        return smart_candidates[0][1]
+        return {"name": smart_candidates[0][1], "source": "rule"}
 
     # Fall back to past transactions with same store (case-insensitive match;
     # Postgres '=' is case-sensitive, so compare lowered values to preserve the
@@ -210,7 +224,9 @@ def suggest_category(store_name, conn, user_id, txn_type=None):
         return None
     total = sum(r["n"] for r in rows)
     top = rows[0]
-    return top["name"] if total and top["n"] / total >= _HISTORY_CONFIDENCE else None
+    if total and top["n"] / total >= _HISTORY_CONFIDENCE:
+        return {"name": top["name"], "source": "history"}
+    return None
 
 
 COLUMN_ALIASES = {
@@ -352,7 +368,7 @@ def _read_headers(reader):
     return headers
 
 
-def _stage_rows(conn, uid, batch_id, reader, col_map, amount_sign="neg_expense", default_currency="EUR"):
+def _stage_rows(conn, uid, batch_id, reader, col_map, amount_sign="neg_expense", default_currency="EUR", *, offline=False):
     """Parse the remaining rows of ``reader`` and INSERT them into import_staging.
 
     ``col_map`` maps field name -> column index and may contain: ``date`` and
@@ -362,6 +378,10 @@ def _stage_rows(conn, uid, batch_id, reader, col_map, amount_sign="neg_expense",
       * ``'neg_expense'`` (default, the historical behaviour): a leading '-' means
         expense, otherwise income.
       * ``'pos_expense'``: a positive amount means expense, a leading '-' income.
+
+    ``offline`` uses a rate already saved for a non-EUR amount and refuses to
+    fetch one. The app leaves it false. The MCP server sets it, so an import
+    from there cannot call out.
 
     Returns the number of rows staged.
     """
@@ -424,7 +444,9 @@ def _stage_rows(conn, uid, batch_id, reader, col_map, amount_sign="neg_expense",
         source_currency = currency_code(source_currency)
         fx = None
         if source_currency != "EUR":
-            amount, fx = convert(conn, uid, amount, source_currency, parsed_date, memo, fee)
+            amount, fx = convert(
+                conn, uid, amount, source_currency, parsed_date, memo, fee, offline=offline,
+            )
             summary["converted"] += 1
         else:
             amount = float(amount)
