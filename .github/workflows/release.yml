@@ -26,8 +26,9 @@ jobs:
     steps:
       - uses: actions/checkout@v4
         with:
-          # Full history and tags: the release notes are built by diffing this
-          # tag against the previous one, which a shallow clone cannot see.
+          # Full history and tags. Notes come from CHANGELOG.md when this
+          # version has a section; otherwise they are the commits since the
+          # previous tag, which a shallow clone cannot see.
           fetch-depth: 0
 
       - uses: actions/setup-python@v5
@@ -198,15 +199,28 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           notes_file=$(mktemp)
-          {
-            printf 'Apple Silicon build (M1–M4).\n\n'
-            # Everything between this tag and the one before it.
+          body_file=$(mktemp)
+          version="${GITHUB_REF_NAME#v}"
+          # Readers see the changelog section. A tag with no section still
+          # ships: the notes are the commit subjects, as earlier releases were.
+          if python3 scripts/changelog.py "$version" > "$body_file"; then
+            echo "Release notes taken from CHANGELOG.md"
+          else
+            status=$?
+            if [ "$status" -ne 2 ]; then
+              exit "$status"
+            fi
+            echo "CHANGELOG.md has no section for $version — using commit subjects"
             prev=$(git describe --tags --abbrev=0 "${GITHUB_REF_NAME}^" 2>/dev/null || true)
             if [ -n "$prev" ]; then
-              git log --no-merges --pretty='- %s' "$prev..${GITHUB_REF_NAME}"
+              git log --no-merges --pretty='- %s' "$prev..${GITHUB_REF_NAME}" > "$body_file"
             else
-              git log --no-merges --pretty='- %s' -20
+              git log --no-merges --pretty='- %s' -20 > "$body_file"
             fi
+          fi
+          {
+            printf 'Apple Silicon build (M1–M4).\n\n'
+            cat "$body_file"
             printf '\n**Update**\n\nQuit Balance, then run:\n\n'
             printf '    curl -fsSL https://raw.githubusercontent.com/%s/main/update.sh | bash\n\n' "$GITHUB_REPOSITORY"
             printf 'Your data in ~/Library/Application Support/Balance/ is not touched.\n'
