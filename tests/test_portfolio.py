@@ -13,7 +13,7 @@ def test_portfolio_uses_holdings_and_keeps_residual_unknown(client, fresh_conn):
         aid = _account(conn)
         conn.execute("INSERT INTO account_balances (user_id, account_id, as_of, balance) VALUES (%s,%s,'2026-10-01',100)", (LOCAL_USER_ID, aid))
         conn.execute("INSERT INTO holdings (account_id, as_of, name, value_eur) VALUES (%s,'2026-10-01','Apple Inc.',60)", (aid,))
-    seed_result = fresh_conn(seed)
+    fresh_conn(seed)
     body = client.get("/api/portfolio").get_json()
     assert body["total"] == 100
     assert {h["name"] for h in body["holdings"]} == {"Apple Inc.", "Nordnet — unclassified"}

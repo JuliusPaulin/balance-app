@@ -1,0 +1,7 @@
+# Bug-finding rules only. The rest of the app is not held to a formatter.
+target-version = "py311"
+line-length = 100
+extend-exclude = [".llama-build", "vendor", "build", "dist"]
+
+[lint]
+select = ["E9", "F"]

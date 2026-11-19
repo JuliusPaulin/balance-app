@@ -95,6 +95,73 @@ Under every answer it tells you which screen it read and which months, because a
 figure you cannot check is a figure you have to take on trust. It can only read:
 it cannot add, edit or delete anything.
 
+## Other assistants on this Mac
+
+Balance AI, above, is the panel inside the app. A separate local MCP server lets
+Claude Desktop, Cursor, or another assistant on this Mac read the same database
+and import a CSV or change categories through Balance's own code, instead of
+opening the SQLite file itself.
+
+It speaks MCP over stdio only. It does not listen on a port, and it does not
+send transactions anywhere. A non-EUR file is imported only when a rate is
+already saved; otherwise import that file in the app. Writes are recorded and
+can be undone. The design notes are in `docs/mcp-server-plan.md`.
+
+From the repository, with the app's dependencies installed:
+
+```
+pip3 install -r requirements.txt
+python3 -m balance_mcp
+```
+
+The database is the same file the app uses. Set `SQLITE_PATH` only to point at
+a different one. The process has to be started from the repository so Python
+can see `balance_mcp`.
+
+Claude Desktop (`~/Library/Application Support/Claude/claude_desktop_config.json`)
+and Cursor (`.cursor/mcp.json` in the project, or Cursor Settings → MCP) take
+the same shape:
+
+```json
+{
+  "mcpServers": {
+    "balance": {
+      "command": "python3",
+      "args": ["-m", "balance_mcp"],
+      "cwd": "/absolute/path/to/balance-app"
+    }
+  }
+}
+```
+
+Use the full path to the `python3` that has the dependencies installed if it is
+not the one on your `PATH`. Restart the assistant after saving the file.
+
+| Tool | What it does |
+|------|----------------|
+| `list_accounts` | Net-worth accounts and latest balances. One id also returns that account's history. |
+| `net_worth` | Assets, liabilities, net worth, and a monthly history. |
+| `search_transactions` | Filter by dates, month, category, merchant, amount, and expense or income. |
+| `spending_by_category` | Category totals for a month, a year, or a date range. |
+| `cash_flow` | Income, expense, and net by month. Investments are also split out. |
+| `list_categories` | Categories, with how often each is used. |
+| `list_category_rules` | Merchant rules. |
+| `preview_bank_import` | Read a CSV and report every row it would import, including repeats, plus a sample. Writes nothing. |
+| `commit_bank_import` | Import every parsed row. Pass `expected_new` from the preview. Undo removes that batch. |
+| `set_transaction_category` | Change one transaction's category. |
+| `create_category` | Add a category. |
+| `rename_category` | Rename a category. |
+| `create_category_rule` | Add a merchant rule. Does not change past transactions. |
+| `preview_recategorise` | Show what a rule would change. |
+| `apply_recategorise` | Apply it. Pass `expected_updates` from the preview. |
+| `suggest_categories` | Suggest a category for transactions currently in Other, from rules and history. |
+| `apply_category_suggestions` | Apply those suggestions for the ids you pass. |
+| `list_audit_log` | Recent writes. |
+| `undo_change` | Reverse one of them. |
+
+Spending rows are not attached to net-worth accounts. "Uncategorised" in this
+file means the Other category, because every transaction has one.
+
 ## Your data
 
 Everything is written to one SQLite file:
@@ -138,11 +205,18 @@ Never add the private key to the repository.
 ### Tests
 
 ```
-python3 -m pytest tests/
+python3 scripts/verify.py
 ```
 
-They run against a throwaway database in a temp folder — your own figures are
-never opened.
+That is the one command: a lint pass, then the full pytest suite, including
+the property checks, the schema check, and the end-to-end checks. The same
+command runs in GitHub Actions on pull requests and on pushes to `main`. A
+red run is visible there and does not block merging until `verify` is added
+as a required status check. `REVIEW.md` is the checklist for reading a pull
+request.
+
+`python3 -m pytest tests/` is the suite on its own. It runs against a
+throwaway database in a temp folder — your own figures are never opened.
 
 ### Where things live
 
@@ -152,6 +226,7 @@ core.py, config.py          the Flask object and the settings
 data/                       the database: db, engine, schema
 services/                   net worth, recurring, imports, banking
 ai/                         the assistant: tools, loop, backends, runtime
+balance_mcp/                the local MCP server (stdio, not part of Balance.app)
 routes/                     the API, one module per area
 templates/, static/         the interface
 tests/                      pytest suite

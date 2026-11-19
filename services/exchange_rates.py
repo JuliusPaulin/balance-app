@@ -31,8 +31,11 @@ def money(value):
         raise ValueError("Invalid amount") from None
 
 
-def to_eur(conn, uid, currency, day, memo):
+def to_eur(conn, uid, currency, day, memo, *, offline=False):
     """Return (rate, rate_date), reusing past lookups saved in this database.
+
+    ``offline`` refuses to fetch. A rate already stored for this date is used;
+    anything else raises. The MCP server sets this so an import cannot call out.
 
     Today's lookup can change before publication, so only cache a request once
     its own rate exists or the requested date has ended. Refuse rates more
@@ -55,6 +58,8 @@ def to_eur(conn, uid, currency, day, memo):
     if cached:
         memo[key] = (money(cached["rate"]), cached["rate_date"])
         return memo[key]
+    if offline:
+        raise ExchangeRateError(f"No saved ECB rate for {currency} on {day}.")
     try:
         response = requests.get(
             f"{RATE_URL}/{currency.lower()}/eur",
@@ -86,10 +91,10 @@ def to_eur(conn, uid, currency, day, memo):
     return memo[key]
 
 
-def convert(conn, uid, amount, currency, day, memo, fee=0):
+def convert(conn, uid, amount, currency, day, memo, fee=0, *, offline=False):
     """Convert an absolute statement amount; retain the source for review."""
     currency = currency_code(currency)
-    rate, rate_date = to_eur(conn, uid, currency, day, memo)
+    rate, rate_date = to_eur(conn, uid, currency, day, memo, offline=offline)
     converted = (money(amount) * rate).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
     details = {
         "amount": str(money(amount)), "currency": currency, "date": day,

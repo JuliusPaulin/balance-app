@@ -373,6 +373,25 @@ def test_a_failed_endpoint_raises_instead_of_reading_as_zero(seeded):
 # ── Subscriptions ─────────────────────────────────────────────────────────
 
 @pytest.fixture
+def subscription_clock(monkeypatch):
+    """Pin the detector's clock to the date the rest of this file already uses.
+
+    The charges below run March–August 2026. Left on the real clock, a run
+    after early November marks them stopped and they drop out of the totals.
+    """
+    import services.recurring as recurring
+
+    real = recurring.date
+
+    class _Date(real):
+        @classmethod
+        def today(cls):
+            return real(2026, 8, 30)
+
+    monkeypatch.setattr(recurring, "date", _Date)
+
+
+@pytest.fixture
 def with_a_subscription(client):
     """Six monthly charges from one merchant — enough for the detector."""
     entertainment = cat_id(client, "Entertainment")
@@ -381,7 +400,7 @@ def with_a_subscription(client):
     return client
 
 
-def test_subscriptions_carry_amounts_and_a_total(with_a_subscription):
+def test_subscriptions_carry_amounts_and_a_total(with_a_subscription, subscription_clock):
     """The keys are the endpoint's own.
 
     This tool read `amount`, `monthly_total` and `next_charge`; the endpoint
@@ -404,7 +423,7 @@ def test_subscriptions_carry_amounts_and_a_total(with_a_subscription):
     assert spotify["counts_toward_total"] is True
 
 
-def test_a_subscription_row_carries_no_yearly_figure(with_a_subscription):
+def test_a_subscription_row_carries_no_yearly_figure(with_a_subscription, subscription_clock):
     """Two amounts on a row, not three.
 
     Asked what the subscriptions cost each month the model wrote "1 253 € per
@@ -444,7 +463,7 @@ def test_a_salary_is_detected_but_does_not_count_as_a_subscription(client):
     assert "income" in payroll["not_a_subscription_because"]
 
 
-def test_rent_is_not_offered_as_a_subscription(client):
+def test_rent_is_not_offered_as_a_subscription(client, subscription_clock):
     """The same mistake the page made, one layer down.
 
     Asked what the subscriptions cost, the assistant answered with the rent

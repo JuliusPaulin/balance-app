@@ -20,3 +20,5 @@ scipy>=1.10
 # `pip install anthropic` — imported lazily, so its absence costs nothing.
 # Build tool: packages the desktop app (see Balance.spec).
 pyinstaller>=6.0
+# Local MCP server (python -m balance_mcp). The desktop window does not import it.
+mcp>=2.3,<3
