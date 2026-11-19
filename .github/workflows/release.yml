@@ -4,8 +4,19 @@
 #
 #     scripts/release.sh 1.3.1
 #
-# The tag is the trigger. update.sh downloads whatever this attaches to the
-# newest release, so nothing reaches anyone's Mac until this has run.
+# The tag is the trigger. update.sh and Sparkle both read whatever is attached
+# to the newest release, so nothing reaches anyone's Mac until this has run.
+#
+# Three jobs:
+#   preflight  the cheap checks, and the one that needs the signing key
+#   build      .github/workflows/build.yml, the same build every pull request
+#              runs, with the llama.cpp runtime compiled fresh
+#   publish    sign the appcast, then publish draft-first
+#
+# Safe to re-run on the same tag. The release is created as a draft, its
+# assets are checked, and only then is it published as latest — so a run that
+# fails part way leaves at most a draft, which the next run replaces. A tag
+# whose release is already published is refused rather than overwritten.
 name: Release
 
 on:
@@ -14,28 +25,53 @@ on:
       - "v*"
 
 permissions:
-  contents: write        # needed to create the release
+  contents: read
+
+concurrency:
+  # Two runs on one tag would race to create the same release.
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  build:
-    # Apple silicon runner: the app is arm64-only, and PyInstaller builds for
-    # whatever it runs on. An Intel runner here would produce a bundle that
-    # will not open on an M-series Mac.
-    runs-on: macos-15
-
+  preflight:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
-        with:
-          # Full history and tags. Notes come from CHANGELOG.md when this
-          # version has a section; otherwise they are the commits since the
-          # previous tag, which a shallow clone cannot see.
-          fetch-depth: 0
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - uses: actions/setup-python@v5
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.11"
 
-      - name: Require the Sparkle signing key
+      - name: Check the tag matches VERSION
+        # Tagging v1.3.1 while VERSION still says 1.3.0 ships an app that
+        # misreports itself.
+        run: |
+          tag="${GITHUB_REF_NAME#v}"
+          file="$(tr -d '[:space:]' < VERSION)"
+          if [ "$tag" != "$file" ]; then
+            echo "Tag $GITHUB_REF_NAME says $tag but VERSION says $file."
+            echo "Bump VERSION in a pull request, then tag — scripts/release.sh checks both."
+            exit 1
+          fi
+          python3 scripts/changelog.py "$file" > /dev/null \
+            || { echo "CHANGELOG.md has no '## $file' section."; exit 1; }
+          echo "Releasing $file"
+
+      - name: Check this tag is not already published
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          draft=$(gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" \
+                  --json isDraft --jq .isDraft 2>/dev/null || echo none)
+          case "$draft" in
+            false) echo "$GITHUB_REF_NAME is already published. Release a new version instead."; exit 1 ;;
+            true)  echo "A draft for $GITHUB_REF_NAME exists from an earlier run; publish will replace it." ;;
+            *)     echo "No release for $GITHUB_REF_NAME yet." ;;
+          esac
+
+      - name: Check the Sparkle signing key
+        # Before the 15-minute build, not after it.
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
@@ -43,162 +79,65 @@ jobs:
             echo "SPARKLE_PRIVATE_KEY is required to publish a signed update." >&2
             exit 1
           fi
-          echo "Sparkle signing secret is present"
+          python3 -m pip install -q -c constraints.txt cryptography
+          python3 scripts/publish_appcast.py --validate-key-only
 
-      - name: Check the tag matches VERSION
-        # Cheap guard against the classic mistake: tagging v1.3.1 while VERSION
-        # still says 1.3.0, shipping an app that misreports itself.
-        run: |
-          tag="${GITHUB_REF_NAME#v}"
-          file="$(tr -d '[:space:]' < VERSION)"
-          if [ "$tag" != "$file" ]; then
-            echo "Tag $GITHUB_REF_NAME says $tag but VERSION says $file."
-            echo "Bump VERSION and tag from it — scripts/release.sh does both."
-            exit 1
-          fi
-          echo "Building version $file"
+  build:
+    needs: preflight
+    uses: ./.github/workflows/build.yml
+    with:
+      # A release never depends on a cache. Compiling costs about four minutes
+      # on the runner; a stale binary would be a baffling way to lose one.
+      fresh-runtime: true
 
-      - name: Install Sparkle key validation dependency
-        run: python3 -m pip install 'cryptography>=42.0'
+  publish:
+    needs: build
+    # macOS: Sparkle's sign_update is a Mac binary.
+    runs-on: macos-15
+    timeout-minutes: 20
+    permissions:
+      contents: write   # create the release
+    env:
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          # Full history and tags: with no changelog section the notes fall
+          # back to the commits since the previous tag.
+          fetch-depth: 0
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+
+      - name: Install the appcast dependencies
+        run: python3 -m pip install -q -c constraints.txt cryptography
 
       - name: Fetch Sparkle
         run: ./scripts/fetch_sparkle.sh
 
-      - name: Verify the release key matches the app
-        env:
-          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
-        run: python3 scripts/publish_appcast.py --validate-key-only
-
-      - name: Install dependencies
-        run: |
-          python3 -m pip install --upgrade pip
-          python3 -m pip install -r requirements.txt
-
-      - name: Build the model runtime
-        # llama.cpp's server travels inside the app. It is not in git — 45 MB of
-        # compiled binaries do not belong in a repository — so it is built here,
-        # and Balance.spec expects it at vendor/llama. Without this step
-        # PyInstaller fails on a missing data source, which is the right way for
-        # it to fail: an app shipped without its runtime would tell every user
-        # that Balance AI is unavailable.
-        #
-        # This downloaded a release binary until it turned out that the release
-        # binary cannot use the GPU on macOS 12 or 13 — see
-        # patches/metal-readback.patch.
-        #
-        # Compiling costs 95 seconds on an 8-core M-series Mac, measured cold:
-        # clone, patch, configure, build, copy. This runner has 3 cores, so
-        # expect roughly four minutes. Not cached, because a stale CMake cache
-        # would be a rare and baffling way to lose a release and there is under
-        # four minutes to win.
-        #
-        # Before the tests, not after, so the one that checks the patch marker
-        # has a runtime to look at.
-        run: ./scripts/fetch_runtime.sh
-
-      - name: Confirm the Sparkle framework is available
-        run: |
-          test -x vendor/sparkle/bin/sign_update
-          test -x vendor/sparkle/bin/generate_appcast
-          test -d vendor/sparkle/Sparkle.framework
-
-      - name: Run the tests
-        # A release that fails its own suite should never reach anyone.
-        run: |
-          python3 -m pip install -r requirements-dev.txt
-          python3 -m pytest tests/ -q
-
-      - name: Build Balance.app
-        run: python3 -m PyInstaller Balance.spec --noconfirm --clean
-
-      - name: Check the build reports the right version
-        run: |
-          plist="dist/Balance.app/Contents/Info.plist"
-          built=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" "$plist")
-          expected="$(tr -d '[:space:]' < VERSION)"
-          [ "$built" = "$expected" ] || {
-            echo "Built app reports $built, expected $expected"; exit 1;
-          }
-          echo "Bundle reports $built"
-
-      - name: Check the runtime made it into the bundle
-        # The version check above catches a stale VERSION; this catches the
-        # equivalent for the assistant. A bundle that builds and runs but has no
-        # model server in it looks entirely healthy until someone opens the
-        # panel.
-        run: |
-          app="dist/Balance.app"
-          test -f "$app/Contents/Frameworks/vendor/llama/llama-server" \
-            || test -f "$app/Contents/Resources/vendor/llama/llama-server" \
-            || { echo "No llama-server in the bundle — the AI would not run."; exit 1; }
-          test -f "$app/Contents/Resources/licences/Apache-2.0.txt" \
-            || { echo "The model licence is missing from the bundle."; exit 1; }
-          # And that it is the patched one. Without the patch every Mac on
-          # macOS 13 or older falls back to its CPU and answers twelve times
-          # slower, which nothing in a build log would show.
-          build=$(cat "$app/Contents/Frameworks/vendor/llama/BUILD.txt" \
-                  2>/dev/null || cat "$app/Contents/Resources/vendor/llama/BUILD.txt")
-          case "$build" in
-            *metal-readback*) echo "Runtime is $build" ;;
-            *) echo "Runtime $build has no Metal readback patch — see"
-               echo "patches/metal-readback.patch. Do not ship this."; exit 1 ;;
-          esac
-          echo "Runtime and licences are in the bundle"
-
-      - name: Check Sparkle and its signatures
-        run: |
-          app="dist/Balance.app"
-          framework="$app/Contents/Frameworks/Sparkle.framework"
-          test -d "$framework" || { echo "Sparkle.framework is missing."; exit 1; }
-          test -f "$app/Contents/Resources/Sparkle-LICENSE.txt" \
-            || { echo "The Sparkle licence is missing from the bundle."; exit 1; }
-          python3 - "$app/Contents/Info.plist" services/update_config.json <<'PY'
-          import json, plistlib, sys
-          with open(sys.argv[1], "rb") as stream:
-              info = plistlib.load(stream)
-          with open(sys.argv[2], encoding="utf-8") as stream:
-              config = json.load(stream)
-          expected = {
-              "SUFeedURL": config["feed_url"],
-              "SUEnableAutomaticChecks": True,
-              "SUAutomaticallyUpdate": False,
-              "SUVerifyUpdateBeforeExtraction": True,
-              "SURequireSignedFeed": True,
-              "SUEnableSystemProfiling": False,
-              "LSMinimumSystemVersion": "12.0.0",
-          }
-          for key, value in expected.items():
-              if info.get(key) != value:
-                  raise SystemExit(f"{key} is {info.get(key)!r}, expected {value!r}")
-          if info.get("SUPublicEDKey") != config["public_key"]:
-              raise SystemExit("Embedded Sparkle public key does not match services/update_config.json")
-          print("Sparkle settings match the release configuration")
-          PY
-          # Deep strict verification covers Sparkle.framework and its XPC helpers.
-          codesign --verify --deep --strict --verbose=2 "$app"
-          codesign --verify --strict --verbose=2 "$framework"
-
-      - name: Zip it
-        # ditto, not zip: it preserves the bundle's symlinks and resource forks.
-        # The filename is load-bearing — update.sh greps for exactly this.
-        run: cd dist && ditto -c -k --keepParent Balance.app Balance-macOS-arm64.zip
+      - name: Take the zip the build made
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: Balance-macOS-arm64
+          path: dist
 
       - name: Create and sign the appcast
         env:
           SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
+          version="${GITHUB_REF_NAME#v}"
           python3 scripts/publish_appcast.py \
             --archive dist/Balance-macOS-arm64.zip \
-            --version "${GITHUB_REF_NAME#v}" \
+            --version "$version" \
             --tag "$GITHUB_REF_NAME" \
             --repo "$GITHUB_REPOSITORY" \
             --output dist/appcast.xml
+          grep -q "<sparkle:version>$version</sparkle:version>" dist/appcast.xml \
+            || { echo "The appcast does not list $version."; exit 1; }
 
-      - name: Publish the release
-        env:
-          GH_TOKEN: ${{ github.token }}
+      - name: Write the release notes
         run: |
-          notes_file=$(mktemp)
           body_file=$(mktemp)
           version="${GITHUB_REF_NAME#v}"
           # Readers see the changelog section. A tag with no section still
@@ -224,10 +163,43 @@ jobs:
             printf '\n**Update**\n\nQuit Balance, then run:\n\n'
             printf '    curl -fsSL https://raw.githubusercontent.com/%s/main/update.sh | bash\n\n' "$GITHUB_REPOSITORY"
             printf 'Your data in ~/Library/Application Support/Balance/ is not touched.\n'
-          } > "$notes_file"
+          } > dist/notes.md
 
-          gh release create "$GITHUB_REF_NAME" \
+      - name: Publish the release
+        run: |
+          tag="$GITHUB_REF_NAME"
+          # Checked again here: the build took a quarter of an hour.
+          draft=$(gh release view "$tag" --json isDraft --jq .isDraft 2>/dev/null || echo none)
+          case "$draft" in
+            false) echo "$tag was published while this ran. Leaving it alone."; exit 1 ;;
+            true)  echo "Replacing the draft an earlier run left"
+                   gh release delete "$tag" --yes ;;   # no --cleanup-tag: the tag stays
+          esac
+
+          # A draft is invisible to update.sh and to Sparkle: releases/latest
+          # skips drafts. Nothing anyone downloads changes until the edit below.
+          gh release create "$tag" \
             dist/Balance-macOS-arm64.zip \
             dist/appcast.xml \
-            --title "Balance ${GITHUB_REF_NAME#v}" \
-            --notes-file "$notes_file"
+            --draft \
+            --verify-tag \
+            --title "Balance ${tag#v}" \
+            --notes-file dist/notes.md
+
+          # Every asset there, at the size it left this machine.
+          for f in Balance-macOS-arm64.zip appcast.xml; do
+            want=$(stat -f %z "dist/$f")
+            got=$(gh release view "$tag" --json assets \
+                  --jq ".assets[] | select(.name == \"$f\") | .size")
+            [ "$got" = "$want" ] || { echo "$f is '$got' bytes on the release, $want here."; exit 1; }
+          done
+
+          gh release edit "$tag" --draft=false --latest
+          echo "Published $tag"
+
+      - name: Check what update.sh will download
+        run: |
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          [ "$latest" = "$GITHUB_REF_NAME" ] \
+            || { echo "Latest release is $latest, not $GITHUB_REF_NAME."; exit 1; }
+          echo "Latest release is $latest"
