@@ -501,6 +501,11 @@ def test_the_shipped_runtime_carries_the_metal_patch():
     to look at.
     """
     if not model_runtime.server_binary():
+        # CI builds the runtime first and sets this, so a build step that
+        # quietly stopped producing one fails here instead of skipping.
+        if os.environ.get("BALANCE_REQUIRE_RUNTIME") == "1":
+            pytest.fail("BALANCE_REQUIRE_RUNTIME=1 but there is no runtime in "
+                        "vendor/llama — scripts/fetch_runtime.sh")
         pytest.skip("no runtime in this checkout — scripts/fetch_runtime.sh")
     build = model_runtime.runtime_build()
     assert model_runtime.RUNTIME_PATCH in build, (
