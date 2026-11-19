@@ -2,7 +2,9 @@
 #
 # The release workflow does this and then publishes. This one exists so a
 # change to the runtime build can be proven on a pull request, on the same
-# Apple silicon runner, without tagging or creating a release.
+# Apple silicon runner, without tagging or creating a release. It never uses a
+# cache, and it checks what build.yml does not: the pinned commit, and that
+# nothing was downloaded from Hugging Face.
 name: Runtime
 
 on:
@@ -16,12 +18,17 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: runtime-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   runtime:
     name: runtime
     runs-on: macos-15
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
       - name: Build the model runtime
         run: |

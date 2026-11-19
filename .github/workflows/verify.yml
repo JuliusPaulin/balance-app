@@ -1,5 +1,9 @@
 name: Verify
 
+# Lint and the full suite on Linux, in about a minute. The macOS build in
+# build.yml runs the suite again on the release's own runner, then builds and
+# checks the app; this one answers first and runs ruff.
+#
 # Report-only. A failed run is a red check on the pull request, and it does
 # not block merging while "verify" is not a required status check.
 #
@@ -25,14 +29,22 @@ jobs:
   verify:
     name: verify
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
         with:
           python-version: "3.12"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            constraints.txt
       - name: Install dependencies
-        run: |
-          python -m pip install --upgrade pip
-          python -m pip install -r requirements.txt -r requirements-dev.txt
+        # constraints.txt: the versions the macOS build proved, so a pass here
+        # and a pass there are about the same packages.
+        run: python -m pip install -r requirements.txt -r requirements-dev.txt -c constraints.txt
       - name: Run verify
         run: python scripts/verify.py
