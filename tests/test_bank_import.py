@@ -17,7 +17,6 @@ tests are pure and need no DB.
 """
 
 import base64
-import json
 
 import pytest
 

@@ -26,3 +26,4 @@ vendor/
 # The llama.cpp checkout scripts/fetch_runtime.sh builds the runtime from.
 # Kept between runs so a rebuild is incremental; never committed.
 .llama-build/
+.ruff_cache/

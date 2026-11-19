@@ -1,0 +1,38 @@
+name: Verify
+
+# Report-only. A failed run is a red check on the pull request, and it does
+# not block merging while "verify" is not a required status check.
+#
+# To enforce later, add "verify" as a required status check. No edit to this
+# file is needed:
+#   GitHub → Settings → Rules → Rulesets
+#   (or Settings → Branches → Branch protection rules)
+#   for main → Require status checks to pass → add "verify".
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: verify-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    name: verify
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt -r requirements-dev.txt
+      - name: Run verify
+        run: python scripts/verify.py

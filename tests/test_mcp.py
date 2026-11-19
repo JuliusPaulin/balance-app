@@ -229,31 +229,32 @@ def test_preview_writes_nothing(tmp_path):
     before = (_count("transactions"), _count("import_batches"), _count("mcp_audit"))
     preview = service.preview_bank_import(path)
     assert preview["to_import"] == 2
-    assert preview["duplicates"] == 0
+    assert "duplicates" not in preview
+    assert all("duplicate" not in row for row in preview["samples"])
     assert (_count("transactions"), _count("import_batches"), _count("mcp_audit")) == before
 
 
-def test_commit_skips_duplicates_and_undoes(tmp_path):
+def test_commit_imports_every_row_and_undoes_the_batch(tmp_path):
     _add("2026-03-01", "K-Market", "Groceries", 12.40)
     path = _write(tmp_path, FINNISH + "2026/03/01;-12,40;K-Market;\n")
     preview = service.preview_bank_import(path)
     assert preview["parsed"] == 3
-    assert preview["duplicates"] == 2
-    assert preview["to_import"] == 1
-    assert preview["samples"][0]["store"] == "Palkka"
-    with pytest.raises(BalanceMcpError, match="would import 1"):
+    assert preview["to_import"] == 3
+    assert "duplicates" not in preview
+    assert all("duplicate" not in row for row in preview["samples"])
+    with pytest.raises(BalanceMcpError, match="would import 3"):
         service.commit_bank_import(path, expected_new=2)
     assert _count("transactions") == 1
     assert _count("mcp_audit") == 0
 
-    committed = service.commit_bank_import(path, expected_new=1)
-    assert committed["committed"] == 1
-    assert committed["skipped_duplicates"] == 2
+    committed = service.commit_bank_import(path, expected_new=3)
+    assert committed["committed"] == 3
     assert service.search_transactions(merchant="Palkka")["total"] == 1
-    assert _count("transactions") == 2
+    assert service.search_transactions(merchant="K-Market")["total"] == 3
+    assert _count("transactions") == 4
 
     undone = service.undo_change(committed["audit_id"])
-    assert undone["result"]["removed"] == 1
+    assert undone["result"]["removed"] == 3
     assert service.search_transactions()["total"] == 1
     with db.db_conn() as conn:
         status = conn.execute(
@@ -264,19 +265,17 @@ def test_commit_skips_duplicates_and_undoes(tmp_path):
         service.undo_change(committed["audit_id"])
 
 
-def test_include_duplicates_imports_the_second_copy(tmp_path):
+def test_repeated_rows_are_all_imported(tmp_path):
     text = (
         "Kirjauspäivä;Määrä;Nimi;Viesti\n"
         "2026/03/01;-8,00;Cafe;\n"
         "2026/03/01;-8,00;Cafe;\n"
     )
     path = _write(tmp_path, text)
-    skipped = service.preview_bank_import(path)
-    assert skipped["to_import"] == 1
-    assert skipped["duplicates"] == 1
-    kept = service.preview_bank_import(path, include_duplicates=True)
-    assert kept["to_import"] == 2
-    service.commit_bank_import(path, expected_new=2, include_duplicates=True)
+    preview = service.preview_bank_import(path)
+    assert preview["parsed"] == 2
+    assert preview["to_import"] == 2
+    service.commit_bank_import(path, expected_new=2)
     assert service.search_transactions(merchant="Cafe")["total"] == 2
 
 

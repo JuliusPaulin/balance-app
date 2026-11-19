@@ -1,5 +1,3 @@
-from datetime import date
-
 import pytest
 
 from services.portfolio_math import analyze_risk, eur_price_monthly, frontier, xirr

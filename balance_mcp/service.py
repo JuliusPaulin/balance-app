@@ -38,7 +38,6 @@ from services.networth import compute_history, summary
 
 _MAX_CSV_BYTES = 16 * 1024 * 1024
 _SAMPLE_NEW = 8
-_SAMPLE_DUP = 5
 _SAMPLE_RULE = 20
 
 _READ_TX = """
@@ -741,15 +740,6 @@ def _category_for_staged(conn, suggested: str | None, txn_type: str):
     return other["id"], other["name"], False
 
 
-def _fingerprint(row) -> tuple:
-    return (
-        row["date"],
-        (row["store"] or "").strip().casefold(),
-        _cents(row["amount"]),
-        row["type"],
-    )
-
-
 def _stage(conn, filename: str, content: str, layout: dict) -> int:
     reader = csv.reader(io.StringIO(content), delimiter=layout["delimiter"])
     _read_headers(reader)
@@ -774,26 +764,18 @@ def _stage(conn, filename: str, content: str, layout: dict) -> int:
     return batch_id
 
 
-def _classify(conn, batch_id: int, include_duplicates: bool) -> dict:
+def _classify(conn, batch_id: int) -> dict:
     staged = conn.execute(
         "SELECT id, date, store, amount, type, suggested_category, import_fx "
         "FROM import_staging WHERE import_batch_id = %s AND user_id = %s ORDER BY id",
         (batch_id, _uid()),
     ).fetchall()
-    existing = {
-        _fingerprint(row)
-        for row in conn.execute(
-            "SELECT date, store, amount, type FROM transactions WHERE user_id = %s",
-            (_uid(),),
-        ).fetchall()
-    }
-    seen = set()
     rows = []
     for raw in staged:
         category_id, category, suggested = _category_for_staged(
             conn, raw["suggested_category"], raw["type"],
         )
-        item = {
+        rows.append({
             "staging_id": raw["id"],
             "date": raw["date"],
             "store": raw["store"],
@@ -803,18 +785,8 @@ def _classify(conn, batch_id: int, include_duplicates: bool) -> dict:
             "category_id": category_id,
             "category": category,
             "suggested": suggested,
-        }
-        fp = _fingerprint(item)
-        if fp in existing:
-            item["duplicate"] = "database"
-        elif fp in seen:
-            item["duplicate"] = "file"
-        else:
-            item["duplicate"] = None
-        seen.add(fp)
-        rows.append(item)
-    duplicates = [row for row in rows if row["duplicate"]]
-    chosen = rows if include_duplicates else [row for row in rows if not row["duplicate"]]
+        })
+    chosen = rows
     expense, income = _sums(chosen)
     batch = conn.execute(
         "SELECT import_summary FROM import_batches WHERE id = %s AND user_id = %s",
@@ -823,12 +795,9 @@ def _classify(conn, batch_id: int, include_duplicates: bool) -> dict:
     return {
         "parsed": len(rows),
         "to_import": len(chosen),
-        "duplicates": len(duplicates),
-        "include_duplicates": include_duplicates,
         "sum_expense": expense,
         "sum_income": income,
         "samples": _public_import_rows(chosen, _SAMPLE_NEW),
-        "duplicate_samples": _public_import_rows(duplicates, _SAMPLE_DUP),
         "parser": db.load_json(batch["import_summary"]) if batch and batch["import_summary"] else None,
         "_chosen": chosen,
     }
@@ -850,7 +819,6 @@ def _public_import_rows(rows, limit: int) -> list:
             "category_id": row["category_id"],
             "category": row["category"],
             "suggested": row["suggested"],
-            "duplicate": row["duplicate"],
         }
         for row in rows[:limit]
     ]
@@ -876,15 +844,13 @@ def _preview_payload(filename: str, layout: dict, classified: dict | None) -> di
         "mapping_ignored": layout["mapping_ignored"],
     }
     payload.update({key: classified[key] for key in (
-        "parsed", "to_import", "duplicates", "include_duplicates",
-        "sum_expense", "sum_income", "samples", "duplicate_samples", "parser",
+        "parsed", "to_import", "sum_expense", "sum_income", "samples", "parser",
     )})
     return payload
 
 
 def preview_bank_import(
     path: str,
-    include_duplicates: bool = False,
     date_col: int | None = None,
     amount_col: int | None = None,
     store_col: int | None = None,
@@ -899,7 +865,7 @@ def preview_bank_import(
         if layout["needs_mapping"]:
             return _preview_payload(filename, layout, None)
         batch_id = _stage(conn, filename, content, layout)
-        classified = _classify(conn, batch_id, bool(include_duplicates))
+        classified = _classify(conn, batch_id)
         return _preview_payload(filename, layout, classified)
     finally:
         conn.rollback()
@@ -949,7 +915,6 @@ def _remember_format(conn, layout: dict, mapping) -> dict:
 def commit_bank_import(
     path: str,
     expected_new: int,
-    include_duplicates: bool = False,
     date_col: int | None = None,
     amount_col: int | None = None,
     store_col: int | None = None,
@@ -962,9 +927,8 @@ def commit_bank_import(
     resolved, content = _read_csv(path)
     mapping = _mapping(date_col, amount_col, store_col, amount_sign)
     filename = os.path.basename(resolved)
-    include_duplicates = bool(include_duplicates)
     preview = preview_bank_import(
-        resolved, include_duplicates, date_col, amount_col, store_col, amount_sign,
+        resolved, date_col, amount_col, store_col, amount_sign,
     )
     if preview.get("needs_mapping"):
         raise BalanceMcpError(
@@ -972,22 +936,20 @@ def commit_bank_import(
         )
     if preview["to_import"] != expected_new:
         raise BalanceMcpError(
-            f"This file would import {preview['to_import']} transactions "
-            f"(include_duplicates={include_duplicates}), not {expected_new}. "
-            "Preview again with the same options and pass that to_import count."
+            f"This file would import {preview['to_import']} transactions, "
+            f"not {expected_new}. "
+            "Preview again and pass that to_import count."
         )
     if expected_new == 0:
         return {
             "dry_run": False,
             "committed": 0,
-            "skipped_duplicates": preview["duplicates"],
             "batch_id": None,
             "audit_id": None,
             "filename": filename,
             "sum_expense": 0,
             "sum_income": 0,
             "to_import": 0,
-            "duplicates": preview["duplicates"],
             "format_saved": False,
         }
     backup_db("pre-import")
@@ -998,7 +960,7 @@ def commit_bank_import(
                 "This file needs a column mapping. Preview it, then pass date_col and amount_col."
             )
         batch_id = _stage(conn, filename, content, layout)
-        classified = _classify(conn, batch_id, include_duplicates)
+        classified = _classify(conn, batch_id)
         if classified["to_import"] != expected_new:
             raise BalanceMcpError(
                 "The file or the database changed since the preview. Nothing was imported. Preview again."
@@ -1027,10 +989,7 @@ def commit_bank_import(
         format_info = None
         if remember_format and layout["how"] == "manual" and mapping:
             format_info = _remember_format(conn, layout, mapping)
-        summary_text = (
-            f"Imported {len(ids)} transactions from {filename}. "
-            f"Skipped {classified['duplicates']} duplicates."
-        )
+        summary_text = f"Imported {len(ids)} transactions from {filename}."
         audit_id = _record(conn, "import", summary_text, "import_batch", {
             "batch_id": batch_id,
             "transaction_ids": ids,
@@ -1039,14 +998,12 @@ def commit_bank_import(
     return {
         "dry_run": False,
         "committed": len(ids),
-        "skipped_duplicates": classified["duplicates"],
         "batch_id": batch_id,
         "audit_id": audit_id,
         "filename": filename,
         "sum_expense": classified["sum_expense"],
         "sum_income": classified["sum_income"],
         "to_import": classified["to_import"],
-        "duplicates": classified["duplicates"],
         "format_saved": format_info is not None,
     }
 

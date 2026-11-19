@@ -11,8 +11,6 @@ import sys
 # repo root — put the root on the path before importing them.
 sys.path.insert(0, os.path.join(os.path.dirname(os.path.abspath(__file__)), ".."))
 
-from collections import defaultdict
-
 # Reuse the app's DB connection helper so this script resolves the database by
 # absolute path (relative to data/schema.py), never relative to the current working
 # directory — running it from any folder hits the same expenses.db.

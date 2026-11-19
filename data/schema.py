@@ -26,7 +26,7 @@ from datetime import date, datetime, timedelta
 
 import config
 from data import db
-from data.db import db_conn  # re-export so `from data.schema import db_conn` keeps working
+from data.db import db_conn  # noqa: F401  re-export: `from data.schema import db_conn`
 
 # Default categories — 28 expense + 6 income = 34 total. Single source of truth
 # for per-user seeding on both backends.

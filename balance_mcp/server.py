@@ -22,7 +22,7 @@ _INSTRUCTIONS = (
     "preview_bank_import and preview_recategorise change nothing. "
     "commit_bank_import requires expected_new equal to the preview's to_import, "
     "and apply_recategorise requires expected_updates equal to would_update. "
-    "Duplicates are skipped unless include_duplicates is true. "
+    "Every row in a file is imported, including repeats. "
     "Imports do not fetch exchange rates and do not retrain category rules. "
     "Every write is listed by list_audit_log and reversed by undo_change. "
     "Spending transactions are not tied to net-worth accounts. "
@@ -148,7 +148,6 @@ def build_server() -> MCPServer:
     @_expose
     def preview_bank_import(
         path: str,
-        include_duplicates: bool = False,
         date_col: int | None = None,
         amount_col: int | None = None,
         store_col: int | None = None,
@@ -156,16 +155,16 @@ def build_server() -> MCPServer:
     ) -> dict:
         """Read a bank CSV and report what an import would do. Writes nothing.
 
-        path is a local .csv file. Duplicates (same date, store, amount in
-        cents, and expense or income) are counted and skipped unless
-        include_duplicates is true. A recognised Nordea, Finnish bank, Finnair,
-        or Revolut file is parsed on its own. An unknown layout returns
-        needs_mapping; pass date_col and amount_col (0-based), and store_col
-        if there is a merchant column. amount_sign is neg_expense (default) or
-        pos_expense. Non-EUR amounts import only when a rate is already saved.
+        path is a local .csv file. Every parsed row is reported, including
+        repeats of the same date, store, and amount. A recognised Nordea,
+        Finnish bank, Finnair, or Revolut file is parsed on its own. An unknown
+        layout returns needs_mapping; pass date_col and amount_col (0-based),
+        and store_col if there is a merchant column. amount_sign is
+        neg_expense (default) or pos_expense. Non-EUR amounts import only when
+        a rate is already saved.
         """
         return service.preview_bank_import(
-            path, include_duplicates, date_col, amount_col, store_col, amount_sign,
+            path, date_col, amount_col, store_col, amount_sign,
         )
 
     @mcp.tool(annotations=_CHANGE, structured_output=False)
@@ -173,7 +172,6 @@ def build_server() -> MCPServer:
     def commit_bank_import(
         path: str,
         expected_new: int,
-        include_duplicates: bool = False,
         date_col: int | None = None,
         amount_col: int | None = None,
         store_col: int | None = None,
@@ -182,14 +180,14 @@ def build_server() -> MCPServer:
     ) -> dict:
         """Import a bank CSV. Refuses unless expected_new equals the preview's to_import.
 
-        Use the same path, include_duplicates, and column mapping as the preview.
-        Duplicates are skipped unless include_duplicates is true. remember_format
-        saves a manual column mapping for next time; it does nothing for a
-        layout the parser already recognises. Does not retrain category rules
-        and does not fetch exchange rates. The returned audit_id reverses it.
+        Use the same path and column mapping as the preview. Every parsed row
+        is imported, including repeats. remember_format saves a manual column
+        mapping for next time; it does nothing for a layout the parser already
+        recognises. Does not retrain category rules and does not fetch exchange
+        rates. The returned audit_id reverses the whole batch.
         """
         return service.commit_bank_import(
-            path, expected_new, include_duplicates, date_col, amount_col, store_col,
+            path, expected_new, date_col, amount_col, store_col,
             amount_sign, remember_format,
         )
 

@@ -13,7 +13,6 @@ Run: python3 -m pytest test_security.py
 import pytest
 
 import app as app_module
-import config
 
 
 @pytest.fixture

@@ -114,8 +114,8 @@ Accounts are the net-worth tools.
 | `cash_flow` | read | `date_from?`, `date_to?` | Income, expense, and net per month. Expense includes the Investments category; `investments` is also reported on its own so a transfer into a fund is not read as spending. |
 | `list_categories` | read | `category_type?` | id, name, type, whether it is a default, how many transactions, last used. |
 | `list_category_rules` | read | — | pattern, match type, category. |
-| `preview_bank_import` | read | `path`, `include_duplicates` (default false), optional `date_col` / `amount_col` / `store_col` / `amount_sign` | Counts, duplicate count, sums of what would be new, up to 8 sample rows and 5 duplicate samples. Unknown layout: `needs_mapping` with headers, five sample rows, and a column guess. No database write. |
-| `commit_bank_import` | write | the same, plus `expected_new` and `remember_format` (default false) | Inserts the new rows, or refuses if `expected_new` is not the preview's `to_import`. |
+| `preview_bank_import` | read | `path`, optional `date_col` / `amount_col` / `store_col` / `amount_sign` | How many rows would be imported, their sums, and up to 8 sample rows. Every parsed row is included, repeats too. Unknown layout: `needs_mapping` with headers, five sample rows, and a column guess. No database write. |
+| `commit_bank_import` | write | the same, plus `expected_new` and `remember_format` (default false) | Inserts every parsed row, or refuses if `expected_new` is not the preview's `to_import`. |
 | `set_transaction_category` | write | `transaction_id`, category by id or by name + type | The row. Same category is not a write. Type must match. |
 | `create_category` | write | `name`, `category_type` | The category. Refuses a second category with the same name and type. |
 | `rename_category` | write | `category_id`, `name` | The category. |
@@ -145,12 +145,10 @@ Preview stages inside a connection and rolls it back. Commit stages again and
 commits. The second pass checks `expected_new` again, so a statement imported
 from the app between the two calls is caught.
 
-Duplicates are skipped unless `include_duplicates` is true. The key is the
-date, the store with case and surrounding space ignored, the amount in cents,
-and expense versus income. The first copy in the file is the one that can be
-new; a later copy of the same key is a duplicate, and so is a row that already
-exists in `transactions`. The app has no bank-reference column to do better
-than this. Category is not part of the key.
+Every parsed row is imported. The same drink bought twice in one night is two
+rows, and a file imported again is imported again. There is no duplicate key
+and no `include_duplicates` flag. The batch is still one audit row, so
+`undo_change` removes that import and leaves anything that was already there.
 
 A new row's category is the suggestion for its type, and Other of that type
 when there is no suggestion. Commit does **not** call `_rebuild_merchant_rules`.
@@ -213,9 +211,8 @@ category name, which is what the screen's `q` parameter does.
 
 ## Risks
 
-- The duplicate key will treat two genuine same-day charges at the same shop
-  for the same amount as one charge. `include_duplicates` is the escape, and
-  the preview says how many rows it would skip.
+- A file imported twice creates two batches. `undo_change` on the second
+  batch's audit row removes that copy and leaves the first.
 - Undo is per audit row, not a stack. Undoing an older category change after
   a newer one fails cleanly when the old category is gone, and otherwise puts
   back the category recorded at the time. That can overwrite a later edit.
@@ -239,10 +236,10 @@ uses. Fixtures are synthetic CSV strings, not bank files.
   rules. Empty database returns zeros and empty lists.
 - Import: a Nordea-shaped file and a Finnish bank file preview to the same
   rows the HTTP upload stages. Preview writes nothing. Commit with the wrong
-  `expected_new` writes nothing. Commit skips database duplicates and a second
-  copy inside the file. `include_duplicates` keeps them. Unknown layout asks
-  for a mapping and does not create a batch; a mapping then imports. A
-  hand-written rule is still there after commit.
+  `expected_new` writes nothing. Two identical rows, and a row that already
+  exists, are all imported. Undo of that batch removes only the rows it
+  added. Unknown layout asks for a mapping and does not create a batch; a
+  mapping then imports. A hand-written rule is still there after commit.
 - Currency: an uncached non-EUR file is refused and `requests.get` is not
   called. A rate already in `import_exchange_rates` converts with no request.
 - Categories: create, refuse a duplicate, rename, set one transaction, refuse
@@ -260,18 +257,21 @@ uses. Fixtures are synthetic CSV strings, not bank files.
 - The server object lists these tools with the read-only hints, and
   `list_categories` through `call_tool` returns the seeded Groceries category.
 
-`python3 -m pytest tests/test_mcp.py` covers the server. The rest of the suite
-is unchanged by it. Three subscription cases in `tests/test_ai_tools.py` fail
-when the clock is past early November 2026, because their fixtures stop in
-August and the detector then marks the series stopped. That failure is present
-on main and is not caused by this server. The server is not started as a
-subprocess in the suite; `call_tool` on the in-process server covers the SDK
-wiring, and stdio is the default of `MCPServer.run`.
+`python3 scripts/verify.py` is the one command: ruff, then the whole pytest
+suite. That suite includes Hypothesis checks on date and amount parsing, on
+importing every generated row and undoing the batch, and on an exact rule
+surviving a change of case. `tests/test_schema_migration.py` builds an older
+database, calls `init_db()` twice, and checks the rows are still there.
+`tests/e2e/` starts the real MCP process over stdio and the Flask server on
+127.0.0.1. The three subscription cases in `tests/test_ai_tools.py` pin the
+detector's clock to 30 August 2026, the date the rest of that file already
+uses, so a later calendar day does not mark the fixtures stopped.
 
 ## Decisions worth a look
 
-1. Duplicate means date + store + amount in cents + type. There is no bank
-   reference on `transactions` to key on instead.
+1. An import keeps every parsed row. Repeats are real charges. A second
+   import of the same file is a second batch, and `undo_change` removes that
+   batch.
 2. "Uncategorised" means the Other category of the right type.
 3. An MCP import does not retrain merchant rules.
 4. Non-EUR files import only when a rate is already saved. Otherwise the app

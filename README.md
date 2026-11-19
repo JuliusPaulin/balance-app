@@ -146,8 +146,8 @@ not the one on your `PATH`. Restart the assistant after saving the file.
 | `cash_flow` | Income, expense, and net by month. Investments are also split out. |
 | `list_categories` | Categories, with how often each is used. |
 | `list_category_rules` | Merchant rules. |
-| `preview_bank_import` | Read a CSV and report new rows, duplicates, and a sample. Writes nothing. |
-| `commit_bank_import` | Import it. Pass `expected_new` from the preview. Duplicates are skipped unless asked. |
+| `preview_bank_import` | Read a CSV and report every row it would import, including repeats, plus a sample. Writes nothing. |
+| `commit_bank_import` | Import every parsed row. Pass `expected_new` from the preview. Undo removes that batch. |
 | `set_transaction_category` | Change one transaction's category. |
 | `create_category` | Add a category. |
 | `rename_category` | Rename a category. |
@@ -205,11 +205,18 @@ Never add the private key to the repository.
 ### Tests
 
 ```
-python3 -m pytest tests/
+python3 scripts/verify.py
 ```
 
-They run against a throwaway database in a temp folder — your own figures are
-never opened.
+That is the one command: a lint pass, then the full pytest suite, including
+the property checks, the schema check, and the end-to-end checks. The same
+command runs in GitHub Actions on pull requests and on pushes to `main`. A
+red run is visible there and does not block merging until `verify` is added
+as a required status check. `REVIEW.md` is the checklist for reading a pull
+request.
+
+`python3 -m pytest tests/` is the suite on its own. It runs against a
+throwaway database in a temp folder — your own figures are never opened.
 
 ### Where things live
 
