@@ -1,0 +1,48 @@
+# Compile the bundled llama-server and stop there.
+#
+# The release workflow does this and then publishes. This one exists so a
+# change to the runtime build can be proven on a pull request, on the same
+# Apple silicon runner, without tagging or creating a release.
+name: Runtime
+
+on:
+  pull_request:
+    paths:
+      - scripts/fetch_runtime.sh
+      - patches/metal-readback.patch
+      - .github/workflows/runtime.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    name: runtime
+    runs-on: macos-15
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build the model runtime
+        run: |
+          ./scripts/fetch_runtime.sh 2>&1 | tee runtime-build.log
+          if grep -q 'huggingface.co' runtime-build.log; then
+            echo "The runtime build reached Hugging Face. Balance does not use that UI."
+            exit 1
+          fi
+
+      - name: Check the runtime and the Metal patch
+        run: |
+          test -x vendor/llama/llama-server
+          build="$(cat vendor/llama/BUILD.txt)"
+          case "$build" in
+            b10715+metal-readback) echo "Runtime is $build" ;;
+            *) echo "Runtime is '$build', expected b10715+metal-readback"; exit 1 ;;
+          esac
+          if find .llama-build -name 'dist.tar.gz' -print | grep -q .; then
+            echo "A UI archive was downloaded."
+            exit 1
+          fi
+          head="$(git -C .llama-build/llama.cpp rev-parse HEAD)"
+          test "$head" = "662a0b0121a53c23b825a71e64ab6eff59b7f4d8"
+          echo "Built llama.cpp $head"

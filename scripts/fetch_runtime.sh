@@ -1,9 +1,9 @@
 #!/bin/bash
 # Build the model runtime that ships inside Balance.app.
 #
-# llama.cpp's own server, from its own source, pinned to a tag and carrying one
-# patch of ours. It is not in git: 56 MB of compiled binaries do not belong in a
-# repository. `build_app.sh` runs this before packaging.
+# llama.cpp's own server, from its own source, pinned to one commit and carrying
+# one patch of ours. It is not in git: 56 MB of compiled binaries do not belong
+# in a repository. `build_app.sh` runs this before packaging.
 #
 # Pinned rather than "latest" on purpose. The thing this app depends on is not
 # llama.cpp in general but a few behaviours of it — that Qwen's tool calls come
@@ -26,10 +26,26 @@
 # Building only the `llama-server` target saves four seconds of the ninety-five
 # — the other tools link against dylibs this has already built — so the build is
 # left whole rather than narrowed for nothing.
+#
+# The server's browser page is a different matter. Turning the server on also
+# configures tools/ui, and that step downloads a tarball from Hugging Face.
+# The versioned file (b1) 404s, so the script takes the floating "latest"
+# archive. v1.15.0, on 1 November 2026, embedded the archive it found there.
+# The same URL on 19 November still checksummed and still contained
+# index.html, and no longer contained the bundle files b10715's embedder
+# requires, so the release stopped at this step. Balance never opens that
+# page: ai/runtime.py starts llama-server on 127.0.0.1 and talks to /health,
+# /props and the chat API. The two flags below embed an empty asset table
+# from these sources, and the server still links.
 set -e
 cd "$(dirname "$0")/.."
 
 BUILD="${LLAMA_BUILD:-b10715}"
+# The tag name is what BUILD.txt records. This commit is what is compiled:
+# `git ls-remote` of b10715 on the day both release runs cloned it, and the
+# "ggml commit" line in both logs. A tag that moves fails here instead of
+# compiling whatever the name points at now.
+COMMIT="${LLAMA_COMMIT:-662a0b0121a53c23b825a71e64ab6eff59b7f4d8}"
 # What BUILD.txt says, and what the app checks for before it trusts the GPU on
 # an old Mac. Change the patch and change this with it.
 PATCH="metal-readback"
@@ -60,10 +76,10 @@ case "$ARCH" in
     *) echo "No llama.cpp build for ${ARCH}"; exit 1 ;;
 esac
 
-echo "=== Fetching llama.cpp ${BUILD} source ==="
+echo "=== Fetching llama.cpp ${BUILD} (${COMMIT}) ==="
 mkdir -p .llama-build
 if [ -d "${SRC_DIR}/.git" ] && \
-   [ "$(git -C "${SRC_DIR}" describe --tags --exact-match 2>/dev/null)" = "${BUILD}" ]; then
+   [ "$(git -C "${SRC_DIR}" rev-parse HEAD 2>/dev/null)" = "${COMMIT}" ]; then
     # Kept between runs so a second build is incremental. The patch is reapplied
     # from a clean tree every time, so a half-applied one cannot survive.
     git -C "${SRC_DIR}" checkout -- .
@@ -71,6 +87,13 @@ else
     rm -rf "${SRC_DIR}"
     git clone --depth 1 --branch "${BUILD}" \
         https://github.com/ggml-org/llama.cpp.git "${SRC_DIR}"
+    got="$(git -C "${SRC_DIR}" rev-parse HEAD)"
+    if [ "${got}" != "${COMMIT}" ]; then
+        echo "llama.cpp ${BUILD} resolved to ${got}."
+        echo "Expected ${COMMIT}, the commit v1.15.0 and the first v1.16.0 run built."
+        echo "The tag moved. Set LLAMA_COMMIT only after the Metal patch still applies."
+        exit 1
+    fi
 fi
 
 echo "=== Applying ${PATCH} ==="
@@ -91,6 +114,14 @@ echo "=== Building (about 90 seconds on eight cores) ==="
 # no use for. The deployment target is theirs and is load-bearing: built on a
 # current runner without it, the binary would refuse to load on the very Macs
 # this patch exists for.
+#
+# A reused build directory can still hold the UI tarball from a run that
+# downloaded one. The flags refuse a new download; this removes the old one
+# so it cannot be embedded either.
+rm -rf "${SRC_DIR}/build/tools/ui/dist" \
+       "${SRC_DIR}/build/tools/ui/dist.tar.gz" \
+       "${SRC_DIR}/build/tools/ui/dist.tar.gz.sha256" \
+       "${SRC_DIR}/build/tools/ui/.ui-stamp"
 cmake -S "${SRC_DIR}" -B "${SRC_DIR}/build" \
     -DCMAKE_BUILD_TYPE=Release \
     -DGGML_METAL="${METAL}" \
@@ -103,6 +134,8 @@ cmake -S "${SRC_DIR}" -B "${SRC_DIR}/build" \
     -DLLAMA_BUILD_TOOLS=ON \
     -DLLAMA_BUILD_SERVER=ON \
     -DLLAMA_BUILD_APP=OFF \
+    -DLLAMA_BUILD_UI=OFF \
+    -DLLAMA_USE_PREBUILT_UI=OFF \
     -DLLAMA_OPENSSL=OFF
 cmake --build "${SRC_DIR}/build" --config Release -j "$(sysctl -n hw.logicalcpu)"
 
