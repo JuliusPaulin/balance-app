@@ -32,20 +32,9 @@ echo "=== Building ${APP_NAME}.app ==="
 python3 -m PyInstaller Balance.spec --noconfirm --clean
 
 echo "=== Checking the bundle ==="
-# The same two things the release workflow checks, so a local build fails here
-# rather than in CI ten minutes later.
-BUILT=$(/usr/libexec/PlistBuddy -c "Print CFBundleShortVersionString" \
-        "${DIST_DIR}/${APP_NAME}.app/Contents/Info.plist")
-EXPECTED=$(tr -d '[:space:]' < VERSION)
-[ "$BUILT" = "$EXPECTED" ] || {
-    echo "Built app reports ${BUILT}, VERSION says ${EXPECTED}"; exit 1; }
-test -f "${DIST_DIR}/${APP_NAME}.app/Contents/Frameworks/vendor/llama/llama-server" \
-  || test -f "${DIST_DIR}/${APP_NAME}.app/Contents/Resources/vendor/llama/llama-server" \
-  || { echo "No llama-server in the bundle — Balance AI would not run."; exit 1; }
-test -d "${DIST_DIR}/${APP_NAME}.app/Contents/Frameworks/Sparkle.framework" \
-  || { echo "Sparkle.framework is missing from the bundle."; exit 1; }
-codesign --verify --deep --strict --verbose=2 "${DIST_DIR}/${APP_NAME}.app"
-echo "Version ${BUILT}, runtime present"
+# The same script the pull-request and release builds run, so a local build
+# fails here rather than in CI ten minutes later.
+./scripts/check_bundle.sh "${DIST_DIR}/${APP_NAME}.app"
 
 echo "=== Creating DMG ==="
 DMG_NAME="${APP_NAME}.dmg"

@@ -1,0 +1,142 @@
+# Build Balance.app the way the release does, on every pull request.
+#
+# The release workflow calls this same file for its build, so a green "macos"
+# check on a pull request means the tag will build: same runner, same Python,
+# same pinned dependencies, same tests, same PyInstaller spec, same bundle
+# checks. Only what needs the Sparkle signing key (validating it, signing the
+# appcast) and publishing are left to release.yml.
+#
+# Before this, those steps ran for the first time on a tag. v1.16.0 found a
+# macOS-only test failure that way, after the runtime build had already passed.
+name: macOS build
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      fresh-runtime:
+        description: Compile llama.cpp from scratch instead of using the cache
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  # On a pull request a new push makes the old run worthless, and macOS runners
+  # queue: cancel it. On main and on a tag every commit's result matters.
+  # github.workflow is the caller's name when release.yml or the rehearsal
+  # calls this, so those runs never cancel, or wait on, the plain one.
+  group: macos-build-${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  macos:
+    name: macos
+    # Apple silicon: the app is arm64-only, and PyInstaller builds for whatever
+    # it runs on.
+    runs-on: macos-15
+    # A cold build is about 15 minutes: four for llama.cpp, one for the tests,
+    # a few for PyInstaller. Queue time does not count against this.
+    timeout-minutes: 45
+    env:
+      # The runtime-patch test fails instead of skipping when there is no
+      # runtime, so a build step that stopped producing one cannot pass quietly.
+      BALANCE_REQUIRE_RUNTIME: "1"
+      PIP_DISABLE_PIP_VERSION_CHECK: "1"
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+            constraints.txt
+
+      - name: Check VERSION and the changelog
+        # The release publishes the CHANGELOG.md section for VERSION, and
+        # scripts/release.sh refuses to tag without one. Check it here, where
+        # it is cheap to fix.
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          printf '%s' "$version" | grep -Eq '^[0-9]+\.[0-9]+\.[0-9]+$' \
+            || { echo "VERSION '$version' is not major.minor.patch."; exit 1; }
+          python3 scripts/changelog.py "$version" > /dev/null \
+            || { echo "CHANGELOG.md has no '## $version' section."; exit 1; }
+          echo "VERSION $version has a changelog section"
+
+      - name: Install dependencies
+        run: python3 -m pip install -r requirements.txt -r requirements-dev.txt -c constraints.txt
+
+      - name: Fetch Sparkle
+        # Pinned version and SHA-256, both in services/update_config.json.
+        run: ./scripts/fetch_sparkle.sh
+
+      - name: Find the compiler
+        id: toolchain
+        # Part of the runtime cache key: a new Xcode on the runner image must
+        # not be handed binaries an older one compiled.
+        run: |
+          echo "id=$( { xcodebuild -version; clang --version; cmake --version; } | shasum -a 256 | cut -c1-16)" >> "$GITHUB_OUTPUT"
+
+      - name: Restore the model runtime
+        # Keyed on everything that decides what gets compiled: the build script
+        # (which pins the llama.cpp commit), the patch, the toolchain. Any change
+        # to one is a miss and a full build. The release passes fresh-runtime
+        # and never reads this cache.
+        if: ${{ !inputs.fresh-runtime }}
+        id: runtime-cache
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: vendor/llama
+          key: llama-${{ runner.os }}-${{ runner.arch }}-${{ steps.toolchain.outputs.id }}-${{ hashFiles('scripts/fetch_runtime.sh', 'patches/metal-readback.patch') }}
+
+      - name: Build the model runtime
+        # Pinned to one llama.cpp commit, which the script checks after cloning.
+        # Skips itself when the cache already put a runtime in vendor/llama.
+        run: |
+          ./scripts/fetch_runtime.sh
+          case "$(cat vendor/llama/BUILD.txt)" in
+            *metal-readback*) echo "Runtime is $(cat vendor/llama/BUILD.txt)" ;;
+            *) echo "The runtime has no Metal readback patch."; exit 1 ;;
+          esac
+
+      - name: Run the tests
+        run: python3 -m pytest tests/ -q
+
+      - name: Build Balance.app
+        run: python3 -m PyInstaller Balance.spec --noconfirm --clean
+
+      - name: Check the bundle
+        run: ./scripts/check_bundle.sh dist/Balance.app
+
+      - name: Zip it
+        # ditto, not zip: it keeps the bundle's symlinks and resource forks.
+        # The filename is load-bearing — update.sh greps for exactly this.
+        run: cd dist && ditto -c -k --keepParent Balance.app Balance-macOS-arm64.zip
+
+      - name: Check the app inside the zip
+        # What people download is the zip, not dist/. A zip that dropped a
+        # symlink inside Sparkle.framework fails its signature here.
+        run: |
+          rm -rf "$RUNNER_TEMP/unzipped"
+          ditto -x -k dist/Balance-macOS-arm64.zip "$RUNNER_TEMP/unzipped"
+          codesign --verify --deep --strict --verbose=2 "$RUNNER_TEMP/unzipped/Balance.app"
+
+      - name: Keep the zip
+        # The release's publish job takes it from here. On a pull request it is
+        # a build anyone can download and open.
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: Balance-macOS-arm64
+          path: dist/Balance-macOS-arm64.zip
+          if-no-files-found: error
+          retention-days: 7
+          compression-level: 0

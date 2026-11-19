@@ -1,0 +1,65 @@
+# Run the release's own path on a pull request, short of the key and the tag.
+#
+# release.yml reaches the build through workflow_call, with the runtime
+# compiled fresh, and hands the zip to its publish job as an artifact. None of
+# that runs on an ordinary pull request, so a mistake in it would surface on a
+# tag again. This runs exactly that path when the release files change, and
+# stops before anything that needs SPARKLE_PRIVATE_KEY or creates a release.
+name: Release rehearsal
+
+on:
+  pull_request:
+    paths:
+      - .github/workflows/release.yml
+      - .github/workflows/release-rehearsal.yml
+      - .github/workflows/build.yml
+      - scripts/changelog.py
+      - scripts/check_bundle.sh
+      - scripts/publish_appcast.py
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-rehearsal-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    uses: ./.github/workflows/build.yml
+    with:
+      fresh-runtime: true
+
+  publish-dry-run:
+    needs: build
+    runs-on: macos-15
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+
+      - uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.11"
+
+      - name: Take the zip the build made
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: Balance-macOS-arm64
+          path: dist
+
+      - name: Check the zip is what would ship
+        run: |
+          test -s dist/Balance-macOS-arm64.zip
+          mkdir unpacked
+          ditto -x -k dist/Balance-macOS-arm64.zip unpacked
+          ./scripts/check_bundle.sh unpacked/Balance.app
+
+      - name: Write the release notes
+        run: |
+          version="$(tr -d '[:space:]' < VERSION)"
+          python3 scripts/changelog.py "$version" > notes.md
+          test -s notes.md
+          echo "Notes for $version:"; cat notes.md

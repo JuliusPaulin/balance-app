@@ -19,7 +19,9 @@ would write into real figures.
 test that asks for a user gets a freshly seeded one.
 """
 
+import copy
 import os
+import sys
 import tempfile
 
 import pytest
@@ -63,7 +65,24 @@ def _reset_local_user():
     with db.db_conn() as conn:
         conn.execute("DELETE FROM users WHERE id = %s", (config.LOCAL_USER_ID,))
     database.seed_local_user()
+    _forget_cached_detection()
     return config.LOCAL_USER_ID
+
+
+def _forget_cached_detection():
+    """Drop the in-process recurring-detection cache along with the data.
+
+    ``core.recurring_cache`` is only invalidated when a route calls
+    ``bump_data_version()``. The reset above, and fixtures that write straight
+    to the database (``evals.fixture.build()``), go round the routes. Without
+    this a test can be handed the subscriptions an earlier test detected: the
+    stopped-gym cases in ``test_evals`` failed whenever ``test_ai_tools`` ran
+    just before them, and passed in the full suite only because of file order.
+    """
+    core = sys.modules.get("core")
+    if core is not None:
+        core.recurring_cache.clear()
+        core.bump_data_version()
 
 
 @pytest.fixture(autouse=True)
@@ -72,6 +91,39 @@ def _clean_db(_test_db):
     _reset_local_user()
     yield
     _reset_local_user()
+
+
+# What ai/runtime.py remembers between calls: the server it started, a download
+# in flight, how many starts failed, whether it already looked for a leftover.
+_RUNTIME_STATE = ("_server", "_download", "_starting", "_failed_starts",
+                  "_reclaimed", "_fit", "_fell_back")
+
+
+@pytest.fixture(autouse=True)
+def _restore_runtime_state():
+    """Put the model runtime's module state back after every test.
+
+    Several tests set it, directly or through ``ensure_running()``, and not all
+    of them undo it. In file order nothing noticed; in any other order the
+    leftover-server tests failed on a ``_server`` or ``_reclaimed`` some earlier
+    test had left behind.
+    """
+    runtime = sys.modules.get("ai.runtime")
+    saved = None
+    if runtime is not None:
+        saved = {name: copy.copy(getattr(runtime, name)) for name in _RUNTIME_STATE}
+    yield
+    runtime = sys.modules.get("ai.runtime")
+    if runtime is None:
+        return
+    if saved is None:
+        # First imported during this test: the state it was imported with is
+        # gone, so the defaults are the module's own initial values.
+        saved = {"_server": None, "_starting": False, "_failed_starts": 0,
+                 "_reclaimed": False, "_fit": None, "_fell_back": None,
+                 "_download": {"state": "idle", "bytes": 0, "total": 0, "error": None}}
+    for name, value in saved.items():
+        setattr(runtime, name, value)
 
 
 # ---------------------------------------------------------------------------
