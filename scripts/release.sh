@@ -6,6 +6,10 @@
 # Bumps VERSION, commits it, tags, and pushes. GitHub Actions does the rest:
 # it builds Balance.app on an Apple silicon runner, runs the tests, and
 # publishes the zip that update.sh downloads.
+#
+# CHANGELOG.md needs a "## <version>" section first. The workflow publishes
+# that section. Without it, this script stops; the workflow would otherwise
+# fall back to the commit subjects.
 set -euo pipefail
 
 cd "$(dirname "$0")/.."
@@ -37,6 +41,11 @@ fi
 
 if git rev-parse "v$VERSION_NEW" >/dev/null 2>&1; then
     echo "Tag v$VERSION_NEW already exists."
+    exit 1
+fi
+
+if ! python3 scripts/changelog.py "$VERSION_NEW" >/dev/null; then
+    echo "CHANGELOG.md needs a '## $VERSION_NEW' section before this can be tagged."
     exit 1
 fi
 
