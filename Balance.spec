@@ -37,7 +37,8 @@ hiddenimports = ['webview', 'webview.platforms.cocoa', 'flask', 'flask_limiter',
 hiddenimports += ['core', 'config', 'ai', 'data', 'services', 'routes'] + [
     'routes.' + m for m in (
         'bank_import', 'categories', 'csv_import', 'dashboard', 'merchant_rules',
-        'chat', 'net_worth', 'notes', 'subscriptions', 'system', 'transactions', 'portfolio',
+        'chat', 'net_worth', 'notes', 'planning', 'subscriptions', 'system',
+        'transactions', 'portfolio',
     )
 ] + [
     'ai.' + m for m in ('backends', 'chat', 'tools', 'runtime')
@@ -45,7 +46,8 @@ hiddenimports += ['core', 'config', 'ai', 'data', 'services', 'routes'] + [
     'data.' + m for m in ('db', 'sqlite', 'schema')
 ] + [
     'services.' + m for m in (
-        'networth', 'recurring', 'investment_import', 'enable_banking', 'exchange_rates',
+        'networth', 'planning', 'recurring', 'investment_import', 'enable_banking',
+        'exchange_rates',
         'portfolio', 'portfolio_catalog', 'portfolio_market', 'portfolio_math',
         'updates',
     )

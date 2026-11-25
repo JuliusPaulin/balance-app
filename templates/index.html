@@ -82,6 +82,10 @@
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="23 6 13.5 15.5 8.5 10.5 1 18"/><polyline points="17 6 23 6 23 12"/></svg>
             Net Worth
         </button>
+        <button class="nav-item" data-page="planning">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 6-7"/><circle cx="20" cy="7" r="1.2"/></svg>
+            Planning
+        </button>
         <button class="nav-item" data-page="portfolio">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="12" cy="12" r="9"/><path d="M12 7v10M8.5 10.5h5a2 2 0 010 4h-3a2 2 0 010-4h3"/></svg>
             Portfolio
@@ -887,6 +891,108 @@
         </div>
     </div>
 
+    <!-- Planning: long-term cash flow. The modal sits outside the page so a
+         hidden tab does not hide an open dialog. data-close lets Escape call
+         closePlanningEvent instead of removing the overlay. -->
+    <div class="page" id="page-planning">
+        <div class="page-header">
+            <div>
+                <h1 class="page-title">Planning</h1>
+                <div class="pl-sub">Long-term cash flow &amp; net worth projection</div>
+            </div>
+            <div class="pl-header-controls">
+                <div class="btn-group" id="pl-scenarios"></div>
+                <div class="btn-group" id="pl-unit">
+                    <button type="button" class="btn btn-secondary btn-sm active" data-unit="real">Today's €</button>
+                    <button type="button" class="btn btn-secondary btn-sm" data-unit="nominal" title="Future amounts, not adjusted for inflation">Future €</button>
+                </div>
+                <button type="button" class="btn btn-secondary btn-sm" id="pl-compare" data-pl="compare" title="Overlay the other scenario on the net worth chart">Compare</button>
+            </div>
+        </div>
+
+        <div class="pl-banner">
+            <span class="pl-tag">From Balance</span>
+            <span id="pl-banner-text">Loading your figures…</span>
+        </div>
+
+        <div class="summary-row" id="pl-summary"></div>
+
+        <div class="pl-layout">
+            <div class="card pl-assump" id="pl-assumptions">
+                <div class="pl-card-head">
+                    <div class="card-title">Assumptions</div>
+                    <button type="button" class="btn btn-ghost btn-sm" id="pl-reset" data-pl="reset">Reset</button>
+                </div>
+                <div id="pl-fields"></div>
+            </div>
+
+            <div class="pl-main">
+                <div class="card">
+                    <div class="pl-card-head">
+                        <div class="card-title">Cash flow per year</div>
+                        <div class="pl-legend">
+                            <span><i style="background:var(--green)"></i>Income</span>
+                            <span><i style="background:#9aa1b1"></i>Living costs</span>
+                            <span><i style="background:var(--purple)"></i>Home &amp; loan</span>
+                            <span><i style="background:var(--orange)"></i>Big-ticket items &amp; loans</span>
+                            <span><i class="line" style="background:var(--text-primary)"></i>Net cash flow</span>
+                        </div>
+                    </div>
+                    <div class="chart-container pl-chart"><canvas id="chart-planning-cashflow"></canvas></div>
+                    <div class="pl-note">Dashed lines mark life events; the green line marks retirement. Net cash flow = income − all spending; a positive amount is invested, a negative one is taken from investments.</div>
+                </div>
+
+                <div class="card">
+                    <div class="pl-card-head">
+                        <div class="card-title">Net worth over time</div>
+                        <div class="pl-legend">
+                            <span><i style="background:var(--accent)"></i>Investments</span>
+                            <span><i style="background:var(--teal)"></i>Home equity</span>
+                            <span><i style="background:var(--orange)"></i>Other assets − loans</span>
+                            <span><i class="dash" style="border-color:#9aa1b1"></i>FI target</span>
+                            <span id="pl-legend-compare" style="display:none"><i class="dash" style="border-color:var(--indigo)"></i><span id="pl-legend-compare-name">Other scenario</span></span>
+                        </div>
+                    </div>
+                    <div class="chart-container pl-chart"><canvas id="chart-planning-networth"></canvas></div>
+                    <div class="pl-note">FI target = what you'd need invested to pay that year's spending from a safe withdrawal rate. Home equity = home value − mortgage left. Other assets − loans = value of things you keep (for example a cottage) minus what you still owe on custom-event loans. Returns are assumed after fees and tax.</div>
+                </div>
+
+                <div class="card">
+                    <div class="pl-card-head">
+                        <div class="card-title">Life events &amp; big-ticket items</div>
+                        <button type="button" class="btn btn-primary btn-sm" data-pl="add">+ Add event</button>
+                    </div>
+                    <div class="pl-events" id="pl-events"></div>
+                    <div class="pl-quick" id="pl-quick"></div>
+                </div>
+
+                <div class="card">
+                    <div class="pl-card-head">
+                        <div class="card-title">Year by year</div>
+                        <span class="pl-hint" id="pl-table-hint"></span>
+                    </div>
+                    <div class="pl-table-wrap"><table class="pl-table" id="pl-table"></table></div>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <div id="planning-event-overlay" class="modal-overlay" style="display:none"
+         data-close="closePlanningEvent">
+        <div class="modal pl-modal" role="dialog" aria-modal="true" aria-labelledby="pl-modal-title">
+            <div class="modal-title" id="pl-modal-title">Add life event</div>
+            <div class="pl-type-grid" id="pl-modal-types"></div>
+            <div class="pl-form-grid" id="pl-modal-fields"></div>
+            <div class="pl-modal-actions">
+                <button type="button" class="btn btn-ghost btn-sm" id="pl-modal-delete" data-pl="delete" style="color:var(--red);visibility:hidden">Delete</button>
+                <div style="display:flex;gap:8px">
+                    <button type="button" class="btn btn-secondary btn-sm" data-pl="cancel">Cancel</button>
+                    <button type="button" class="btn btn-primary btn-sm" data-pl="save">Save</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <!-- Investment import review modal -->
     <!-- data-close: this overlay is reused, not rebuilt, so Escape must hide it
          through its own closer rather than remove it (see closeTopModal). -->
@@ -1057,6 +1163,8 @@
 <script src="/static/js/dashboard.js"></script>
 <script src="/static/js/reports.js"></script>
 <script src="/static/js/net-worth.js"></script>
+<script src="/static/js/planning-math.js"></script>
+<script src="/static/js/planning.js"></script>
 <script src="/static/js/portfolio.js"></script>
 <script src="/static/js/trends.js"></script>
 <script src="/static/js/subscriptions.js"></script>
