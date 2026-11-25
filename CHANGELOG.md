@@ -1,5 +1,13 @@
 # Changelog
 
+## 1.17.0
+
+Planning projects your cash flow and net worth from your current age out to the age you choose. Income, spending, rent and today's net worth start from your own figures: the average of the last 12 months, and the net worth the Net Worth tab shows. Every figure is editable, and Reset puts those Balance figures back. Spending leaves out money categorised as Investments, because that is a transfer into savings and the plan invests whatever is left over.
+
+You can add a home, a car, a child, time off, an inheritance, extra income, a one-off cost, a market crash, or a custom event. A custom event can be paid partly with a loan, and it can keep a value that counts in net worth. The summary, the charts and the year-by-year table update as you move the sliders. Today's euros are adjusted for inflation. Future euros are the amounts in the year they happen. A second scenario can be drawn on the net worth chart beside the first.
+
+The plan is saved on this Mac, in the same database as the rest of Balance.
+
 ## 1.16.0
 
 Another assistant on this Mac can read your Balance books, import a bank CSV, and change categories, through Balance's own code. The program is called `balance_mcp`. It speaks MCP over standard input and output, so Claude Desktop, Cursor, or a similar assistant on this Mac can use it.
