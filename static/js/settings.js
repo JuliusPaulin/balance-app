@@ -334,6 +334,11 @@ const GUIDE_SLIDES = [
         icon: `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5"><path d="M3 3v18h18"/><path d="M7 14l4-4 3 3 5-6"/></svg>`,
         body: "<strong>Reports</strong> shows your full annual summary — every category, month over month — so you can see where your money goes across the whole year.",
     },
+    {
+        title: "Planning",
+        icon: `<svg width="48" height="48" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="1.5"><path d="M3 3v18h18"/><path d="M7 15l4-4 3 3 6-7"/></svg>`,
+        body: "<strong>Planning</strong> projects cash flow and net worth out to the age you choose. Income, spending, rent and today's net worth start from your own figures. Add a home, a child, a loan or any other event, and the charts update as you move the sliders. Scenarios stay on this machine.",
+    },
 ];
 
 let _guideStep = 0;

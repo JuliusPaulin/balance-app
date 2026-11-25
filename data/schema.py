@@ -272,6 +272,15 @@ CREATE TABLE IF NOT EXISTS portfolio_flows (
     amount REAL NOT NULL
 );
 
+-- One planning document per user: scenarios, assumptions and life events.
+-- Additive. An older build ignores the table, and init_db creates it on the
+-- next launch. Nothing else in the schema points at it.
+CREATE TABLE IF NOT EXISTS planning_plans (
+    user_id    INTEGER PRIMARY KEY REFERENCES users(id) ON DELETE CASCADE,
+    payload    TEXT NOT NULL,
+    updated_at TEXT NOT NULL DEFAULT {_NOW_SQLITE}
+);
+
 CREATE INDEX IF NOT EXISTS idx_bank_sessions_user ON bank_sessions(user_id);
 CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);
 CREATE INDEX IF NOT EXISTS idx_users_status ON users(status);

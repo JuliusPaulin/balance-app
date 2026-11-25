@@ -73,7 +73,7 @@ function csrfToken() {
 
 // Requests that carry their own waiting state, and so must not raise the
 // app-wide one.
-const SELF_TIMED_PATHS = ["/healthz", "/api/chat"];
+const SELF_TIMED_PATHS = ["/healthz", "/api/chat", "/api/planning"];
 
 // ── Global loading indicator ────────────────────────────────────────
 // The overlay only appears when a request is actually slow (>400 ms). Fast
@@ -279,6 +279,10 @@ document.addEventListener("keydown", e => {
 // active tab or blank the page.
 document.querySelectorAll(".nav-item[data-page]").forEach(btn => {
     btn.addEventListener("click", () => {
+        const leaving = document.querySelector(".nav-item[data-page].active")?.dataset.page;
+        if (leaving === "planning" && btn.dataset.page !== "planning" && typeof flushPlanningSave === "function") {
+            flushPlanningSave();
+        }
         if (btn.dataset.page !== "settings") stopUpdatesPolling();
         document.querySelectorAll(".nav-item[data-page]").forEach(b => b.classList.remove("active"));
         btn.classList.add("active");
@@ -293,6 +297,7 @@ document.querySelectorAll(".nav-item[data-page]").forEach(btn => {
             case "subscriptions": loadRecurring(); break;
             case "reports": loadReport(); break;
             case "networth": loadNetWorth(); break;
+            case "planning": loadPlanning(); break;
             case "portfolio": loadPortfolio(); break;
             case "import": loadBankStatus(); loadImportHistory(); break;
             case "settings": loadUpdatesSettings(); break;
@@ -494,6 +499,7 @@ function rerenderActivePage() {
         case "subscriptions": loadRecurring();   break;
         case "reports":      loadReport();       break;
         case "networth":     loadNetWorth();     break;
+        case "planning":     loadPlanning();     break;
         case "portfolio":    loadPortfolio();    break;
     }
 }
