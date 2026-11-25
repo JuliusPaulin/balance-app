@@ -53,38 +53,38 @@ const PLANNING_ICONS = {
 };
 
 const PLANNING_TYPES = {
-    house: { label: "Buy a home", color: "#AF52DE", fields: [
+    house: { label: "Buy a home", color: "#AF52DE", token: "--purple", fields: [
         ["name", "Name", "text"], ["age", "Purchase age"], ["price", "Price (today's €)"],
         ["downPct", "Down payment %"], ["tax", "Transfer tax %"], ["rate", "Mortgage rate %"],
         ["term", "Loan term (years)"], ["costPct", "Upkeep & fees, % of price / yr"],
         ["appr", "Home value growth % / yr"], ["replacesRent", "Stops paying rent", "check"],
     ]},
-    car: { label: "Car", color: "#FF9500", fields: [
+    car: { label: "Car", color: "#FF9500", token: "--orange", fields: [
         ["name", "Name", "text"], ["age", "At age"], ["amount", "Cost (today's €)"],
         ["every", "Replace every N yrs (0 = once)"], ["until", "Last replacement by age"],
     ]},
-    child: { label: "Child", color: "#FF2D55", fields: [
+    child: { label: "Child", color: "#FF2D55", token: "--pink", fields: [
         ["name", "Name", "text"], ["age", "Born when I'm"],
         ["amount", "Cost per year (today's €)"], ["years", "For how many years"],
     ]},
-    sabbatical: { label: "Time off", color: "#5AC8FA", fields: [
+    sabbatical: { label: "Time off", color: "#5AC8FA", token: "--teal", fields: [
         ["name", "Name", "text"], ["age", "Starts at age"], ["years", "Years"], ["pct", "Income drop %"],
     ]},
-    windfall: { label: "Inheritance", color: "#00a06b", fields: [
+    windfall: { label: "Inheritance", color: "#00a06b", token: "--green", fields: [
         ["name", "Name", "text"], ["age", "At age"], ["amount", "Amount (today's €)"],
     ]},
-    extra: { label: "Extra income", color: "#00a06b", fields: [
+    extra: { label: "Extra income", color: "#00a06b", token: "--green", fields: [
         ["name", "Name", "text"], ["age", "From age"],
         ["amount", "Per year (today's €)"], ["years", "For how many years"],
     ]},
-    oneoff: { label: "Other cost", color: "#FF9500", fields: [
+    oneoff: { label: "Other cost", color: "#FF9500", token: "--orange", fields: [
         ["name", "Name", "text"], ["age", "From age"],
         ["amount", "Per year (today's €)"], ["years", "For how many years"],
     ]},
-    shock: { label: "Market crash", color: "#e0445b", fields: [
+    shock: { label: "Market crash", color: "#e0445b", token: "--red", fields: [
         ["name", "Name", "text"], ["age", "At age"], ["pct", "Investments fall %"],
     ]},
-    custom: { label: "Custom", color: "#5856D6", fields: [
+    custom: { label: "Custom", color: "#5856D6", token: "--indigo", fields: [
         ["name", "Name", "text"],
         ["dir", "Kind", "select", null, [["cost", "Cost / purchase"], ["income", "Income / money in"]]],
         ["age", "Start age"],
@@ -337,29 +337,34 @@ function planningMarkerPlugin(rows, retAge) {
 }
 
 function planningChartOptions(rows) {
+    const theme = chartTheme();
     const dark = document.documentElement.getAttribute("data-theme") === "dark";
     return {
         responsive: true, maintainAspectRatio: false, animation: false,
         interaction: { mode: "index", intersect: false },
         layout: { padding: { top: 22 } },
         plugins: { legend: { display: false },
-            tooltip: {
-                backgroundColor: dark ? "rgba(10,13,20,0.94)" : "rgba(28,28,30,0.92)",
+            tooltip: Object.assign({
+                backgroundColor: theme.tooltipBg,
                 padding: 10, cornerRadius: 8,
-                callbacks: {
+            }, dark ? {
+                titleColor: theme.tooltipText,
+                bodyColor: theme.tooltipText,
+                borderColor: theme.tooltipBorder,
+                borderWidth: 0.5,
+            } : {}, { callbacks: {
                     title: items => {
                         const r = rows[items[0].dataIndex];
                         const marks = [...r.marks, ...r.minor];
                         return `Age ${r.age} · ${r.year}${marks.length ? " · " + marks.join(", ") : ""}`;
                     },
                     label: c => ` ${c.dataset.label}: ${fmt(c.raw)}`,
-                },
-            },
+                } }),
         },
         scales: {
             x: { grid: { display: false }, ticks: { color: cssVar("--text-tertiary"), maxRotation: 0, autoSkip: true, autoSkipPadding: 12 } },
             y: {
-                grid: { color: dark ? "rgba(255,255,255,0.07)" : "rgba(60,60,67,0.06)" },
+                grid: { color: theme.grid },
                 border: { display: false },
                 ticks: { color: cssVar("--text-tertiary"), callback: v => planningFmtK(v) },
             },
@@ -384,7 +389,7 @@ function renderPlanningCashflow(result) {
             { type: "bar", label: "Income", data: rows.map(r => planningUnitValue(r, r.income)),
               backgroundColor: cssVar("--green"), stack: "in", borderRadius: 2, order: 1 },
             { type: "bar", label: "Living costs", data: rows.map(r => -planningUnitValue(r, r.living)),
-              backgroundColor: "#9aa1b1", stack: "out", order: 1 },
+              backgroundColor: cssVar("--chart-muted"), stack: "out", order: 1 },
             { type: "bar", label: "Home & loan", data: rows.map(r => -planningUnitValue(r, r.housing)),
               backgroundColor: cssVar("--purple"), stack: "out", order: 1 },
             { type: "bar", label: "Big-ticket items", data: rows.map(r => -planningUnitValue(r, r.big)),
@@ -415,7 +420,7 @@ function renderPlanningNetworth(result) {
           borderColor: cssVar("--orange"), backgroundColor: cssVar("--orange") + "40", fill: "-1",
           borderWidth: 2, pointRadius: 0, tension: 0.25, stack: "nw" },
         { label: "FI target", data: rows.map(r => r.retired ? null : planningUnitValue(r, r.fi_target)),
-          borderColor: "#9aa1b1", borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, fill: false, stack: "fi" },
+          borderColor: cssVar("--chart-muted"), borderDash: [5, 4], borderWidth: 1.5, pointRadius: 0, fill: false, stack: "fi" },
     ];
     const other = planningOtherScenario();
     const show = planningState.compare && other;
@@ -527,6 +532,16 @@ function planningIcon(type) {
     return `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">${PLANNING_ICONS[type] || ""}</svg>`;
 }
 
+// Light mode keeps the hex the icon was designed with. Dark mode follows the
+// theme token, which is the same hue turned down so it doesn't glow.
+function planningTypePaint(kind) {
+    if (document.documentElement.getAttribute("data-theme") === "dark" && kind.token) {
+        const color = `var(${kind.token})`;
+        return { color, bg: `color-mix(in srgb, ${color} 12%, transparent)` };
+    }
+    return { color: kind.color, bg: `${kind.color}1f` };
+}
+
 function renderPlanningEvents() {
     const box = document.getElementById("pl-events");
     const quick = document.getElementById("pl-quick");
@@ -535,9 +550,10 @@ function renderPlanningEvents() {
     box.innerHTML = events.map(event => {
         const kind = PLANNING_TYPES[event.type];
         if (!kind) return "";
+        const paint = planningTypePaint(kind);
         const off = event.on ? "" : ' <span class="pl-tag muted">off</span>';
         return `<div class="pl-event ${event.on ? "" : "off"}">
-            <div class="pl-event-icon" style="background:${kind.color}1f;color:${kind.color}">${planningIcon(event.type)}</div>
+            <div class="pl-event-icon" style="background:${paint.bg};color:${paint.color}">${planningIcon(event.type)}</div>
             <div style="min-width:0"><div class="pl-event-name">${escapeHtml(event.name)}${off}</div><div class="pl-event-meta">${escapeHtml(planningEventMeta(event))}</div></div>
             <div class="pl-event-impact">${planningEventImpact(event)}</div>
             <div class="pl-event-actions">

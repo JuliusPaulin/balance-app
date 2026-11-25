@@ -268,7 +268,7 @@ function renderMonthlyChart(monthly) {
             labels: months.map(monthLabel),
             datasets: [
                 { label: "Income",   data: incomeData,  backgroundColor: rgbaVar("--accent", 0.85), borderRadius: 6, borderSkipped: false, ...barSizing },
-                { label: "Expenses", data: expenseData, backgroundColor: rgbaVar("--red", 0.85), borderRadius: 6, borderSkipped: false, ...barSizing },
+                { label: "Expenses", data: expenseData, backgroundColor: rgbaVar("--red-strong", 0.85), borderRadius: 6, borderSkipped: false, ...barSizing },
             ],
         },
         options: {
