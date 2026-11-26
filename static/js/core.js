@@ -530,7 +530,7 @@ const CATEGORY_PALETTES = {
         colorsDark: ["#6eae9c","#7a9eb8","#9494b8","#b094b8","#c498a4","#c4a888","#c4b48a","#7eae8e","#8aabc4","#a0a0b0","#c4a0ae","#a8b88a"] },
     slate: { name: "Accent + slate", desc: "Green accent over cool grays — quiet",
         colors: ["#00a06b","#5b8a72","#0d9488","#4a6b8a","#64748b","#475569","#7c8da3","#33586a","#8a9ba8","#3d5a5a","#5f7d6e","#6b7f8c"],
-        colorsDark: ["#8aaa7a","#7eae96","#6eaea0","#7a90aa","#8a98a8","#7a8898","#9aa8b4","#6e8a98","#a8b4bc","#6e8888","#8aa898","#8a98a4"] },
+        colorsDark: ["#6cc59a","#7eae96","#6eaea0","#7a90aa","#8a98a8","#7a8898","#9aa8b4","#6e8a98","#a8b4bc","#6e8888","#8aa898","#8a98a4"] },
 };
 const PALETTE_KEY = "categoryPalette";
 const DEFAULT_PALETTE = "vibrant";

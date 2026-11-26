@@ -153,10 +153,11 @@ html.loading .loading-overlay {
 
 /* ── Dark palette ───────────────────────────────────────────────────
    Neutral near-black, no blue or green cast in the greys. Cards and
-   fields step up in plain grey. The accent is a muted sage: light enough
-   to read as text on these surfaces, and dark text still clears on the
-   button. Positive stays this sage; negative is a dusty rose, with a
-   darker fill where white text sits on it (bars, danger buttons). */
+   fields step up in plain grey. The accent is a soft mint: cooler and
+   clearer than an olive, still quiet on these surfaces, and dark text
+   still clears on the button. Positive stays this mint; negative is a
+   dusty rose, with a darker fill where white text sits on it (bars,
+   danger buttons). */
 :root[data-theme="dark"] {
     color-scheme: dark;
 
@@ -170,10 +171,10 @@ html.loading .loading-overlay {
     --text-tertiary: #8f8f8f;
     --text-quaternary: #8a8a8a;
 
-    --accent: #8aaa7a;
-    --accent-hover: #7b9c6c;
+    --accent: #6cc59a;
+    --accent-hover: #51b886;
     --on-accent: #142016;
-    --green: #8aaa7a;
+    --green: #6cc59a;
     --red: #d09090;
     --red-strong: #b45658;
     --on-red: #ffffff;
@@ -186,16 +187,16 @@ html.loading .loading-overlay {
     --indigo: #9ea6c8;
     --gray: #9a9a9a;
 
-    --accent-soft: rgba(138, 170, 122, 0.14);
-    --accent-softer: rgba(138, 170, 122, 0.07);
-    --accent-ring: rgba(138, 170, 122, 0.28);
+    --accent-soft: rgba(108, 197, 154, 0.14);
+    --accent-softer: rgba(108, 197, 154, 0.07);
+    --accent-ring: rgba(108, 197, 154, 0.28);
     --hover-overlay: rgba(255, 255, 255, 0.05);
     --row-stripe: rgba(255, 255, 255, 0.03);
-    --row-hover: rgba(138, 170, 122, 0.10);
-    --heat-0: rgba(138, 170, 122, 0.14);
-    --heat-1: rgba(138, 170, 122, 0.32);
-    --heat-2: rgba(138, 170, 122, 0.50);
-    --heat-3: rgba(138, 170, 122, 0.70);
+    --row-hover: rgba(108, 197, 154, 0.10);
+    --heat-0: rgba(108, 197, 154, 0.14);
+    --heat-1: rgba(108, 197, 154, 0.32);
+    --heat-2: rgba(108, 197, 154, 0.50);
+    --heat-3: rgba(108, 197, 154, 0.70);
 
     --separator: rgba(255, 255, 255, 0.08);
     --separator-opaque: #2c2c2c;
