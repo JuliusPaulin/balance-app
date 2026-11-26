@@ -1,5 +1,9 @@
 # Changelog
 
+## 1.18.0
+
+Dark mode is calmer. The background is a near-black with no colour cast, and cards and fields step up in plain grey. The palette is muted, and the accent is a mint, #6cc59a, so charts, buttons and positive amounts stay clear without glowing. Light mode is unchanged.
+
 ## 1.17.0
 
 Planning projects your cash flow and net worth from your current age out to the age you choose. Income, spending, rent and today's net worth start from your own figures: the average of the last 12 months, and the net worth the Net Worth tab shows. Every figure is editable, and Reset puts those Balance figures back. Spending leaves out money categorised as Investments, because that is a transfer into savings and the plan invests whatever is left over.
