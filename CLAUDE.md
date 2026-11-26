@@ -1215,8 +1215,10 @@ Re-run anytime with `python3 scripts/generate_merchant_rules.py` — clears and 
 
 ## Design System
 - Light: `#ffffff` bg, `#f6f7f9` grouped, `#0d1320` text, **`#00a06b` green accent**
-- Dark: the same roles re-pointed, accent `#00e599`. Both themes are defined in
-  full — never give a colour its only value inside the dark block.
+- Dark: neutral near-black (`#101010` canvas, `#1a1a1a` cards, `#0c0c0c`
+  sidebar), soft off-white text, soft mint accent `#6cc59a`. The greys have
+  no colour tint. Both themes are defined in full — never give a colour its
+  only value inside the dark block.
 - The accent has been green since the redesign. `rgba(0, 122, 255, …)` anywhere
   in the CSS is a leftover from the old blue and is a bug, not a choice. There
   are none left: a tinted surface takes `--accent-soft`, `--accent-softer` or

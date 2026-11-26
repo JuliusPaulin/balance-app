@@ -130,6 +130,20 @@ html.loading .loading-overlay {
     --sidebar-width: 220px;
     --sidebar-bg: #ffffff;
 
+    /* Chart, toast and danger-fill colours. Light mode keeps the values the
+       app already painted; dark mode points the same names somewhere quieter.
+       A colour that exists only inside the dark block is a bug. */
+    --red-strong: #e0445b;
+    --on-red: #ffffff;
+    --chart-grid: rgba(60,60,67,0.06);
+    --chart-grid-zero: rgba(60,60,67,0.22);
+    --chart-muted: #9aa1b1;
+    --tooltip-bg: rgba(28,28,30,0.92);
+    --tooltip-text: #ffffff;
+    --tooltip-border: rgba(255,255,255,0.08);
+    --toast-bg: rgba(28,28,30,0.92);
+    --toast-fg: #ffffff;
+
     /* The strip at the top of a frameless window: the window buttons sit in
        it and the rest of it drags the window. Only ever applied under
        `.desktop-shell`. Matches TITLEBAR_H in main.py, which sizes the drag
@@ -137,47 +151,55 @@ html.loading .loading-overlay {
     --titlebar-h: 28px;
 }
 
-/* ── Fintech — Dark palette (source: docs/mockups/ui-01-dark-fintech.html) ─── */
+/* ── Dark palette ───────────────────────────────────────────────────
+   Neutral near-black, no blue or green cast in the greys. Cards and
+   fields step up in plain grey. The accent is a soft mint: cooler and
+   clearer than an olive, still quiet on these surfaces, and dark text
+   still clears on the button. Positive stays this mint; negative is a
+   dusty rose, with a darker fill where white text sits on it (bars,
+   danger buttons). */
 :root[data-theme="dark"] {
     color-scheme: dark;
 
-    --bg: #121722;
-    --bg-secondary: #0b0e14;
-    --bg-tertiary: #171d2a;
-    --bg-grouped: #0b0e14;
+    --bg: #1a1a1a;            /* card / surface */
+    --bg-secondary: #101010;  /* app canvas */
+    --bg-tertiary: #242424;   /* raised: inputs, secondary buttons */
+    --bg-grouped: #101010;
 
-    --text-primary: #e7ebf2;
-    --text-secondary: #8a93a6;
-    --text-tertiary: #5d6677;
-    --text-quaternary: #454d5e;
+    --text-primary: #e8e8e6;
+    --text-secondary: #a3a3a3;
+    --text-tertiary: #8f8f8f;
+    --text-quaternary: #8a8a8a;
 
-    --accent: #00e599;
-    --accent-hover: #00c886;
-    --on-accent: #04231a;     /* dark text on the bright green accent for contrast */
-    --green: #00e599;
-    --red: #ff5c72;
-    /* categorical accents nudged brighter so they read on the dark canvas */
-    --orange: #ff9f40;
-    --yellow: #ffd60a;
-    --pink: #ff6482;
-    --purple: #bf7af2;
-    --teal: #64d2ff;
-    --indigo: #7c7aff;
-    --gray: #8a93a6;
+    --accent: #6cc59a;
+    --accent-hover: #51b886;
+    --on-accent: #142016;
+    --green: #6cc59a;
+    --red: #d09090;
+    --red-strong: #b45658;
+    --on-red: #ffffff;
+    /* Same hues as light mode, pulled down so they don't glow on black. */
+    --orange: #c9a27a;
+    --yellow: #d4c49a;
+    --pink: #c98a9c;
+    --purple: #b39bc4;
+    --teal: #86b0b6;
+    --indigo: #9ea6c8;
+    --gray: #9a9a9a;
 
-    --accent-soft: rgba(0, 229, 153, 0.12);
-    --accent-softer: rgba(0, 229, 153, 0.06);
-    --accent-ring: rgba(0, 229, 153, 0.22);
+    --accent-soft: rgba(108, 197, 154, 0.14);
+    --accent-softer: rgba(108, 197, 154, 0.07);
+    --accent-ring: rgba(108, 197, 154, 0.28);
     --hover-overlay: rgba(255, 255, 255, 0.05);
-    --row-stripe: rgba(255, 255, 255, 0.02);
-    --row-hover: rgba(0, 229, 153, 0.08);
-    --heat-0: rgba(0, 229, 153, 0.10);
-    --heat-1: rgba(0, 229, 153, 0.32);
-    --heat-2: rgba(0, 229, 153, 0.55);
-    --heat-3: rgba(0, 229, 153, 0.82);
+    --row-stripe: rgba(255, 255, 255, 0.03);
+    --row-hover: rgba(108, 197, 154, 0.10);
+    --heat-0: rgba(108, 197, 154, 0.14);
+    --heat-1: rgba(108, 197, 154, 0.32);
+    --heat-2: rgba(108, 197, 154, 0.50);
+    --heat-3: rgba(108, 197, 154, 0.70);
 
     --separator: rgba(255, 255, 255, 0.08);
-    --separator-opaque: #222a38;
+    --separator-opaque: #2c2c2c;
     --border: rgba(255, 255, 255, 0.10);
 
     /* Dark uses borders, not shadows */
@@ -186,7 +208,48 @@ html.loading .loading-overlay {
     --shadow-lg: 0 10px 30px rgba(0, 0, 0, 0.45);
     --shadow-card: none;
 
-    --sidebar-bg: #0c1019;
+    --sidebar-bg: #0c0c0c;
+
+    --chart-grid: rgba(255,255,255,0.06);
+    --chart-grid-zero: rgba(255,255,255,0.16);
+    --chart-muted: #9a9a9a;
+    --tooltip-bg: #2a2a2a;
+    --tooltip-text: #e8e8e6;
+    --tooltip-border: rgba(255,255,255,0.10);
+    --toast-bg: #2a2a2a;
+    --toast-fg: #e8e8e6;
+}
+
+/* Surfaces that were tuned for a light page. Dark only — the light rules
+   above stay as they are. */
+:root[data-theme="dark"] .form-input,
+:root[data-theme="dark"] .form-select,
+:root[data-theme="dark"] .note-textarea,
+:root[data-theme="dark"] .chat-input,
+:root[data-theme="dark"] .search-text-input {
+    background: var(--bg-tertiary);
+}
+:root[data-theme="dark"] .form-input:focus,
+:root[data-theme="dark"] .form-select:focus,
+:root[data-theme="dark"] .note-textarea:focus,
+:root[data-theme="dark"] .search-text-input:focus {
+    background: var(--bg-tertiary);
+    box-shadow: 0 0 0 3px var(--accent-ring);
+}
+:root[data-theme="dark"] .btn-icon:hover,
+:root[data-theme="dark"] .note-btn:hover,
+:root[data-theme="dark"] .card-fs-btn:hover {
+    background: var(--hover-overlay);
+}
+:root[data-theme="dark"] .drop-zone:hover,
+:root[data-theme="dark"] .drop-zone.drag-over {
+    background: var(--accent-softer);
+}
+:root[data-theme="dark"] .toast {
+    border: 1px solid var(--border);
+}
+:root[data-theme="dark"] .chip-pending {
+    color: var(--orange);
 }
 
 /* Smooth theme transition (scoped — never transition `all`) */
@@ -532,8 +595,8 @@ body {
 }
 
 .btn-danger {
-    background: var(--red);
-    color: white;
+    background: var(--red-strong);
+    color: var(--on-red);
 }
 
 .btn-danger:hover {
@@ -1074,10 +1137,10 @@ tbody tr:last-child td {
 }
 
 .toast {
-    background: rgba(28, 28, 30, 0.92);
+    background: var(--toast-bg);
     backdrop-filter: blur(20px);
     -webkit-backdrop-filter: blur(20px);
-    color: white;
+    color: var(--toast-fg);
     padding: 10px 18px;
     border-radius: var(--radius);
     font-size: var(--text-callout);

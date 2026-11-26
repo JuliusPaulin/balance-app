@@ -8,11 +8,16 @@ let portfolioSettings = null;
 let portfolioPreviewRequest = 0;
 let portfolioLastPreview = null;
 
-const portfolioColors = ["#0a84ff", "#34c759", "#ff9f0a", "#af52de", "#ff375f", "#64d2ff", "#30d158", "#ffd60a"];
+const PORTFOLIO_COLORS_LIGHT = ["#0a84ff", "#34c759", "#ff9f0a", "#af52de", "#ff375f", "#64d2ff", "#30d158", "#ffd60a"];
+const PORTFOLIO_COLORS_DARK = ["#7aa2d4", "#7eae86", "#d4ae74", "#b498cc", "#d48498", "#8ec4d4", "#86b892", "#d4c68a"];
+const PORTFOLIO_MANDATES_LIGHT = {World: "#0a84ff", US: "#34c759", EM: "#ff9f0a", Norway: "#af52de", Europe: "#ff375f", Finland: "#64d2ff", Sweden: "#ffd60a", Apple: "#5856d6", Bonds: "#30d158", Unknown: "#8e8e93"};
+const PORTFOLIO_MANDATES_DARK = {World: "#7aa2d4", US: "#7eae86", EM: "#d4ae74", Norway: "#b498cc", Europe: "#d48498", Finland: "#8ec4d4", Sweden: "#d4c68a", Apple: "#9a98cc", Bonds: "#7eae96", Unknown: "#9a9a9a"};
 const portfolioAllocationColor = (name, i) => {
-    const mandates = {World: "#0a84ff", US: "#34c759", EM: "#ff9f0a", Norway: "#af52de", Europe: "#ff375f", Finland: "#64d2ff", Sweden: "#ffd60a", Apple: "#5856d6", Bonds: "#30d158", Unknown: "#8e8e93"};
+    const dark = document.documentElement.getAttribute("data-theme") === "dark";
+    const mandates = dark ? PORTFOLIO_MANDATES_DARK : PORTFOLIO_MANDATES_LIGHT;
+    const colors = dark ? PORTFOLIO_COLORS_DARK : PORTFOLIO_COLORS_LIGHT;
     const hash = [...name].reduce((n, c) => (n * 31 + c.charCodeAt(0)) >>> 0, 0);
-    return mandates[name] || portfolioColors[hash % portfolioColors.length];
+    return mandates[name] || colors[hash % colors.length];
 };
 const portfolioEsc = value => typeof escapeHtml === "function" ? escapeHtml(value) : String(value ?? "");
 const portfolioMoney = value => value == null ? "—" : fmt2(Number(value));
@@ -80,7 +85,7 @@ function renderPortfolioValueChart() {
     portfolioDestroyChart("portfolioValue");
     if (!rows.length || typeof Chart === "undefined") return;
     charts.portfolioValue = new Chart(document.getElementById("chart-portfolio-value"), {
-        type: "line", data: { labels: rows.map(r => r.date), datasets: [{ label: "Value", data: rows.map(r => r.value), borderColor: chartTheme().accent, backgroundColor: "rgba(10,132,255,.12)", fill: true, tension: .28, pointRadius: 2 }] },
+        type: "line", data: { labels: rows.map(r => r.date), datasets: [{ label: "Value", data: rows.map(r => r.value), borderColor: chartTheme().accent, backgroundColor: document.documentElement.getAttribute("data-theme") === "dark" ? rgbaVar("--accent", 0.14) : "rgba(10,132,255,.12)", fill: true, tension: .28, pointRadius: 2 }] },
         options: { maintainAspectRatio: false, scales: { y: { ticks: { callback: v => fmt(v) }, grid: { color: chartTheme().grid } }, x: { grid: { display: false } } }, plugins: { legend: { display: false }, tooltip: { callbacks: { label: c => fmt2(c.raw) } } } }
     });
 }

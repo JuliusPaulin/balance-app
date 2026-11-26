@@ -461,21 +461,20 @@ function rgbaVar(name, alpha) {
 
 // Live, theme-aware palette read from the CSS variables.
 function chartTheme() {
-    const dark = resolvedTheme() === "dark";
     return {
         text:          cssVar("--text-secondary"),
         tick:          cssVar("--text-tertiary"),
-        grid:          dark ? "rgba(255,255,255,0.07)" : "rgba(60,60,67,0.06)",
-        gridZero:      dark ? "rgba(255,255,255,0.20)" : "rgba(60,60,67,0.22)",
+        grid:          cssVar("--chart-grid"),
+        gridZero:      cssVar("--chart-grid-zero"),
         accent:        cssVar("--accent"),
         green:         cssVar("--green"),
         red:           cssVar("--red"),
         purple:        cssVar("--purple"),
         orange:        cssVar("--orange"),
         surface:       cssVar("--bg"),
-        tooltipBg:     dark ? "rgba(10,13,20,0.94)"      : "rgba(28,28,30,0.92)",
-        tooltipText:   dark ? "#e7ebf2"                  : "#ffffff",
-        tooltipBorder: dark ? "rgba(255,255,255,0.10)"   : "rgba(255,255,255,0.08)",
+        tooltipBg:     cssVar("--tooltip-bg"),
+        tooltipText:   cssVar("--tooltip-text"),
+        tooltipBorder: cssVar("--tooltip-border"),
     };
 }
 
@@ -506,6 +505,8 @@ function rerenderActivePage() {
 
 // Re-render the charts on the active page so they pick up the new theme.
 function refreshChartsForTheme() {
+    syncChartPalette();
+    if (document.getElementById("palette-options")) renderPaletteOptions();
     if (typeof Chart === "undefined") return;
     applyChartDefaults();
     rerenderActivePage();
@@ -513,16 +514,23 @@ function refreshChartsForTheme() {
 
 // ── Category color palette (user-selectable in Settings) ─────────────
 const CATEGORY_PALETTES = {
+    // colorsDark is the same hue family, desaturated and lifted so the lines
+    // stay distinct on a near-black card. Light mode keeps `colors`.
     vibrant: { name: "Vibrant", desc: "Lively & most distinct",
-        colors: ["#10b981","#06b6d4","#3b82f6","#6366f1","#8b5cf6","#ec4899","#f43f5e","#f59e0b","#84cc16","#14b8a6","#a855f7","#ef4444"] },
+        colors: ["#10b981","#06b6d4","#3b82f6","#6366f1","#8b5cf6","#ec4899","#f43f5e","#f59e0b","#84cc16","#14b8a6","#a855f7","#ef4444"],
+        colorsDark: ["#7eae96","#7aafbe","#7f9ec4","#9496c4","#9c92cc","#c48aa6","#c48490","#c4a36e","#a3b56e","#6aa8b4","#c4a0cc","#c47c7c"] },
     cool: { name: "Cool analogous", desc: "Green → blue → violet, no warm",
-        colors: ["#00a06b","#0d9488","#0891b2","#0284c7","#2563eb","#4f46e5","#6d28d9","#7c3aed","#9333ea","#0e7490","#1d4ed8","#5b21b6"] },
+        colors: ["#00a06b","#0d9488","#0891b2","#0284c7","#2563eb","#4f46e5","#6d28d9","#7c3aed","#9333ea","#0e7490","#1d4ed8","#5b21b6"],
+        colorsDark: ["#7eae96","#6eaea4","#7aa8b8","#7a9cc0","#8a96c4","#9490c0","#a494c0","#b09cc8","#c0a8cc","#6e98a8","#8098c4","#9a90b8"] },
     green: { name: "Green / teal", desc: "Greens & teals only — most on-brand",
-        colors: ["#0b6e4f","#00a06b","#0d9488","#11998e","#16a34a","#15803d","#0e7c66","#2a9d8f","#1a936f","#2d6a4f","#40916c","#1e7a5e"] },
+        colors: ["#0b6e4f","#00a06b","#0d9488","#11998e","#16a34a","#15803d","#0e7c66","#2a9d8f","#1a936f","#2d6a4f","#40916c","#1e7a5e"],
+        colorsDark: ["#8fbfa4","#7eae96","#6eaea0","#7eb8a8","#a8c48a","#86b892","#6ea888","#8eb8a0","#b4c8a0","#7a9e86","#9ab892","#6e9880"] },
     muted: { name: "Muted jewel", desc: "Desaturated & sophisticated",
-        colors: ["#3f8f7b","#4a7fa5","#6b6b9e","#8a6a9e","#a86a78","#b08968","#9e8a5e","#5e8a6b","#6a8caf","#7d7d92","#a47b8e","#8f9e6a"] },
+        colors: ["#3f8f7b","#4a7fa5","#6b6b9e","#8a6a9e","#a86a78","#b08968","#9e8a5e","#5e8a6b","#6a8caf","#7d7d92","#a47b8e","#8f9e6a"],
+        colorsDark: ["#6eae9c","#7a9eb8","#9494b8","#b094b8","#c498a4","#c4a888","#c4b48a","#7eae8e","#8aabc4","#a0a0b0","#c4a0ae","#a8b88a"] },
     slate: { name: "Accent + slate", desc: "Green accent over cool grays — quiet",
-        colors: ["#00a06b","#5b8a72","#0d9488","#4a6b8a","#64748b","#475569","#7c8da3","#33586a","#8a9ba8","#3d5a5a","#5f7d6e","#6b7f8c"] },
+        colors: ["#00a06b","#5b8a72","#0d9488","#4a6b8a","#64748b","#475569","#7c8da3","#33586a","#8a9ba8","#3d5a5a","#5f7d6e","#6b7f8c"],
+        colorsDark: ["#6cc59a","#7eae96","#6eaea0","#7a90aa","#8a98a8","#7a8898","#9aa8b4","#6e8a98","#a8b4bc","#6e8888","#8aa898","#8a98a4"] },
 };
 const PALETTE_KEY = "categoryPalette";
 const DEFAULT_PALETTE = "vibrant";
@@ -532,13 +540,27 @@ function activePaletteKey() {
     return CATEGORY_PALETTES[k] ? k : DEFAULT_PALETTE;
 }
 
+// The swatches and the charts use the same list. Dark mode reads colorsDark
+// so a palette chosen in light mode does not turn neon on a black card.
+function paletteColors(key) {
+    const p = CATEGORY_PALETTES[key || activePaletteKey()];
+    if (document.documentElement.getAttribute("data-theme") === "dark" && p.colorsDark) {
+        return p.colorsDark;
+    }
+    return p.colors;
+}
+
+function syncChartPalette() {
+    CHART_COLORS = paletteColors();
+}
+
 // Mutable so existing CHART_COLORS[...] reads pick up the chosen palette.
-let CHART_COLORS = CATEGORY_PALETTES[activePaletteKey()].colors;
+let CHART_COLORS = paletteColors();
 
 function setCategoryPalette(key) {
     if (!CATEGORY_PALETTES[key]) return;
     localStorage.setItem(PALETTE_KEY, key);
-    CHART_COLORS = CATEGORY_PALETTES[key].colors;
+    CHART_COLORS = paletteColors(key);
     syncPaletteControls(key);
     applyChartDefaults();
     rerenderActivePage();
@@ -629,7 +651,7 @@ function renderPaletteOptions() {
     if (!host) return;
     host.innerHTML = Object.entries(CATEGORY_PALETTES).map(([key, p]) => `
         <button type="button" class="palette-opt" data-palette="${key}" onclick="setCategoryPalette('${key}')">
-            <span class="palette-swatches">${p.colors.slice(0, 9).map(c => `<span style="background:${c}"></span>`).join("")}</span>
+            <span class="palette-swatches">${paletteColors(key).slice(0, 9).map(c => `<span style="background:${c}"></span>`).join("")}</span>
             <span class="palette-meta"><span class="palette-name">${p.name}</span><span class="palette-desc">${p.desc}</span></span>
             <span class="palette-check">✓</span>
         </button>`).join("");
